@@ -4,10 +4,10 @@ import {
   createTRPCRouter,
   protectedProcedure,
   publicProcedure,
-} from "~/server/api/trpc";
-import { db } from "~/server/db";
-import { posts } from "~/server/db/schema";
-import { CalendarList } from "~/utils/types";
+} from "@/server/api/trpc";
+import { db } from "@/server/db";
+import { posts } from "@/server/db/schema";
+import { CalendarList } from "@/utils/types";
 
 export const calendarRouter = createTRPCRouter({
   hello: publicProcedure

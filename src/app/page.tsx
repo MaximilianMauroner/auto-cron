@@ -1,8 +1,8 @@
 import Link from "next/link";
 
-import { ListCalendars } from "~/app/_components/select-calendar";
-import { getServerAuthSession } from "~/server/auth";
-import { api, HydrateClient } from "~/trpc/server";
+import { ListCalendars } from "@/app/_components/select-calendar";
+import { getServerAuthSession } from "@/server/auth";
+import { api, HydrateClient } from "@/trpc/server";
 
 export default async function Home() {
   const hello = await api.calendar.hello({ text: "from tRPC" });

@@ -7,14 +7,14 @@ import {
 import { type Adapter } from "next-auth/adapters";
 import GooogleProvider from "next-auth/providers/google";
 
-import { env } from "~/env";
-import { db } from "~/server/db";
+import { env } from "@/env";
+import { db } from "@/server/db";
 import {
   accounts,
   sessions,
   users,
   verificationTokens,
-} from "~/server/db/schema";
+} from "@/server/db/schema";
 
 /**
  * Module augmentation for `next-auth` types. Allows us to add custom properties to the `session`
@@ -79,8 +79,10 @@ export const authOptions: NextAuthOptions = {
      * @see https://next-auth.js.org/providers/github
      */
   ],
+  pages: {
+    signIn: "/auth/signin",
+  },
 };
-
 /**
  * Wrapper for `getServerSession` so that you don't need to import the `authOptions` in every file.
  *
