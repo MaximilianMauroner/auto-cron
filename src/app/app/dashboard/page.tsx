@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import Calendar from "../_components/calendar";
-import Sidebar from "../_components/sidebar";
+import Calendar from "@/app/_components/calendar";
+import Sidebar from "@/app/_components/sidebar";
 
 export const metadata: Metadata = {
   title: "Dashboard",
