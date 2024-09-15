@@ -1,6 +1,5 @@
 import Link from "next/link";
 
-import { ListCalendars } from "@/app/_components/select-calendar";
 import { getServerAuthSession } from "@/server/auth";
 import { api, HydrateClient } from "@/trpc/server";
 
@@ -35,8 +34,6 @@ export default async function Home() {
               </Link>
             </div>
           </div>
-
-          {session?.user && <ListCalendars />}
         </div>
       </main>
     </HydrateClient>
