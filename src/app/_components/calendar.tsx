@@ -474,3 +474,5 @@ function DisplayEvent({
     </>
   );
 }
+
+// https://github.com/search?q=repo:jquense/react-big-calendar%20overlap.js&type=code
