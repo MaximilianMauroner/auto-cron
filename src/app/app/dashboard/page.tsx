@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import Calendar from "@/app/_components/calendar";
+import CalendarView from "@/app/_components/calendar";
 import Sidebar from "@/app/_components/sidebar";
 
 export const metadata: Metadata = {
@@ -14,7 +14,7 @@ export default async function Dashboard() {
         <h1 className="w-full border text-4xl">Dashboard</h1>
         <div className="flex">
           <div className="w-full border">
-            <Calendar />
+            <CalendarView />
           </div>
           <div className="h-full w-64 border">Here right content</div>
         </div>

@@ -73,3 +73,9 @@
   pointer-events: none;
   margin-top: -1px;
 }
+
+.rbc-addons-dnd-resize-ns-icon {
+  background-color: transparent;
+  color: transparent;
+  width: 100% !important;
+}
