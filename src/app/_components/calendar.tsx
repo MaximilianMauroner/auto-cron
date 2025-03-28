@@ -140,11 +140,16 @@ export default function CalendarView() {
     <div>
       <ScheduleXCalendar
         calendarApp={calendar}
-        customComponents={{
-          eventModal: (props) => {
-            return <>Content</>;
-          },
-        }}
+        customComponents={
+          {
+            // timeGridEvent: (props) => {
+            //   return <div>Custom Event</div>;
+            // },
+            // eventModal: (props) => {
+            //   return <>Content</>;
+            // },
+          }
+        }
       />
     </div>
   );
