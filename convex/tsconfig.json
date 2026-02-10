@@ -1,0 +1,17 @@
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"lib": ["ES2021", "DOM"],
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"strict": true,
+		"skipLibCheck": true,
+		"allowJs": true,
+		"outDir": "./dist",
+		"paths": {
+			"@auto-cron/types": ["../packages/types/src"]
+		}
+	},
+	"include": ["./**/*.ts"],
+	"exclude": ["_generated"]
+}

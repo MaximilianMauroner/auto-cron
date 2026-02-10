@@ -1,29 +1,41 @@
-# Create T3 App
+# auto-cron - smart scheduling for tasks, habits, and calendar planning
 
-This is a [T3 Stack](https://create.t3.gg/) project bootstrapped with `create-t3-app`.
+This repository powers an app for planning tasks and habits, auto-scheduling them into calendar blocks, and syncing with external providers like Google Calendar.
 
-## What's next? How do I make an app with this?
+## Contributor docs
 
-We try to keep this project as simple as possible, so you can start with just the scaffolding we set up for you, and add additional things later when they become necessary.
+- `AGENTS.md` - primary agent guidelines (used by AI coding assistants)
+- `CLAUDE.md` - symlink to `AGENTS.md` (used by Claude Code)
 
-If you are not familiar with the different technologies used in this project, please refer to the respective docs. If you still are in the wind, please join our [Discord](https://t3.gg/discord) and ask for help.
+## Project documentation
 
-- [Next.js](https://nextjs.org)
-- [NextAuth.js](https://next-auth.js.org)
-- [Prisma](https://prisma.io)
-- [Drizzle](https://orm.drizzle.team)
-- [Tailwind CSS](https://tailwindcss.com)
-- [tRPC](https://trpc.io)
+| File | Purpose | When to update |
+|------|---------|----------------|
+| `README.md` | Project overview, links to docs | After structural changes |
+| `docs/setup.md` | Local dev quickstart and deployment checklist | When setup steps change |
+| `docs/architecture.md` | Features, monorepo structure, data flow, stack | When architecture changes |
+| `docs/environment.md` | All environment variables (source of truth) | When env vars change |
+| `docs/gotchas.md` | Hard-won debugging lessons for agents | When non-obvious problems are solved |
+| `docs/issues.md` | Known bugs (low/medium/high/critical) | When discovering or resolving bugs |
+| `docs/improvements.md` | Potential improvements backlog | When spotting out-of-scope improvements |
+| `docs/todo.md` | Feature requirements, platform status, roadmap | When features are implemented or priorities change |
+| `docs/testing.md` | Testing policy and practical command guidance | When test setup/policies change |
+| `docs/git-workflow.md` | Branching, commit style, and Graphite workflow | When team workflow changes |
+| `docs/conventions.md` | Project coding conventions and patterns | When coding standards evolve |
+| `docs/external-references.md` | Canonical external docs for core dependencies | When stack/dependencies change |
+| `docs/ui-styling.md` | UI design language and styling rules | When design language changes |
+| `CLAUDE.md` | AI agent guidelines | When development rules change |
 
-## Learn More
+## Getting started
 
-To learn more about the [T3 Stack](https://create.t3.gg/), take a look at the following resources:
+See [docs/setup.md](docs/setup.md) for local development quickstart and deployment checklist.
 
-- [Documentation](https://create.t3.gg/)
-- [Learn the T3 Stack](https://create.t3.gg/en/faq#what-learning-resources-are-currently-available) — Check out these awesome tutorials
+## Commands
 
-You can check out the [create-t3-app GitHub repository](https://github.com/t3-oss/create-t3-app) — your feedback and contributions are welcome!
-
-## How do I deploy this?
-
-Follow our deployment guides for [Vercel](https://create.t3.gg/en/deployment/vercel), [Netlify](https://create.t3.gg/en/deployment/netlify) and [Docker](https://create.t3.gg/en/deployment/docker) for more information.
+- `bun install` - install dependencies
+- `bun run dev` - run all workspace dev tasks via Turbo
+- `bun run build` - build all workspaces
+- `bun run lint` - run Biome checks
+- `bun run format` - run Biome with auto-fix
+- `bun run typecheck` - run workspace type checks
+- `npx convex dev` - run Convex dev backend in a separate terminal

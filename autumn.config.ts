@@ -1,0 +1,110 @@
+import { feature, featureItem, priceItem, product } from "autumn-js/config";
+
+// --- Features ---
+
+export const tasks = feature({
+	id: "tasks",
+	name: "Tasks",
+	type: "single_use",
+});
+
+export const habits = feature({
+	id: "habits",
+	name: "Habits",
+	type: "single_use",
+});
+
+export const schedulingRuns = feature({
+	id: "scheduling_runs",
+	name: "Auto-scheduling runs",
+	type: "single_use",
+});
+
+export const analytics = feature({
+	id: "analytics",
+	name: "Analytics Dashboard",
+	type: "boolean",
+});
+
+// --- Products ---
+
+export const basic = product({
+	id: "basic",
+	name: "Basic",
+	items: [
+		priceItem({
+			price: 5,
+			interval: "month",
+		}),
+		featureItem({
+			feature_id: tasks.id,
+			included_usage: 50,
+			interval: "month",
+		}),
+		featureItem({
+			feature_id: habits.id,
+			included_usage: 5,
+			interval: "month",
+		}),
+		featureItem({
+			feature_id: schedulingRuns.id,
+			included_usage: 100,
+			interval: "month",
+		}),
+	],
+});
+
+export const pro = product({
+	id: "pro",
+	name: "Pro",
+	items: [
+		priceItem({
+			price: 8,
+			interval: "month",
+		}),
+		featureItem({
+			feature_id: tasks.id,
+			included_usage: 200,
+			interval: "month",
+		}),
+		featureItem({
+			feature_id: habits.id,
+			included_usage: 20,
+			interval: "month",
+		}),
+		featureItem({
+			feature_id: schedulingRuns.id,
+			included_usage: 500,
+			interval: "month",
+		}),
+	],
+});
+
+export const premium = product({
+	id: "premium",
+	name: "Premium",
+	items: [
+		priceItem({
+			price: 16,
+			interval: "month",
+		}),
+		featureItem({
+			feature_id: tasks.id,
+			included_usage: -1, // unlimited
+			interval: "month",
+		}),
+		featureItem({
+			feature_id: habits.id,
+			included_usage: -1, // unlimited
+			interval: "month",
+		}),
+		featureItem({
+			feature_id: schedulingRuns.id,
+			included_usage: -1, // unlimited
+			interval: "month",
+		}),
+		featureItem({
+			feature_id: analytics.id,
+		}),
+	],
+});
