@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
@@ -381,10 +382,11 @@ export const upsertGoogleTokens = mutation({
 				googleSyncToken: args.syncToken ?? existing.googleSyncToken,
 				googleCalendarSyncTokens: nextCalendarSyncTokens,
 			});
+			await ctx.scheduler.runAfter(0, internal.crons.ensureCalendarSyncGoogleCron, {});
 			return existing._id;
 		}
 
-		return ctx.db.insert("userSettings", {
+		const insertedId = await ctx.db.insert("userSettings", {
 			userId,
 			timezone: "UTC",
 			workingHoursStart: "09:00",
@@ -395,6 +397,8 @@ export const upsertGoogleTokens = mutation({
 			googleSyncToken: args.syncToken,
 			googleCalendarSyncTokens: [],
 		});
+		await ctx.scheduler.runAfter(0, internal.crons.ensureCalendarSyncGoogleCron, {});
+		return insertedId;
 	},
 });
 

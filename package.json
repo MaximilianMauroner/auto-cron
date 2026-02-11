@@ -19,6 +19,7 @@
 	},
 	"packageManager": "bun@1.2.4",
 	"dependencies": {
+		"@convex-dev/crons": "^0.2.0",
 		"@convex-dev/workos-authkit": "^0.1.6",
 		"@workos-inc/authkit-nextjs": "^2.13.0",
 		"atmn": "^0.0.36",

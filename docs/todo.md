@@ -70,7 +70,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Store Google refresh tokens in Convex `userSettings` table
 - [x] Add auth guard to dashboard layout (redirect to /sign-in if unauthenticated)
 - [x] Install Convex component: `@convex-dev/workos-authkit`
-- [ ] Install Convex components: `@convex-dev/workpool`, `@convex-dev/workflow`, `@convex-dev/crons`, `@convex-dev/action-retrier`, `@convex-dev/rate-limiter`
+- [~] Install Convex components: `@convex-dev/crons` done; `@convex-dev/workpool`, `@convex-dev/workflow`, `@convex-dev/action-retrier`, and `@convex-dev/rate-limiter` pending
 
 ### Cross-cutting UX + performance
 
@@ -130,7 +130,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Preserve per-calendar sync tokens during refresh-token backfill/update flows
 - [x] Recover invalid sync tokens (Google 410) and persist replacement tokens
 - [ ] Use `@convex-dev/action-retrier` for Google Calendar API calls
-- [~] Periodic sync every 15 minutes via Convex cron jobs (`convex/crons.ts`); component migration pending
+- [x] Periodic sync every 15 minutes via `@convex-dev/crons` component (`convex/crons.ts`)
 - [ ] Conflict resolution: Google events take precedence, reschedule displaced tasks
 - [x] Handle event deletions (both directions)
 - [x] Allow local event deletion when provider-side delete fails
