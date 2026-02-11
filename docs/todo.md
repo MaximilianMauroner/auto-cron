@@ -118,6 +118,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Custom event rendering by source type (task=blue, habit=green, google=gray, manual=purple)
 - [x] Drag-and-drop events to reschedule (update scheduledStart/scheduledEnd)
 - [x] Event detail popover on click
+- [x] Event editor fields for calendar, busy/free, visibility, and location
 - [x] Mini-calendar for date navigation
 - [x] "Today" button + view switcher (day/week/month)
 - [x] Responsive layout: sidebar collapses on mobile

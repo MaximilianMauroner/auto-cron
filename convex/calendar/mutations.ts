@@ -34,6 +34,15 @@ const syncEventValidator = v.object({
 	),
 	etag: v.optional(v.string()),
 	busyStatus: v.union(v.literal("free"), v.literal("busy"), v.literal("tentative")),
+	visibility: v.optional(
+		v.union(
+			v.literal("default"),
+			v.literal("public"),
+			v.literal("private"),
+			v.literal("confidential"),
+		),
+	),
+	location: v.optional(v.string()),
 	color: v.optional(v.string()),
 	lastSyncedAt: v.number(),
 });
@@ -89,6 +98,8 @@ type SyncEventInput = {
 	status?: "confirmed" | "tentative" | "cancelled";
 	etag?: string;
 	busyStatus: "free" | "busy" | "tentative";
+	visibility?: "default" | "public" | "private" | "confidential";
+	location?: string;
 	color?: string;
 	lastSyncedAt: number;
 };
@@ -128,6 +139,8 @@ const upsertSeriesForGoogleEvent = async (
 		recurrenceRule: event.recurrenceRule ?? existing?.recurrenceRule,
 		status: event.status,
 		busyStatus: event.busyStatus,
+		visibility: event.visibility,
+		location: event.location,
 		color: event.color,
 		etag: event.etag,
 		lastSyncedAt: event.lastSyncedAt,
@@ -177,6 +190,8 @@ const performUpsertSyncedEventsForUser = async (
 			status?: "confirmed" | "tentative" | "cancelled";
 			etag?: string;
 			busyStatus: "free" | "busy" | "tentative";
+			visibility?: "default" | "public" | "private" | "confidential";
+			location?: string;
 			color?: string;
 			lastSyncedAt: number;
 		}>;
@@ -278,6 +293,8 @@ const performUpsertSyncedEventsForUser = async (
 			etag: event.etag,
 			lastSyncedAt: event.lastSyncedAt,
 			busyStatus: isRecurringInstance ? undefined : event.busyStatus,
+			visibility: isRecurringInstance ? undefined : event.visibility,
+			location: isRecurringInstance ? undefined : event.location,
 			color: isRecurringInstance ? undefined : event.color,
 		};
 
@@ -411,7 +428,17 @@ export const createEvent = mutation({
 			end: v.number(),
 			allDay: v.optional(v.boolean()),
 			recurrenceRule: v.optional(v.string()),
+			calendarId: v.optional(v.string()),
 			busyStatus: v.optional(v.union(v.literal("free"), v.literal("busy"), v.literal("tentative"))),
+			visibility: v.optional(
+				v.union(
+					v.literal("default"),
+					v.literal("public"),
+					v.literal("private"),
+					v.literal("confidential"),
+				),
+			),
+			location: v.optional(v.string()),
 			color: v.optional(v.string()),
 		}),
 	},
@@ -420,13 +447,15 @@ export const createEvent = mutation({
 		const userId = await requireAuth(ctx);
 		const now = Date.now();
 		const allDay = args.input.allDay ?? false;
+		const calendarId = args.input.calendarId ?? "primary";
 		const busyStatus = args.input.busyStatus ?? "busy";
+		const visibility = args.input.visibility ?? "default";
 
 		const seriesId = await ctx.db.insert("calendarEventSeries", {
 			userId,
 			source: "google",
 			sourceId: undefined,
-			calendarId: "primary",
+			calendarId,
 			googleSeriesId: undefined,
 			title: args.input.title,
 			description: args.input.description,
@@ -434,6 +463,8 @@ export const createEvent = mutation({
 			recurrenceRule: args.input.recurrenceRule,
 			status: "confirmed",
 			busyStatus,
+			visibility,
+			location: args.input.location,
 			color: args.input.color,
 			etag: undefined,
 			lastSyncedAt: undefined,
@@ -452,7 +483,7 @@ export const createEvent = mutation({
 			source: "google",
 			sourceId: undefined,
 			googleEventId: undefined,
-			calendarId: "primary",
+			calendarId,
 			recurrenceRule: undefined,
 			recurringEventId: undefined,
 			originalStartTime: undefined,
@@ -462,6 +493,8 @@ export const createEvent = mutation({
 			etag: undefined,
 			lastSyncedAt: undefined,
 			busyStatus: undefined,
+			visibility: undefined,
+			location: undefined,
 			color: undefined,
 		});
 	},
@@ -477,7 +510,17 @@ export const updateEvent = mutation({
 			end: v.optional(v.number()),
 			allDay: v.optional(v.boolean()),
 			recurrenceRule: v.optional(v.string()),
+			calendarId: v.optional(v.string()),
 			busyStatus: v.optional(v.union(v.literal("free"), v.literal("busy"), v.literal("tentative"))),
+			visibility: v.optional(
+				v.union(
+					v.literal("default"),
+					v.literal("public"),
+					v.literal("private"),
+					v.literal("confidential"),
+				),
+			),
+			location: v.optional(v.string()),
 			color: v.optional(v.string()),
 		}),
 		scope: v.optional(recurrenceScopeValidator),
@@ -506,7 +549,10 @@ export const updateEvent = mutation({
 				description: args.patch.description ?? series.description,
 				allDay: args.patch.allDay ?? series.allDay,
 				recurrenceRule: args.patch.recurrenceRule ?? series.recurrenceRule,
+				calendarId: args.patch.calendarId ?? series.calendarId,
 				busyStatus: args.patch.busyStatus ?? series.busyStatus,
+				visibility: args.patch.visibility ?? series.visibility,
+				location: args.patch.location ?? series.location,
 				color: args.patch.color ?? series.color,
 				updatedAt: now,
 			});
@@ -528,11 +574,36 @@ export const updateEvent = mutation({
 			if (args.patch.recurrenceRule !== undefined) {
 				occurrencePatch.recurrenceRule = args.patch.recurrenceRule;
 			}
+			if (args.patch.calendarId !== undefined) occurrencePatch.calendarId = args.patch.calendarId;
 			if (args.patch.busyStatus !== undefined) occurrencePatch.busyStatus = args.patch.busyStatus;
+			if (args.patch.visibility !== undefined) occurrencePatch.visibility = args.patch.visibility;
+			if (args.patch.location !== undefined) occurrencePatch.location = args.patch.location;
 			if (args.patch.color !== undefined) occurrencePatch.color = args.patch.color;
 		}
 
 		await ctx.db.patch(args.id, occurrencePatch);
+
+		if (series && scope !== "single" && args.patch.calendarId !== undefined) {
+			const baseOccurrenceStart = event.occurrenceStart ?? normalizeToMinute(event.start);
+			const seriesEvents = await ctx.db
+				.query("calendarEvents")
+				.withIndex("by_userId", (q) => q.eq("userId", userId))
+				.filter((q) => q.eq(q.field("seriesId"), event.seriesId))
+				.collect();
+
+			for (const seriesEvent of seriesEvents) {
+				const seriesOccurrenceStart =
+					seriesEvent.occurrenceStart ?? normalizeToMinute(seriesEvent.start);
+				if (scope === "following" && seriesOccurrenceStart < baseOccurrenceStart) {
+					continue;
+				}
+				if (seriesEvent._id === args.id) continue;
+				await ctx.db.patch(seriesEvent._id, {
+					calendarId: args.patch.calendarId,
+					updatedAt: now,
+				});
+			}
+		}
 		return { id: args.id, scope };
 	},
 });

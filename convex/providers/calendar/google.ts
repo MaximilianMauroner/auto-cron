@@ -25,6 +25,8 @@ type GoogleEvent = {
 	id: string;
 	summary?: string;
 	description?: string;
+	location?: string;
+	visibility?: "default" | "public" | "private" | "confidential";
 	start?: GoogleEventDateTime;
 	end?: GoogleEventDateTime;
 	status?: "confirmed" | "tentative" | "cancelled";
@@ -154,6 +156,8 @@ const toGoogleEventUpsert = (
 		etag: event.etag,
 		htmlLink: event.htmlLink,
 		busyStatus: toBusyStatus(event),
+		visibility: event.visibility,
+		location: event.location,
 		color: normalizeColorTokenToHex(event.colorId ?? calendarColor),
 		lastSyncedAt: Date.now(),
 	};
@@ -175,6 +179,8 @@ const createGoogleEventPayload = (input: CalendarEventCreateInput): Record<strin
 	return {
 		summary: input.title,
 		description: input.description,
+		location: input.location,
+		visibility: input.visibility,
 		start: isAllDay
 			? { date: new Date(input.start).toISOString().slice(0, 10) }
 			: { dateTime: toDateTime(input.start) },
@@ -191,6 +197,8 @@ const patchGoogleEventPayload = (patch: CalendarEventUpdateInput): Record<string
 	const payload: Record<string, unknown> = {};
 	if (patch.title !== undefined) payload.summary = patch.title;
 	if (patch.description !== undefined) payload.description = patch.description;
+	if (patch.location !== undefined) payload.location = patch.location;
+	if (patch.visibility !== undefined) payload.visibility = patch.visibility;
 	if (patch.start !== undefined || patch.allDay !== undefined) {
 		const allDay = Boolean(patch.allDay);
 		if (patch.start !== undefined) {
@@ -425,9 +433,10 @@ export const googleCalendarProvider: CalendarProvider = {
 	},
 
 	async createEvent({ refreshToken, calendarId = "primary", event }) {
+		const targetCalendarId = event.calendarId ?? calendarId;
 		const response = await callGoogle(
 			refreshToken,
-			`/calendars/${encodeURIComponent(calendarId)}/events`,
+			`/calendars/${encodeURIComponent(targetCalendarId)}/events`,
 			{
 				method: "POST",
 				body: JSON.stringify(createGoogleEventPayload(event)),
@@ -437,30 +446,90 @@ export const googleCalendarProvider: CalendarProvider = {
 			throw new Error(`Failed to create Google event (${response.status})`);
 		}
 		const created = (await response.json()) as GoogleEvent;
-		const mapped = toGoogleEventUpsert(created, calendarId);
+		const mapped = toGoogleEventUpsert(created, targetCalendarId);
 		if (!mapped) throw new Error("Google create event returned invalid payload.");
 		return mapped;
 	},
 
 	async updateEvent({ refreshToken, calendarId = "primary", event, patch, scope }) {
+		const googleEventId = event.googleEventId ?? event.sourceId;
+		if (!googleEventId) throw new Error("Cannot update event without googleEventId.");
 		const params = new URLSearchParams();
 		if (scope !== "series") {
 			params.set("sendUpdates", "none");
 		}
-		const query = params.toString() ? `?${params.toString()}` : "";
-		const response = await callGoogle(
-			refreshToken,
-			`/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(event.googleEventId ?? event.sourceId ?? "")}${query}`,
-			{
-				method: "PATCH",
-				body: JSON.stringify(patchGoogleEventPayload(patch)),
-			},
-		);
-		if (!response.ok) {
-			throw new Error(`Failed to update Google event (${response.status})`);
+		const sourceCalendarId = calendarId;
+		const targetCalendarId = patch.calendarId?.trim() || sourceCalendarId;
+		const patchWithoutCalendar: CalendarEventUpdateInput = {
+			...patch,
+			calendarId: undefined,
+		};
+		const patchPayload = patchGoogleEventPayload(patchWithoutCalendar);
+
+		let updated: GoogleEvent | null = null;
+		if (targetCalendarId !== sourceCalendarId) {
+			const moveParams = new URLSearchParams({
+				destination: targetCalendarId,
+			});
+			if (scope !== "series") {
+				moveParams.set("sendUpdates", "none");
+			}
+			const moveResponse = await callGoogle(
+				refreshToken,
+				`/calendars/${encodeURIComponent(sourceCalendarId)}/events/${encodeURIComponent(googleEventId)}/move?${moveParams.toString()}`,
+				{
+					method: "POST",
+				},
+			);
+			if (!moveResponse.ok) {
+				throw new Error(`Failed to move Google event (${moveResponse.status})`);
+			}
+			updated = (await moveResponse.json()) as GoogleEvent;
 		}
-		const updated = (await response.json()) as GoogleEvent;
-		const mapped = toGoogleEventUpsert(updated, calendarId);
+
+		if (Object.keys(patchPayload).length > 0) {
+			const query = params.toString() ? `?${params.toString()}` : "";
+			const patchResponse = await callGoogle(
+				refreshToken,
+				`/calendars/${encodeURIComponent(targetCalendarId)}/events/${encodeURIComponent(googleEventId)}${query}`,
+				{
+					method: "PATCH",
+					body: JSON.stringify(patchPayload),
+				},
+			);
+			if (!patchResponse.ok) {
+				throw new Error(`Failed to update Google event (${patchResponse.status})`);
+			}
+			updated = (await patchResponse.json()) as GoogleEvent;
+		}
+
+		if (!updated) {
+			updated = {
+				id: googleEventId,
+				summary: event.title,
+				description: event.description,
+				location: event.location,
+				visibility: event.visibility,
+				start: event.allDay
+					? { date: new Date(event.start).toISOString().slice(0, 10) }
+					: { dateTime: toDateTime(event.start) },
+				end: event.allDay
+					? { date: new Date(event.end).toISOString().slice(0, 10) }
+					: { dateTime: toDateTime(event.end) },
+				status: event.status,
+				etag: event.etag,
+				recurrence: event.recurrenceRule ? [event.recurrenceRule] : undefined,
+				recurringEventId: event.recurringEventId,
+				originalStartTime:
+					event.originalStartTime !== undefined
+						? { dateTime: toDateTime(event.originalStartTime) }
+						: undefined,
+				transparency: event.busyStatus === "free" ? "transparent" : "opaque",
+				colorId: toGoogleColorId(event.color),
+			};
+		}
+
+		const mapped = toGoogleEventUpsert(updated, targetCalendarId);
 		if (!mapped) throw new Error("Google update event returned invalid payload.");
 		return mapped;
 	},

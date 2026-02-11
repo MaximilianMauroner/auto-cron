@@ -39,6 +39,8 @@ export const upsertSyncedEventsForUser = (
 			status?: "confirmed" | "tentative" | "cancelled";
 			etag?: string;
 			busyStatus: "free" | "busy" | "tentative";
+			visibility?: "default" | "public" | "private" | "confidential";
+			location?: string;
 			color?: string;
 			lastSyncedAt: number;
 		}>;
@@ -76,5 +78,11 @@ export const getEventById = (ctx: ActionCtx, id: Id<"calendarEvents">) =>
 
 export const updateLocalEventFromGoogle = (
 	ctx: ActionCtx,
-	args: { id: Id<"calendarEvents">; googleEventId: string; etag?: string; lastSyncedAt: number },
+	args: {
+		id: Id<"calendarEvents">;
+		googleEventId: string;
+		calendarId?: string;
+		etag?: string;
+		lastSyncedAt: number;
+	},
 ) => ctx.runMutation(internal.calendar.internal.updateLocalEventFromGoogle, args);

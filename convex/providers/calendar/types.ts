@@ -6,7 +6,10 @@ export type CalendarEventCreateInput = {
 	end: number;
 	allDay?: boolean;
 	recurrenceRule?: string;
+	calendarId?: string;
 	busyStatus?: "free" | "busy" | "tentative";
+	visibility?: "default" | "public" | "private" | "confidential";
+	location?: string;
 	color?: string;
 };
 
@@ -17,7 +20,10 @@ export type CalendarEventUpdateInput = {
 	end?: number;
 	allDay?: boolean;
 	recurrenceRule?: string;
+	calendarId?: string;
 	busyStatus?: "free" | "busy" | "tentative";
+	visibility?: "default" | "public" | "private" | "confidential";
+	location?: string;
 	color?: string;
 };
 
@@ -37,6 +43,8 @@ export type GoogleEventUpsert = {
 	etag?: string;
 	htmlLink?: string;
 	busyStatus: "free" | "busy" | "tentative";
+	visibility?: "default" | "public" | "private" | "confidential";
+	location?: string;
 	color?: string;
 	lastSyncedAt: number;
 };
@@ -57,6 +65,8 @@ export type CalendarProviderEvent = {
 	status?: "confirmed" | "tentative" | "cancelled";
 	etag?: string;
 	busyStatus: "free" | "busy" | "tentative";
+	visibility?: "default" | "public" | "private" | "confidential";
+	location?: string;
 	color?: string;
 };
 

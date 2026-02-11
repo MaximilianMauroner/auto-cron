@@ -1,7 +1,11 @@
 import { Crons } from "@convex-dev/crons";
+import { cronJobs } from "convex/server";
 import { v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
+
+const builtinCrons = cronJobs();
+export default builtinCrons;
 
 const runtimeCrons = new Crons(components.crons);
 const CALENDAR_SYNC_CRON_NAME = "calendar-sync-google";

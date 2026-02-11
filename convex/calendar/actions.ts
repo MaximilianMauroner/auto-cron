@@ -130,6 +130,8 @@ const syncUserFromGoogle = async (
 			status: event.status,
 			etag: event.etag,
 			busyStatus: event.busyStatus,
+			visibility: event.visibility,
+			location: event.location,
 			color: event.color,
 			lastSyncedAt: event.lastSyncedAt,
 		})),
@@ -286,6 +288,7 @@ export const pushEventToGoogle = action({
 			v.literal("moveResize"),
 		),
 		scope: scopeValidator,
+		previousCalendarId: v.optional(v.string()),
 		patch: v.optional(
 			v.object({
 				title: v.optional(v.string()),
@@ -294,9 +297,19 @@ export const pushEventToGoogle = action({
 				end: v.optional(v.number()),
 				allDay: v.optional(v.boolean()),
 				recurrenceRule: v.optional(v.string()),
+				calendarId: v.optional(v.string()),
 				busyStatus: v.optional(
 					v.union(v.literal("free"), v.literal("busy"), v.literal("tentative")),
 				),
+				visibility: v.optional(
+					v.union(
+						v.literal("default"),
+						v.literal("public"),
+						v.literal("private"),
+						v.literal("confidential"),
+					),
+				),
+				location: v.optional(v.string()),
 				color: v.optional(v.string()),
 			}),
 		),
@@ -349,7 +362,10 @@ export const pushEventToGoogle = action({
 					end: event.end,
 					allDay: event.allDay,
 					recurrenceRule: event.recurrenceRule,
+					calendarId: event.calendarId,
 					busyStatus: event.busyStatus,
+					visibility: event.visibility,
+					location: event.location,
 					color: event.color,
 				},
 			});
@@ -357,6 +373,7 @@ export const pushEventToGoogle = action({
 			await updateLocalEventFromGoogle(ctx, {
 				id: args.eventId,
 				googleEventId: created.googleEventId,
+				calendarId: created.calendarId,
 				etag: created.etag,
 				lastSyncedAt: created.lastSyncedAt,
 			});
@@ -370,7 +387,7 @@ export const pushEventToGoogle = action({
 
 		const updated = await provider.updateEvent({
 			refreshToken: settings.googleRefreshToken,
-			calendarId: event.calendarId ?? "primary",
+			calendarId: args.previousCalendarId ?? event.calendarId ?? "primary",
 			event,
 			patch,
 			scope: args.scope ?? "single",
@@ -379,6 +396,7 @@ export const pushEventToGoogle = action({
 		await updateLocalEventFromGoogle(ctx, {
 			id: args.eventId,
 			googleEventId: updated.googleEventId,
+			calendarId: updated.calendarId,
 			etag: updated.etag,
 			lastSyncedAt: updated.lastSyncedAt,
 		});

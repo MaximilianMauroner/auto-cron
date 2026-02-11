@@ -82,6 +82,10 @@ type EditorState = {
 	start: string;
 	end: string;
 	allDay: boolean;
+	calendarId: string;
+	busyStatus: "free" | "busy" | "tentative";
+	visibility: "default" | "public" | "private" | "confidential";
+	location: string;
 	recurrenceRule: string;
 	scope: RecurrenceEditScope;
 };
@@ -97,11 +101,31 @@ type DragCreateState = {
 	start: number;
 	current: number;
 	day: string;
+	pointerDownX: number;
+	pointerDownY: number;
+	hasMoved: boolean;
+	pointerId: number | null;
 };
 type DragSelectionPreview = {
 	start: number;
 	end: number;
 	day: string;
+};
+type ResizeSelectionPreview = {
+	eventId: string;
+	start: number;
+	end: number;
+	day: string;
+};
+type ResizeEventState = {
+	active: boolean;
+	eventId: string;
+	start: number;
+	originalEnd: number;
+	currentEnd: number;
+	startPointerY: number;
+	day: string;
+	pointerId: number | null;
 };
 type PendingMoveUpdate = {
 	eventId: CalendarEventId;
@@ -185,6 +209,18 @@ const weekdayTokenToLabel: Record<WeekdayToken, string> = {
 	SA: "Sat",
 	SU: "Sun",
 };
+const busyStatusOptions = [
+	{ value: "busy", label: "Busy" },
+	{ value: "free", label: "Free" },
+	{ value: "tentative", label: "Tentative" },
+] as const;
+const visibilityOptions = [
+	{ value: "default", label: "Default visibility" },
+	{ value: "public", label: "Public" },
+	{ value: "private", label: "Private" },
+	{ value: "confidential", label: "Confidential" },
+] as const;
+const durationPresetMinutes = [15, 30, 45, 60, 90, 120, 180, 240] as const;
 
 const defaultSourceCalendars: Record<string, CalendarType> = {
 	"google-default": {
@@ -362,11 +398,6 @@ const toLocalParts = (timestamp: number) => {
 		hours: String(date.getHours()).padStart(2, "0"),
 		minutes: String(date.getMinutes()).padStart(2, "0"),
 	};
-};
-
-const toCalendarDateTime = (timestamp: number) => {
-	const parts = toLocalParts(timestamp);
-	return `${parts.year}-${parts.month}-${parts.day} ${parts.hours}:${parts.minutes}`;
 };
 
 const toInputDateTime = (timestamp: number) => {
@@ -701,23 +732,86 @@ const setLocalDatePart = (value: string, date: Date) =>
 const setLocalTimePart = (value: string, timePart: string) =>
 	mergeDateAndTime(splitDateTimeLocal(value).datePart || formatDateInput(new Date()), timePart);
 
-const toScheduleXEvent = (vm: ScheduleXEventVM): CalendarEventExternal => ({
-	id: vm.event._id,
-	title: vm.event.title,
-	start: toCalendarDateTime(vm.event.start),
-	end: toCalendarDateTime(vm.event.end),
-	description: vm.event.description,
-	calendarId: vm.calendarKey,
-	source: vm.event.source,
-	sourceId: vm.event.sourceId,
-	googleEventId: vm.event.googleEventId,
-	colorId: vm.event.color,
-	isRecurring: !!(vm.event.recurrenceRule || vm.event.recurringEventId),
-	busyStatus: vm.event.busyStatus,
-});
+const toScheduleXEvent = (vm: ScheduleXEventVM, timeZone: string): CalendarEventExternal | null => {
+	const start = toScheduleXZonedDateTime(vm.event.start, timeZone);
+	const end = toScheduleXZonedDateTime(vm.event.end, timeZone);
+	if (!start || !end) return null;
+	return {
+		id: vm.event._id,
+		title: vm.event.title,
+		start: start as never,
+		end: end as never,
+		description: vm.event.description,
+		calendarId: vm.calendarKey,
+		source: vm.event.source,
+		sourceId: vm.event.sourceId,
+		googleEventId: vm.event.googleEventId,
+		colorId: vm.event.color,
+		isRecurring: !!(vm.event.recurrenceRule || vm.event.recurringEventId),
+		busyStatus: vm.event.busyStatus,
+	};
+};
 
-const fromScheduleDateTime = (value?: string) =>
-	value ? new Date(value.replace(" ", "T")).getTime() : Date.now();
+const fromScheduleDateTime = (value?: unknown) => {
+	if (!value) return Date.now();
+	if (typeof value === "string") {
+		const normalized = value.replace(" ", "T").replace(/\[[^\]]+\]$/, "");
+		const parsed = Date.parse(normalized);
+		return Number.isFinite(parsed) ? parsed : Date.now();
+	}
+	if (typeof value === "object") {
+		const maybeTemporal = value as {
+			epochMilliseconds?: unknown;
+			toInstant?: () => { epochMilliseconds?: unknown };
+			toString?: () => string;
+		};
+		if (
+			typeof maybeTemporal.epochMilliseconds === "number" &&
+			Number.isFinite(maybeTemporal.epochMilliseconds)
+		) {
+			return maybeTemporal.epochMilliseconds;
+		}
+		if (typeof maybeTemporal.toInstant === "function") {
+			const instant = maybeTemporal.toInstant();
+			if (
+				instant &&
+				typeof instant.epochMilliseconds === "number" &&
+				Number.isFinite(instant.epochMilliseconds)
+			) {
+				return instant.epochMilliseconds;
+			}
+		}
+		if (typeof maybeTemporal.toString === "function") {
+			const asString = maybeTemporal.toString();
+			if (typeof asString === "string") {
+				const normalized = asString.replace(/\[[^\]]+\]$/, "");
+				const parsed = Date.parse(normalized);
+				if (Number.isFinite(parsed)) return parsed;
+			}
+		}
+	}
+	return Date.now();
+};
+
+const getScheduleDatePart = (value: unknown) => {
+	if (value && typeof value === "object") {
+		const maybeDate = value as { year?: unknown; month?: unknown; day?: unknown };
+		if (
+			typeof maybeDate.year === "number" &&
+			typeof maybeDate.month === "number" &&
+			typeof maybeDate.day === "number"
+		) {
+			const year = String(maybeDate.year).padStart(4, "0");
+			const month = String(maybeDate.month).padStart(2, "0");
+			const day = String(maybeDate.day).padStart(2, "0");
+			return normalizeSelectedDate(`${year}-${month}-${day}`);
+		}
+	}
+	if (typeof value === "string") {
+		return normalizeSelectedDate(value);
+	}
+	return formatDateInput(new Date(fromScheduleDateTime(value)));
+};
 
 const toCalendarEventId = (value: string) => value as CalendarEventId;
 
@@ -732,10 +826,110 @@ const toDateInputValue = (input: unknown) => {
 };
 
 const formatDateInput = (date: Date) => {
-	const year = date.getFullYear();
+	const yearValue = date.getFullYear();
+	if (!Number.isFinite(yearValue)) return "1970-01-01";
+	const year = String(Math.min(9999, Math.max(0, yearValue))).padStart(4, "0");
 	const month = String(date.getMonth() + 1).padStart(2, "0");
 	const day = String(date.getDate()).padStart(2, "0");
 	return `${year}-${month}-${day}`;
+};
+
+type TemporalPlainDateLike = {
+	year?: number;
+	month?: number;
+	day?: number;
+	toString: () => string;
+};
+type TemporalZonedDateTimeLike = {
+	year?: number;
+	month?: number;
+	day?: number;
+	epochMilliseconds?: number;
+	toInstant?: () => { epochMilliseconds: number };
+	withTimeZone?: (timeZone: string) => TemporalZonedDateTimeLike;
+	toString: () => string;
+};
+type TemporalApiLike = {
+	PlainDate: {
+		from: (value: string) => TemporalPlainDateLike;
+	};
+	Now: {
+		plainDateISO: () => TemporalPlainDateLike;
+	};
+	Instant: {
+		fromEpochMilliseconds: (value: number) => {
+			toZonedDateTimeISO: (timeZone: string) => TemporalZonedDateTimeLike;
+		};
+	};
+};
+
+const getTemporalApi = () => (globalThis as { Temporal?: TemporalApiLike }).Temporal ?? null;
+
+const toScheduleXPlainDate = (value: string): TemporalPlainDateLike | null => {
+	const temporal = getTemporalApi();
+	if (!temporal) return null;
+	try {
+		return temporal.PlainDate.from(value);
+	} catch {
+		return temporal.Now.plainDateISO();
+	}
+};
+
+const toScheduleXZonedDateTime = (
+	timestamp: number,
+	timeZone: string,
+): TemporalZonedDateTimeLike | null => {
+	const temporal = getTemporalApi();
+	if (!temporal) return null;
+	try {
+		return temporal.Instant.fromEpochMilliseconds(Math.trunc(timestamp)).toZonedDateTimeISO(
+			timeZone,
+		);
+	} catch {
+		try {
+			return temporal.Instant.fromEpochMilliseconds(Math.trunc(timestamp)).toZonedDateTimeISO(
+				"UTC",
+			);
+		} catch {
+			return null;
+		}
+	}
+};
+
+const normalizeStrictYmd = (value: string) => {
+	const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+	if (!match) return null;
+	const year = Number.parseInt(match[1] ?? "0", 10);
+	const month = Number.parseInt(match[2] ?? "0", 10);
+	const day = Number.parseInt(match[3] ?? "0", 10);
+	if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+	const parsed = new Date(year, month - 1, day);
+	if (
+		parsed.getFullYear() !== year ||
+		parsed.getMonth() !== month - 1 ||
+		parsed.getDate() !== day
+	) {
+		return null;
+	}
+	return formatDateInput(parsed);
+};
+
+const normalizeSelectedDate = (value: string) => {
+	const trimmed = value.trim();
+	const strict = normalizeStrictYmd(trimmed);
+	if (strict) {
+		return strict;
+	}
+	const ymdMatch = trimmed.match(/\d{4}-\d{2}-\d{2}/);
+	if (ymdMatch?.[0]) {
+		const matched = normalizeStrictYmd(ymdMatch[0]);
+		if (matched) return matched;
+	}
+	const timestamp = Date.parse(trimmed);
+	if (Number.isFinite(timestamp)) {
+		return formatDateInput(new Date(timestamp));
+	}
+	return formatDateInput(new Date());
 };
 
 const hasCalendarControlsApp = (plugin: unknown): plugin is { $app: object } => {
@@ -775,6 +969,13 @@ const prettifyCalendarName = (id?: string) => {
 		.replace(/\b\w/g, (character) => character.toUpperCase())
 		.trim();
 };
+
+const busyStatusLabel = (busyStatus: "free" | "busy" | "tentative") =>
+	busyStatusOptions.find((option) => option.value === busyStatus)?.label ?? "Busy";
+
+const visibilityLabel = (
+	visibility: "default" | "public" | "private" | "confidential" | undefined,
+) => visibilityOptions.find((option) => option.value === visibility)?.label ?? "Default visibility";
 
 const normalizeDescription = (value?: string) => {
 	if (!value) return "";
@@ -835,12 +1036,25 @@ const toTimestampFromDayAndMinutes = (day: string, minutes: number) => {
 	dayStart.setMinutes(minutes);
 	return dayStart.getTime();
 };
+const parseTimeToMinutes = (value: string) => {
+	const [rawHours, rawMinutes] = value.split(":");
+	const hoursInput = Number.parseInt(rawHours ?? "0", 10);
+	const minutesInput = Number.parseInt(rawMinutes ?? "0", 10);
+	const hours = Number.isFinite(hoursInput) ? hoursInput : 0;
+	const minutes = Number.isFinite(minutesInput) ? minutesInput : 0;
+	return Math.max(0, Math.min(24 * 60, hours * 60 + minutes));
+};
+
 const snapToQuarterHour = (timestamp: number) => {
 	const step = 1000 * 60 * 15;
 	return Math.round(timestamp / step) * step;
 };
+const QUARTER_HOUR_MS = 1000 * 60 * 15;
+const DRAG_CREATE_THRESHOLD_PX = 6;
+const DEFAULT_SCROLL_TIME = "08:00";
+const EVENT_SHEET_BREAKPOINT_QUERY = "(max-width: 1279px)";
 
-const getInitialScrollTime = () => {
+const getCurrentFocusScrollTime = () => {
 	const now = new Date();
 	const minutesFromMidnight = now.getHours() * 60 + now.getMinutes();
 	const viewStart = 0;
@@ -851,6 +1065,8 @@ const getInitialScrollTime = () => {
 	const minutes = String(target % 60).padStart(2, "0");
 	return `${hours}:${minutes}`;
 };
+
+const isTodayDate = (dateString: string) => dateString === formatDateInput(new Date());
 
 export function CalendarClient() {
 	const { resolvedTheme } = useTheme();
@@ -867,24 +1083,48 @@ export function CalendarClient() {
 		null,
 	);
 	const [dragPreview, setDragPreview] = useState<DragSelectionPreview | null>(null);
+	const [resizePreview, setResizePreview] = useState<ResizeSelectionPreview | null>(null);
 	const [pendingMoveUpdate, setPendingMoveUpdate] = useState<PendingMoveUpdate | null>(null);
 	const [activeView, setActiveView] = useState<"week" | "day" | "month-grid">("week");
-	const [selectedDate, setSelectedDate] = useState(formatDateInput(new Date()));
+	const [selectedDate, setSelectedDate] = useState(() =>
+		normalizeSelectedDate(formatDateInput(new Date())),
+	);
+	const [isMobileEventSheetOpen, setIsMobileEventSheetOpen] = useState(false);
+	const [isEventSheetMode, setIsEventSheetMode] = useState(false);
 	const dragCreateRef = useRef<DragCreateState | null>(null);
 	const syncInFlightRef = useRef(false);
 	const suppressClickCreateUntilRef = useRef(0);
 	const preferEditEventUntilRef = useRef<{ eventId: string; until: number } | null>(null);
+	const resizeEventRef = useRef<ResizeEventState | null>(null);
+	const hadEditorRef = useRef(false);
+	const wasEventSheetModeRef = useRef(false);
 	const calendarContainerRef = useRef<HTMLDivElement>(null);
-	const hasScrolledToCurrentIndicatorRef = useRef(false);
 	const scheduleEventsByIdRef = useRef<Map<string, CalendarEventDTO>>(new Map());
 
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const mediaQuery = window.matchMedia(EVENT_SHEET_BREAKPOINT_QUERY);
+		const syncSheetMode = () => setIsEventSheetMode(mediaQuery.matches);
+		syncSheetMode();
+		mediaQuery.addEventListener("change", syncSheetMode);
+		return () => {
+			mediaQuery.removeEventListener("change", syncSheetMode);
+		};
+	}, []);
+
 	const calendarControlsPlugin = useMemo(() => createCalendarControlsPlugin(), []);
-	const initialScrollTime = useMemo(() => getInitialScrollTime(), []);
+	const scheduleXTimeZone = useMemo(() => {
+		try {
+			return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+		} catch {
+			return "UTC";
+		}
+	}, []);
 	const scrollControllerPlugin = useMemo(
-		() => createScrollControllerPlugin({ initialScroll: initialScrollTime }),
-		[initialScrollTime],
+		() => createScrollControllerPlugin({ initialScroll: DEFAULT_SCROLL_TIME }),
+		[],
 	);
-	const currentTimePlugin = useMemo(() => createCurrentTimePlugin({ fullWeekWidth: false }), []);
+	const currentTimePlugin = useMemo(() => createCurrentTimePlugin({ fullWeekWidth: true }), []);
 	const dragAndDropPlugin = useMemo(() => createDragAndDropPlugin(15), []);
 	const effectiveTheme = isThemeMounted ? (resolvedTheme === "dark" ? "dark" : "light") : "light";
 	const isDarkTheme = effectiveTheme === "dark";
@@ -980,20 +1220,38 @@ export function CalendarClient() {
 		}));
 	}, [normalizedEvents, searchQuery]);
 	const scheduleXEvents = useMemo(() => {
-		const baseEvents = scheduleEvents.map(toScheduleXEvent);
+		const baseEvents = scheduleEvents
+			.map((event) => {
+				if (!resizePreview || event.event._id !== resizePreview.eventId) {
+					return event;
+				}
+				return {
+					...event,
+					event: {
+						...event.event,
+						start: resizePreview.start,
+						end: resizePreview.end,
+					},
+				};
+			})
+			.map((event) => toScheduleXEvent(event, scheduleXTimeZone))
+			.filter((event): event is CalendarEventExternal => Boolean(event));
 		if (!dragPreview) return baseEvents;
+		const previewStart = toScheduleXZonedDateTime(dragPreview.start, scheduleXTimeZone);
+		const previewEnd = toScheduleXZonedDateTime(dragPreview.end, scheduleXTimeZone);
+		if (!previewStart || !previewEnd) return baseEvents;
 		return [
 			...baseEvents,
 			{
 				id: "__drag_preview__",
 				title: "New event",
-				start: toCalendarDateTime(dragPreview.start),
-				end: toCalendarDateTime(dragPreview.end),
+				start: previewStart as never,
+				end: previewEnd as never,
 				calendarId: "manual",
 				busyStatus: "free",
 			},
 		];
-	}, [dragPreview, scheduleEvents]);
+	}, [dragPreview, resizePreview, scheduleEvents, scheduleXTimeZone]);
 	const customComponents = useMemo(
 		() => ({
 			timeGridEvent: TimeGridEvent,
@@ -1057,6 +1315,39 @@ export function CalendarClient() {
 		}
 		return names;
 	}, [googleCalendars]);
+	const editableGoogleCalendars = useMemo(() => {
+		const writable = (googleCalendars ?? []).filter((calendar) => {
+			const accessRole = calendar.accessRole;
+			return !accessRole || accessRole === "owner" || accessRole === "writer";
+		});
+		if (writable.length) {
+			return writable;
+		}
+		return [
+			{
+				id: "primary",
+				name: "Default",
+				primary: true,
+				color: undefined,
+				accessRole: "owner" as const,
+				isExternal: false,
+			},
+		];
+	}, [googleCalendars]);
+	const defaultCreateCalendarId = useMemo(
+		() =>
+			editableGoogleCalendars.find((calendar) => calendar.primary)?.id ??
+			editableGoogleCalendars[0]?.id ??
+			"primary",
+		[editableGoogleCalendars],
+	);
+	const googleCalendarColorById = useMemo(() => {
+		const colorById = new Map<string, string | undefined>();
+		for (const calendar of googleCalendars ?? []) {
+			colorById.set(calendar.id, calendar.color);
+		}
+		return colorById;
+	}, [googleCalendars]);
 
 	const openEditorForEvent = useCallback(
 		(event: CalendarEventDTO, panelMode: "details" | "edit") => {
@@ -1076,11 +1367,15 @@ export function CalendarClient() {
 				start: toInputDateTime(event.start),
 				end: toInputDateTime(event.end),
 				allDay: event.allDay,
+				calendarId: event.calendarId ?? defaultCreateCalendarId,
+				busyStatus: event.busyStatus ?? "busy",
+				visibility: event.visibility ?? "default",
+				location: event.location ?? "",
 				recurrenceRule,
 				scope: "single",
 			});
 		},
-		[normalizedEvents, recurrenceRuleBySeriesId],
+		[defaultCreateCalendarId, normalizedEvents, recurrenceRuleBySeriesId],
 	);
 
 	const applyMovedEventUpdate = useCallback(
@@ -1141,6 +1436,12 @@ export function CalendarClient() {
 		}),
 		[],
 	);
+	const dayBoundaryMinutes = useMemo(() => {
+		const start = parseTimeToMinutes(dayBoundaries.start);
+		const parsedEnd = parseTimeToMinutes(dayBoundaries.end);
+		const end = parsedEnd > start ? parsedEnd : start + 24 * 60;
+		return { start, end };
+	}, [dayBoundaries.end, dayBoundaries.start]);
 	const weekOptions = useMemo(
 		() => ({
 			// Keep ~16 visible hours on desktop so the calendar itself scrolls through the day.
@@ -1152,10 +1453,19 @@ export function CalendarClient() {
 		}),
 		[],
 	);
+	const safeSelectedDate = useMemo(() => normalizeSelectedDate(selectedDate), [selectedDate]);
+	const selectedDateForScheduleX = useMemo(
+		() => normalizeSelectedDate(safeSelectedDate),
+		[safeSelectedDate],
+	);
+	const selectedPlainDateForScheduleX = useMemo(
+		() => toScheduleXPlainDate(selectedDateForScheduleX),
+		[selectedDateForScheduleX],
+	);
 
 	const calendar = useCalendarApp(
 		{
-			selectedDate,
+			selectedDate: selectedPlainDateForScheduleX as never,
 			isDark: isDarkTheme,
 			views: calendarViews,
 			defaultView: "week",
@@ -1165,12 +1475,12 @@ export function CalendarClient() {
 			events: scheduleXEvents,
 			callbacks: {
 				onSelectedDateUpdate: (date) => {
-					setSelectedDate(date);
+					setSelectedDate(normalizeSelectedDate(String(date)));
 				},
 				onClickDateTime: (dateTime) => {
 					if (Date.now() < suppressClickCreateUntilRef.current) return;
-					const start = fromScheduleDateTime(dateTime);
-					const end = start + 1000 * 60 * 30;
+					const start = snapToQuarterHour(fromScheduleDateTime(dateTime));
+					const end = snapToQuarterHour(start + 1000 * 60 * 15);
 					setEditor({
 						mode: "create",
 						panelMode: "edit",
@@ -1179,6 +1489,10 @@ export function CalendarClient() {
 						start: toInputDateTime(start),
 						end: toInputDateTime(end),
 						allDay: false,
+						calendarId: defaultCreateCalendarId,
+						busyStatus: "busy",
+						visibility: "default",
+						location: "",
 						recurrenceRule: "",
 						scope: "single",
 					});
@@ -1186,12 +1500,18 @@ export function CalendarClient() {
 				onMouseDownDateTime: (dateTime, mouseDownEvent) => {
 					if (mouseDownEvent.button !== 0) return;
 					const start = snapToQuarterHour(fromScheduleDateTime(dateTime));
-					const day = dateTime.slice(0, 10);
+					const day = getScheduleDatePart(dateTime);
+					const rawPointerId = (mouseDownEvent as MouseEvent & { pointerId?: number }).pointerId;
+					const pointerId = typeof rawPointerId === "number" ? rawPointerId : null;
 					dragCreateRef.current = {
 						active: true,
 						start,
 						current: start,
 						day,
+						pointerDownX: mouseDownEvent.clientX,
+						pointerDownY: mouseDownEvent.clientY,
+						hasMoved: false,
+						pointerId,
 					};
 					setDragPreview({
 						start,
@@ -1221,21 +1541,23 @@ export function CalendarClient() {
 						const eventId = toCalendarEventId(String(updated.id));
 						const start = fromScheduleDateTime(updated.start);
 						const end = fromScheduleDateTime(updated.end);
+						const snappedStart = snapToQuarterHour(start);
+						const snappedEnd = Math.max(snappedStart + QUARTER_HOUR_MS, snapToQuarterHour(end));
 						const current = scheduleEventsByIdRef.current.get(eventId);
 						if (!current) return;
 						if (current.recurrenceRule || current.recurringEventId) {
 							setPendingMoveUpdate({
 								eventId,
-								start,
-								end,
+								start: snappedStart,
+								end: snappedEnd,
 								title: current.title,
 							});
 							return;
 						}
 						await applyMovedEventUpdateRef.current({
 							eventId,
-							start,
-							end,
+							start: snappedStart,
+							end: snappedEnd,
 							scope: "single",
 						});
 					} catch (updateError) {
@@ -1283,25 +1605,76 @@ export function CalendarClient() {
 	}, []);
 
 	useEffect(() => {
-		const onMouseMove = (event: MouseEvent) => {
-			const dragState = dragCreateRef.current;
-			if (!dragState?.active) return;
+		const onResizeStart = (rawEvent: Event) => {
+			const customEvent = rawEvent as CustomEvent<{
+				eventId?: string;
+				eventDay?: string;
+				pointerY?: number;
+				pointerId?: number;
+			}>;
+			const eventId = customEvent.detail?.eventId;
+			if (!eventId) return;
+			const matched = scheduleEventsByIdRef.current.get(eventId);
+			if (!matched || matched.allDay) return;
+			const day = normalizeSelectedDate(
+				customEvent.detail?.eventDay || formatDateInput(new Date(matched.start)),
+			);
+			const startPointerY =
+				typeof customEvent.detail?.pointerY === "number"
+					? customEvent.detail.pointerY
+					: window.innerHeight / 2;
+			resizeEventRef.current = {
+				active: true,
+				eventId,
+				start: matched.start,
+				originalEnd: matched.end,
+				currentEnd: matched.end,
+				startPointerY,
+				day,
+				pointerId:
+					typeof customEvent.detail?.pointerId === "number" ? customEvent.detail.pointerId : null,
+			};
+			setResizePreview({
+				eventId,
+				start: matched.start,
+				end: matched.end,
+				day,
+			});
+			suppressClickCreateUntilRef.current = Date.now() + 250;
+		};
+
+		window.addEventListener("calendar:event-resize-start", onResizeStart);
+		return () => {
+			window.removeEventListener("calendar:event-resize-start", onResizeStart);
+		};
+	}, []);
+
+	useEffect(() => {
+		const updateDragCreate = (dragState: DragCreateState, clientX: number, clientY: number) => {
+			const pointerDelta = Math.max(
+				Math.abs(clientX - dragState.pointerDownX),
+				Math.abs(clientY - dragState.pointerDownY),
+			);
+			if (!dragState.hasMoved && pointerDelta < DRAG_CREATE_THRESHOLD_PX) return;
 			const target = document
-				.elementFromPoint(event.clientX, event.clientY)
+				.elementFromPoint(clientX, clientY)
 				?.closest<HTMLElement>(".sx__time-grid-day");
 			if (!target) return;
 			const day = target.dataset.timeGridDate;
 			if (!day || day !== dragState.day) return;
 			const rect = target.getBoundingClientRect();
-			const y = Math.max(0, Math.min(rect.height, event.clientY - rect.top));
+			const y = Math.max(0, Math.min(rect.height, clientY - rect.top));
 			const ratio = rect.height === 0 ? 0 : y / rect.height;
-			const dayStart = 6 * 60;
-			const dayEnd = 23 * 60;
-			const minutes = Math.round((dayStart + ratio * (dayEnd - dayStart)) / 15) * 15;
+			const dayStart = dayBoundaryMinutes.start;
+			const dayEnd = dayBoundaryMinutes.end;
+			const snappedMinutes = Math.round((dayStart + ratio * (dayEnd - dayStart)) / 15) * 15;
+			const maxStartMinute = Math.max(dayStart, dayEnd - 15);
+			const minutes = Math.max(dayStart, Math.min(maxStartMinute, snappedMinutes));
 			const nextCurrent = snapToQuarterHour(toTimestampFromDayAndMinutes(day, minutes));
 			dragCreateRef.current = {
 				...dragState,
 				current: nextCurrent,
+				hasMoved: true,
 			};
 			const start = Math.min(dragState.start, nextCurrent);
 			const end = Math.max(dragState.start, nextCurrent);
@@ -1312,10 +1685,12 @@ export function CalendarClient() {
 			});
 		};
 
-		const onMouseUp = () => {
-			const dragState = dragCreateRef.current;
-			if (!dragState?.active) return;
+		const commitDragCreate = (dragState: DragCreateState) => {
 			dragCreateRef.current = null;
+			if (!dragState.hasMoved) {
+				setDragPreview(null);
+				return;
+			}
 
 			const minDurationMs = 1000 * 60 * 15;
 			const start = snapToQuarterHour(Math.min(dragState.start, dragState.current));
@@ -1333,18 +1708,190 @@ export function CalendarClient() {
 				start: toInputDateTime(start),
 				end: toInputDateTime(end),
 				allDay: false,
+				calendarId: defaultCreateCalendarId,
+				busyStatus: "busy",
+				visibility: "default",
+				location: "",
 				recurrenceRule: "",
 				scope: "single",
 			});
 		};
 
+		const onPointerMove = (event: PointerEvent) => {
+			const dragState = dragCreateRef.current;
+			if (!dragState?.active) return;
+			if (dragState.pointerId !== null && event.pointerId !== dragState.pointerId) return;
+			if (event.pointerType === "mouse" && (event.buttons & 1) !== 1) {
+				commitDragCreate(dragState);
+				return;
+			}
+			updateDragCreate(dragState, event.clientX, event.clientY);
+		};
+
+		const onPointerUp = (event: PointerEvent) => {
+			const dragState = dragCreateRef.current;
+			if (!dragState?.active) return;
+			if (dragState.pointerId !== null && event.pointerId !== dragState.pointerId) return;
+			commitDragCreate(dragState);
+		};
+
+		const onPointerCancel = (event: PointerEvent) => {
+			const dragState = dragCreateRef.current;
+			if (!dragState?.active) return;
+			if (dragState.pointerId !== null && event.pointerId !== dragState.pointerId) return;
+			dragCreateRef.current = null;
+			setDragPreview(null);
+		};
+
+		const onMouseMove = (event: MouseEvent) => {
+			const dragState = dragCreateRef.current;
+			if (!dragState?.active) return;
+			if (dragState.pointerId !== null) return;
+			if ((event.buttons & 1) !== 1) {
+				commitDragCreate(dragState);
+				return;
+			}
+			updateDragCreate(dragState, event.clientX, event.clientY);
+		};
+
+		const onMouseUp = () => {
+			const dragState = dragCreateRef.current;
+			if (!dragState?.active) return;
+			if (dragState.pointerId !== null) return;
+			commitDragCreate(dragState);
+		};
+
+		const supportsPointerEvents = typeof window.PointerEvent !== "undefined";
+		if (supportsPointerEvents) {
+			window.addEventListener("pointermove", onPointerMove);
+			window.addEventListener("pointerup", onPointerUp);
+			window.addEventListener("pointercancel", onPointerCancel);
+		} else {
+			window.addEventListener("mousemove", onMouseMove);
+			window.addEventListener("mouseup", onMouseUp);
+		}
+		return () => {
+			if (supportsPointerEvents) {
+				window.removeEventListener("pointermove", onPointerMove);
+				window.removeEventListener("pointerup", onPointerUp);
+				window.removeEventListener("pointercancel", onPointerCancel);
+			} else {
+				window.removeEventListener("mousemove", onMouseMove);
+				window.removeEventListener("mouseup", onMouseUp);
+			}
+		};
+	}, [dayBoundaryMinutes.end, dayBoundaryMinutes.start, defaultCreateCalendarId]);
+
+	useEffect(() => {
+		const updateResizeEnd = (resizeState: ResizeEventState, pointerY: number) => {
+			const dayElement = document.querySelector<HTMLElement>(
+				`.sx__time-grid-day[data-time-grid-date="${resizeState.day}"]`,
+			);
+			if (!dayElement) return;
+			const rect = dayElement.getBoundingClientRect();
+			if (rect.height <= 0) return;
+			const dayMinutes = dayBoundaryMinutes.end - dayBoundaryMinutes.start;
+			const minutesPerPixel = dayMinutes / rect.height;
+			const deltaY = pointerY - resizeState.startPointerY;
+			const candidateEnd = resizeState.originalEnd + deltaY * minutesPerPixel * 60_000;
+			const minEnd = resizeState.start + 1000 * 60 * 15;
+			const dayMaxEnd = toTimestampFromDayAndMinutes(resizeState.day, dayBoundaryMinutes.end);
+			const boundedEnd = Math.max(minEnd, Math.min(dayMaxEnd, candidateEnd));
+			const steppedEnd = Math.max(minEnd, Math.min(dayMaxEnd, snapToQuarterHour(boundedEnd)));
+			if (steppedEnd === resizeState.currentEnd) return;
+			resizeEventRef.current = { ...resizeState, currentEnd: steppedEnd };
+			setResizePreview({
+				eventId: resizeState.eventId,
+				start: resizeState.start,
+				end: steppedEnd,
+				day: resizeState.day,
+			});
+		};
+
+		const commitResize = (resizeState: ResizeEventState) => {
+			resizeEventRef.current = null;
+			setResizePreview(null);
+			if (resizeState.currentEnd === resizeState.originalEnd) return;
+			const minEnd = resizeState.start + 1000 * 60 * 15;
+			const nextEnd = snapToQuarterHour(Math.max(minEnd, resizeState.currentEnd));
+
+			void (async () => {
+				try {
+					setError(null);
+					const current = scheduleEventsByIdRef.current.get(resizeState.eventId);
+					if (!current) return;
+					if (current.recurrenceRule || current.recurringEventId) {
+						setPendingMoveUpdate({
+							eventId: toCalendarEventId(resizeState.eventId),
+							start: resizeState.start,
+							end: nextEnd,
+							title: current.title,
+						});
+						return;
+					}
+					await applyMovedEventUpdateRef.current({
+						eventId: toCalendarEventId(resizeState.eventId),
+						start: resizeState.start,
+						end: nextEnd,
+						scope: "single",
+					});
+				} catch (resizeError) {
+					setError(resizeError instanceof Error ? resizeError.message : "Unable to resize event.");
+				}
+			})();
+		};
+
+		const onPointerMove = (event: PointerEvent) => {
+			const resizeState = resizeEventRef.current;
+			if (!resizeState?.active) return;
+			if (resizeState.pointerId !== null && event.pointerId !== resizeState.pointerId) return;
+			if (event.pointerType === "mouse" && (event.buttons & 1) !== 1) return;
+			updateResizeEnd(resizeState, event.clientY);
+		};
+
+		const onPointerUp = (event: PointerEvent) => {
+			const resizeState = resizeEventRef.current;
+			if (!resizeState?.active) return;
+			if (resizeState.pointerId !== null && event.pointerId !== resizeState.pointerId) return;
+			commitResize(resizeState);
+		};
+
+		const onPointerCancel = (event: PointerEvent) => {
+			const resizeState = resizeEventRef.current;
+			if (!resizeState?.active) return;
+			if (resizeState.pointerId !== null && event.pointerId !== resizeState.pointerId) return;
+			resizeEventRef.current = null;
+			setResizePreview(null);
+		};
+
+		const onMouseMove = (event: MouseEvent) => {
+			const resizeState = resizeEventRef.current;
+			if (!resizeState?.active) return;
+			if (resizeState.pointerId !== null) return;
+			if ((event.buttons & 1) !== 1) return;
+			updateResizeEnd(resizeState, event.clientY);
+		};
+
+		const onMouseUp = () => {
+			const resizeState = resizeEventRef.current;
+			if (!resizeState?.active) return;
+			if (resizeState.pointerId !== null) return;
+			commitResize(resizeState);
+		};
+
+		window.addEventListener("pointermove", onPointerMove);
+		window.addEventListener("pointerup", onPointerUp);
+		window.addEventListener("pointercancel", onPointerCancel);
 		window.addEventListener("mousemove", onMouseMove);
 		window.addEventListener("mouseup", onMouseUp);
 		return () => {
+			window.removeEventListener("pointermove", onPointerMove);
+			window.removeEventListener("pointerup", onPointerUp);
+			window.removeEventListener("pointercancel", onPointerCancel);
 			window.removeEventListener("mousemove", onMouseMove);
 			window.removeEventListener("mouseup", onMouseUp);
 		};
-	}, []);
+	}, [dayBoundaryMinutes.end, dayBoundaryMinutes.start]);
 
 	useEffect(() => {
 		if (!editor || editor.mode !== "create") return;
@@ -1364,6 +1911,72 @@ export function CalendarClient() {
 		if (!calendar || pendingMoveUpdate) return;
 		calendar.events.set(scheduleXEvents);
 	}, [calendar, pendingMoveUpdate, scheduleXEvents]);
+
+	useEffect(() => {
+		if (activeView === "month-grid") return;
+		const container = calendarContainerRef.current;
+		if (!container) return;
+
+		let tickTimeoutId: number | null = null;
+		let minuteIntervalId: number | null = null;
+
+		const syncCurrentTimeBadge = () => {
+			const weekGrid = container.querySelector<HTMLElement>(".sx__week-grid");
+			const weekWrapper = container.querySelector<HTMLElement>(".sx__week-wrapper");
+			if (!weekGrid || !weekWrapper) return;
+			const indicator =
+				weekGrid.querySelector<HTMLElement>(".sx__current-time-indicator-full-week") ??
+				weekGrid.querySelector<HTMLElement>(".sx__current-time-indicator");
+			if (!indicator) {
+				weekWrapper.querySelector(".sx__current-time-badge")?.remove();
+				return;
+			}
+
+			let badge = weekWrapper.querySelector<HTMLElement>(".sx__current-time-badge");
+			if (!badge) {
+				badge = document.createElement("div");
+				badge.className = "sx__current-time-badge";
+				weekWrapper.appendChild(badge);
+			}
+
+			const indicatorRect = indicator.getBoundingClientRect();
+			const wrapperRect = weekWrapper.getBoundingClientRect();
+			const top = indicatorRect.top - wrapperRect.top + indicatorRect.height / 2;
+			badge.style.top = `${Math.max(0, Math.round(top))}px`;
+
+			badge.textContent = new Date()
+				.toLocaleTimeString([], {
+					hour: "numeric",
+					minute: "2-digit",
+				})
+				.replace(/\s/g, "");
+		};
+
+		const startMinuteTicker = () => {
+			syncCurrentTimeBadge();
+			const msUntilNextMinute = 60_000 - (Date.now() % 60_000);
+			tickTimeoutId = window.setTimeout(() => {
+				syncCurrentTimeBadge();
+				minuteIntervalId = window.setInterval(syncCurrentTimeBadge, 60_000);
+			}, msUntilNextMinute);
+		};
+
+		startMinuteTicker();
+		const bootstrapIntervalId = window.setInterval(syncCurrentTimeBadge, 400);
+		window.setTimeout(() => {
+			window.clearInterval(bootstrapIntervalId);
+		}, 2_000);
+
+		return () => {
+			if (tickTimeoutId !== null) window.clearTimeout(tickTimeoutId);
+			if (minuteIntervalId !== null) window.clearInterval(minuteIntervalId);
+			window.clearInterval(bootstrapIntervalId);
+			const badges = container.querySelectorAll(".sx__current-time-badge");
+			for (const badge of badges) {
+				badge.remove();
+			}
+		};
+	}, [activeView]);
 
 	useEffect(() => {
 		if (!calendar) return;
@@ -1398,74 +2011,34 @@ export function CalendarClient() {
 
 	useEffect(() => {
 		if (!calendar) return;
+		if (!selectedPlainDateForScheduleX) return;
 		return runWhenCalendarControlsReady(calendarControlsPlugin, () => {
 			try {
-				calendarControlsPlugin.setDate(selectedDate);
+				calendarControlsPlugin.setDate(selectedPlainDateForScheduleX as never);
 			} catch {
 				// Ignore transient plugin lifecycle races in dev/hot-reload.
 			}
 		});
-	}, [calendar, calendarControlsPlugin, selectedDate]);
+	}, [calendar, calendarControlsPlugin, selectedPlainDateForScheduleX]);
 
 	useEffect(() => {
 		if (!calendar || activeView === "month-grid") return;
-		const scrollForDate = selectedDate;
+		const scrollToTime = isTodayDate(selectedDateForScheduleX)
+			? getCurrentFocusScrollTime()
+			: DEFAULT_SCROLL_TIME;
 		return runWhenScrollControllerReady(scrollControllerPlugin, () => {
 			try {
-				if (!scrollForDate) return;
-				scrollControllerPlugin.scrollTo(getInitialScrollTime());
+				scrollControllerPlugin.scrollTo(scrollToTime);
 			} catch {
 				// Ignore transient plugin lifecycle races in dev/hot-reload.
 			}
 		});
-	}, [activeView, calendar, scrollControllerPlugin, selectedDate]);
+	}, [activeView, calendar, scrollControllerPlugin, selectedDateForScheduleX]);
 
 	useEffect(() => {
-		if (activeView === "month-grid") return;
-		if (hasScrolledToCurrentIndicatorRef.current) return;
-
-		const container = calendarContainerRef.current;
-		if (!container) return;
-
-		const scrollable =
-			container.querySelector<HTMLElement>(".sx__week-wrapper") ??
-			container.querySelector<HTMLElement>(".sx__view-container");
-		if (!scrollable) return;
-
-		let rafId: number | null = null;
-		let attempts = 0;
-		const maxAttempts = 120;
-
-		const scrollToIndicator = () => {
-			attempts += 1;
-			const indicator = container.querySelector<HTMLElement>(".sx__current-time-indicator");
-			if (!indicator) {
-				if (attempts < maxAttempts) {
-					rafId = requestAnimationFrame(scrollToIndicator);
-				}
-				return;
-			}
-
-			const scrollableRect = scrollable.getBoundingClientRect();
-			const indicatorRect = indicator.getBoundingClientRect();
-			const offsetTopInScrollable = scrollable.scrollTop + (indicatorRect.top - scrollableRect.top);
-			const targetTop = Math.max(
-				0,
-				Math.min(
-					scrollable.scrollHeight - scrollable.clientHeight,
-					offsetTopInScrollable - scrollable.clientHeight * 0.35,
-				),
-			);
-
-			scrollable.scrollTo({ top: targetTop, behavior: "auto" });
-			hasScrolledToCurrentIndicatorRef.current = true;
-		};
-
-		rafId = requestAnimationFrame(scrollToIndicator);
-		return () => {
-			if (rafId) cancelAnimationFrame(rafId);
-		};
-	}, [activeView]);
+		if (selectedDate === selectedDateForScheduleX) return;
+		setSelectedDate(selectedDateForScheduleX);
+	}, [selectedDateForScheduleX, selectedDate]);
 
 	const syncNow = useCallback(
 		async (reason: "manual" | "auto" = "manual") => {
@@ -1512,42 +2085,109 @@ export function CalendarClient() {
 		eventId: string,
 		patch: CalendarEventUpdateInput,
 		scope: RecurrenceEditScope,
+		previousCalendarId?: string,
 	) => {
 		const id = toCalendarEventId(eventId);
 		await updateEventMutation({ id, patch, scope });
-		await pushEventToGoogle({ eventId: id, operation: "update", scope, patch });
+		await pushEventToGoogle({
+			eventId: id,
+			operation: "update",
+			scope,
+			patch,
+			previousCalendarId,
+		});
 	};
 
-	const deleteEvent = async (eventId: string, scope: RecurrenceEditScope) => {
-		const id = toCalendarEventId(eventId);
-		try {
-			await pushEventToGoogle({ eventId: id, operation: "delete", scope });
-		} catch (deleteSyncError) {
-			console.warn("Failed to delete event in Google calendar; deleting locally.", deleteSyncError);
+	const cancelCalendarPointerInteractions = useCallback(() => {
+		dragCreateRef.current = null;
+		resizeEventRef.current = null;
+		setDragPreview(null);
+		setResizePreview(null);
+		document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+		document.dispatchEvent(new Event("touchend", { bubbles: true }));
+		if (typeof PointerEvent !== "undefined") {
+			document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
 		}
-		await deleteEventMutation({ id, scope });
-	};
+	}, []);
+
+	const deleteEvent = useCallback(
+		async (eventId: string, scope: RecurrenceEditScope) => {
+			const id = toCalendarEventId(eventId);
+			cancelCalendarPointerInteractions();
+			await deleteEventMutation({ id, scope });
+			void pushEventToGoogle({ eventId: id, operation: "delete", scope }).catch(
+				(deleteSyncError) => {
+					console.warn(
+						"Failed to delete event in Google calendar after local delete.",
+						deleteSyncError,
+					);
+				},
+			);
+		},
+		[cancelCalendarPointerInteractions, deleteEventMutation, pushEventToGoogle],
+	);
+
+	useEffect(() => {
+		const onDeleteEvent = (rawEvent: Event) => {
+			const customEvent = rawEvent as CustomEvent<{ eventId?: string }>;
+			const eventId = customEvent.detail?.eventId;
+			if (!eventId) return;
+			const matched = scheduleEventsByIdRef.current.get(eventId);
+			if (!matched) return;
+
+			void (async () => {
+				try {
+					setError(null);
+					await deleteEvent(eventId, "single");
+					setEditor((current) => (current?.eventId === eventId ? null : current));
+				} catch (deleteError) {
+					setError(deleteError instanceof Error ? deleteError.message : "Unable to delete event.");
+				}
+			})();
+		};
+
+		window.addEventListener("calendar:event-delete", onDeleteEvent);
+		return () => {
+			window.removeEventListener("calendar:event-delete", onDeleteEvent);
+		};
+	}, [deleteEvent]);
 
 	const onSubmitEditor = async () => {
 		if (!editor) return;
+		const parsedStart = parseDateTimeInput(editor.start);
+		const parsedEnd = parseDateTimeInput(editor.end);
+		const nextStart = editor.mode === "create" ? snapToQuarterHour(parsedStart) : parsedStart;
+		const nextEnd = editor.mode === "create" ? snapToQuarterHour(parsedEnd) : parsedEnd;
+		const normalizedLocation = editor.location.trim();
 		const payload = {
 			title: editor.title.trim(),
 			description: editor.description.trim() || undefined,
-			start: parseDateTimeInput(editor.start),
-			end: parseDateTimeInput(editor.end),
+			start: nextStart,
+			end: nextEnd,
 			allDay: editor.allDay,
+			calendarId: editor.calendarId,
 			recurrenceRule: editor.recurrenceRule.trim() || undefined,
-			busyStatus: "busy" as const,
+			busyStatus: editor.busyStatus,
+			visibility: editor.visibility,
+			location: normalizedLocation,
 		};
 		if (!payload.title) return;
 
 		try {
 			setError(null);
 			if (editor.mode === "create") {
-				await createEvent(payload);
+				await createEvent({
+					...payload,
+					location: normalizedLocation || undefined,
+				});
 				setDragPreview(null);
 			} else if (editor.eventId) {
-				await updateEvent(editor.eventId, payload, editor.scope);
+				await updateEvent(
+					editor.eventId,
+					payload,
+					editor.scope,
+					selectedEvent?.calendarId ?? "primary",
+				);
 			}
 			setEditor(null);
 		} catch (submitError) {
@@ -1555,14 +2195,63 @@ export function CalendarClient() {
 		}
 	};
 
-	const closeEditor = () => {
+	const closeEditor = useCallback(() => {
 		if (editor?.mode === "create") {
 			setDragPreview(null);
 		}
 		setIsCustomRepeatDialogOpen(false);
 		setCustomRecurrenceDraft(null);
 		setEditor(null);
-	};
+	}, [editor?.mode]);
+
+	const closeEventSheet = useCallback(() => {
+		setIsMobileEventSheetOpen(false);
+		// Allow the next editor selection/update to re-open the sheet.
+		hadEditorRef.current = false;
+	}, []);
+
+	useEffect(() => {
+		const hasEditor = Boolean(editor);
+		const enteredSheetMode = isEventSheetMode && !wasEventSheetModeRef.current;
+		if (isEventSheetMode && hasEditor && (enteredSheetMode || !hadEditorRef.current)) {
+			setIsMobileEventSheetOpen(true);
+		}
+		if (!hasEditor || !isEventSheetMode) {
+			setIsMobileEventSheetOpen(false);
+		}
+		hadEditorRef.current = hasEditor;
+		wasEventSheetModeRef.current = isEventSheetMode;
+	}, [editor, isEventSheetMode]);
+
+	useEffect(() => {
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== "Escape") return;
+			if (resizeEventRef.current?.active) {
+				event.preventDefault();
+				resizeEventRef.current = null;
+				setResizePreview(null);
+				return;
+			}
+			if (pendingMoveUpdate) {
+				event.preventDefault();
+				setPendingMoveUpdate(null);
+				return;
+			}
+			if (isCustomRepeatDialogOpen) {
+				event.preventDefault();
+				setIsCustomRepeatDialogOpen(false);
+				setCustomRecurrenceDraft(null);
+				return;
+			}
+			if (!editor) return;
+			event.preventDefault();
+			closeEditor();
+		};
+		window.addEventListener("keydown", onKeyDown);
+		return () => {
+			window.removeEventListener("keydown", onKeyDown);
+		};
+	}, [closeEditor, editor, isCustomRepeatDialogOpen, pendingMoveUpdate]);
 
 	const moveRecurringEvent = async (scope: RecurrenceEditScope) => {
 		if (!pendingMoveUpdate) return;
@@ -1588,7 +2277,7 @@ export function CalendarClient() {
 	};
 
 	const setDateValue = (value: string) => {
-		setSelectedDate(value);
+		setSelectedDate(normalizeSelectedDate(value));
 	};
 
 	const shiftDate = (direction: -1 | 1) => {
@@ -1599,17 +2288,24 @@ export function CalendarClient() {
 				: currentView === "month-grid"
 					? direction * 30
 					: direction * 7;
-		const baseDate = new Date(`${selectedDate}T12:00:00`);
+		const baseDate = new Date(`${selectedDateForScheduleX}T12:00:00`);
+		if (Number.isNaN(baseDate.getTime())) {
+			setSelectedDate(formatDateInput(new Date()));
+			return;
+		}
 		baseDate.setDate(baseDate.getDate() + deltaDays);
 		const next = formatDateInput(baseDate);
 		setSelectedDate(next);
 	};
 
 	const monthLabel = useMemo(() => {
-		const parsed = new Date(`${selectedDate}T00:00:00`);
+		const parsed = new Date(`${selectedDateForScheduleX}T00:00:00`);
 		return monthYearFormatter.format(parsed);
-	}, [selectedDate]);
-	const selectedDateValue = useMemo(() => new Date(`${selectedDate}T00:00:00`), [selectedDate]);
+	}, [selectedDateForScheduleX]);
+	const selectedDateValue = useMemo(
+		() => new Date(`${selectedDateForScheduleX}T00:00:00`),
+		[selectedDateForScheduleX],
+	);
 	const latestSyncedAtFromEvents = useMemo(
 		() =>
 			normalizedEvents.reduce(
@@ -1655,6 +2351,39 @@ export function CalendarClient() {
 		() => (editor?.end ? splitDateTimeLocal(editor.end).timePart : "09:30"),
 		[editor?.end],
 	);
+	const editorStartValue = editor?.start;
+	const editorEndValue = editor?.end;
+	const editorDurationMinutes = useMemo(() => {
+		if (!editorStartValue || !editorEndValue) return 30;
+		const start = parseDateTimeInput(editorStartValue);
+		const end = parseDateTimeInput(editorEndValue);
+		if (!Number.isFinite(start) || !Number.isFinite(end)) return 30;
+		const rawMinutes = Math.max(15, Math.round((end - start) / (1000 * 60)));
+		return Math.max(15, Math.round(rawMinutes / 15) * 15);
+	}, [editorEndValue, editorStartValue]);
+	const editorDurationSelectValue = useMemo(
+		() =>
+			durationPresetMinutes.includes(
+				editorDurationMinutes as (typeof durationPresetMinutes)[number],
+			)
+				? String(editorDurationMinutes)
+				: "custom",
+		[editorDurationMinutes],
+	);
+
+	const applyEditorDurationMinutes = useCallback((minutes: number) => {
+		const normalizedMinutes = Math.max(15, Math.round(minutes / 15) * 15);
+		setEditor((current) => {
+			if (!current) return current;
+			const start = parseDateTimeInput(current.start);
+			if (!Number.isFinite(start)) return current;
+			const nextEnd = snapToQuarterHour(start + normalizedMinutes * 60 * 1000);
+			return {
+				...current,
+				end: toInputDateTime(nextEnd),
+			};
+		});
+	}, []);
 
 	const sourceButtons: CalendarSource[] = ["google", "task", "habit", "manual"];
 	const isLoading = isAuthLoading || (isAuthenticated && events === undefined);
@@ -1665,6 +2394,14 @@ export function CalendarClient() {
 		if (!selectedEvent || selectedEvent.recurrenceRule) return undefined;
 		return inferRecurrenceRule(selectedEvent, normalizedEvents);
 	}, [normalizedEvents, selectedEvent]);
+	const selectedEventSeriesOccurrenceCount = useMemo(() => {
+		const recurringEventId = selectedEvent?.recurringEventId;
+		if (!recurringEventId) return 0;
+		return normalizedEvents.reduce(
+			(count, event) => count + (event.recurringEventId === recurringEventId ? 1 : 0),
+			0,
+		);
+	}, [normalizedEvents, selectedEvent?.recurringEventId]);
 	const effectiveRecurrenceRule = useMemo(() => {
 		const directRule = editor?.recurrenceRule?.trim();
 		return directRule || inferredSeriesRecurrenceRule || "";
@@ -1673,25 +2410,38 @@ export function CalendarClient() {
 		() => parseRRule(effectiveRecurrenceRule),
 		[effectiveRecurrenceRule],
 	);
+	const selectedCalendarId =
+		editor?.calendarId ?? selectedEvent?.calendarId ?? defaultCreateCalendarId;
 	const selectedEventCalendarLabel = useMemo(() => {
-		if (!selectedEvent) return "Calendar";
-		if (selectedEvent.source !== "google") {
+		if (selectedEvent && selectedEvent.source !== "google") {
 			return selectedEvent.source.charAt(0).toUpperCase() + selectedEvent.source.slice(1);
 		}
 		return (
-			googleCalendarNamesById.get(selectedEvent.calendarId ?? "primary") ??
-			prettifyCalendarName(selectedEvent.calendarId)
+			googleCalendarNamesById.get(selectedCalendarId) ?? prettifyCalendarName(selectedCalendarId)
 		);
-	}, [googleCalendarNamesById, selectedEvent]);
+	}, [googleCalendarNamesById, selectedCalendarId, selectedEvent]);
+	const selectedCalendarColor = useMemo(
+		() => googleCalendarColorById.get(selectedCalendarId) ?? selectedEvent?.color,
+		[googleCalendarColorById, selectedCalendarId, selectedEvent?.color],
+	);
 	const recurrenceDisplayLabel = useMemo(() => {
 		if (!editor) return "Does not repeat";
 		const start = parseDateTimeInput(editor.start);
 		return formatRecurrenceRule(
 			effectiveRecurrenceRule || undefined,
 			start,
-			Boolean(selectedEvent?.recurringEventId && !effectiveRecurrenceRule),
+			Boolean(
+				selectedEvent?.recurringEventId &&
+					!effectiveRecurrenceRule &&
+					selectedEventSeriesOccurrenceCount > 1,
+			),
 		);
-	}, [editor, effectiveRecurrenceRule, selectedEvent?.recurringEventId]);
+	}, [
+		editor,
+		effectiveRecurrenceRule,
+		selectedEvent?.recurringEventId,
+		selectedEventSeriesOccurrenceCount,
+	]);
 	const recurrenceStartTimestamp = editor ? parseDateTimeInput(editor.start) : Date.now();
 	const recurrenceWeekdayToken = toWeekdayToken(recurrenceStartTimestamp);
 	const recurrencePresetOptions = useMemo(
@@ -1804,7 +2554,7 @@ export function CalendarClient() {
 						</div>
 					</div>
 
-					<div className="flex items-center gap-2 flex-wrap">
+					<div className="flex items-center gap-2 flex-wrap" suppressHydrationWarning>
 						<ToggleGroup
 							type="single"
 							value={activeView}
@@ -1836,19 +2586,25 @@ export function CalendarClient() {
 							variant="outline"
 							size="sm"
 							className="h-7 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] gap-1.5 hover:border-border hover:bg-accent hover:text-foreground"
-							onClick={() =>
+							onClick={() => {
+								const start = snapToQuarterHour(Date.now());
+								const end = snapToQuarterHour(start + 1000 * 60 * 30);
 								setEditor({
 									mode: "create",
 									panelMode: "edit",
 									title: "",
 									description: "",
-									start: toInputDateTime(Date.now()),
-									end: toInputDateTime(Date.now() + 1000 * 60 * 30),
+									start: toInputDateTime(start),
+									end: toInputDateTime(end),
 									allDay: false,
+									calendarId: defaultCreateCalendarId,
+									busyStatus: "busy",
+									visibility: "default",
+									location: "",
 									recurrenceRule: "",
 									scope: "single",
-								})
-							}
+								});
+							}}
 						>
 							<Sparkles className="size-3" />
 							New event
@@ -1905,6 +2661,14 @@ export function CalendarClient() {
 							onChange={(event) => setSearchQuery(event.target.value)}
 							className="h-8 w-40 border-border bg-secondary text-foreground/70 text-[0.72rem] px-2 placeholder:text-muted-foreground"
 						/>
+						<Button
+							variant="outline"
+							size="sm"
+							className="xl:hidden h-8 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] hover:border-border hover:bg-accent hover:text-foreground"
+							onClick={() => setIsMobileEventSheetOpen(true)}
+						>
+							Event
+						</Button>
 					</div>
 				</div>
 
@@ -1976,10 +2740,30 @@ export function CalendarClient() {
 				>
 					<ScheduleXCalendar calendarApp={calendar} customComponents={customComponents} />
 				</div>
-				<aside className="hidden xl:flex xl:w-78 2xl:w-84 shrink-0 overflow-y-auto border-l border-border bg-card p-3 flex-col gap-3 min-h-0">
+				<aside
+					className={`bg-card p-3 flex-col gap-3 min-h-0 border-border ${
+						isEventSheetMode
+							? `fixed inset-y-0 right-0 z-50 w-[min(100vw,28rem)] border-l shadow-2xl transition-transform duration-300 ease-out flex ${
+									isMobileEventSheetOpen ? "translate-x-0" : "translate-x-full"
+								}`
+							: "hidden xl:flex xl:w-78 2xl:w-84 shrink-0 overflow-y-auto border-l"
+					}`}
+				>
 					<div className="flex items-center justify-between">
 						<div className="text-[0.8rem] font-semibold text-foreground">Event</div>
-						<div className="text-[0.68rem] text-muted-foreground">{monthLabel}</div>
+						<div className="flex items-center gap-2">
+							<div className="text-[0.68rem] text-muted-foreground">{monthLabel}</div>
+							{isEventSheetMode ? (
+								<Button
+									variant="outline"
+									size="sm"
+									className="h-7 px-2 border-border bg-secondary text-[0.7rem] text-muted-foreground hover:bg-accent hover:text-foreground"
+									onClick={closeEventSheet}
+								>
+									Close
+								</Button>
+							) : null}
+						</div>
 					</div>
 
 					{editor ? (
@@ -2507,9 +3291,24 @@ export function CalendarClient() {
 											AI Meeting Notes and Docs
 										</div>
 									</div>
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3 opacity-60">
+									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
 										<MapPin className="size-4 text-muted-foreground" />
-										<div className="text-[0.95rem] text-muted-foreground">Location</div>
+										{isDetailsMode ? (
+											<div className="text-[0.95rem] text-foreground/85">
+												{editor.location.trim() || "No location"}
+											</div>
+										) : (
+											<Input
+												value={editor.location}
+												onChange={(event) =>
+													setEditor((current) =>
+														current ? { ...current, location: event.target.value } : current,
+													)
+												}
+												placeholder="Add location"
+												className="h-8 border-border bg-background text-sm"
+											/>
+										)}
 									</div>
 								</div>
 
@@ -2539,18 +3338,177 @@ export function CalendarClient() {
 										<span
 											className="size-3 rounded-[5px]"
 											style={{
-												backgroundColor: resolveGoogleColor(selectedEvent?.color).main,
+												backgroundColor: resolveGoogleColor(selectedCalendarColor).main,
 											}}
 										/>
-										<span>{selectedEventCalendarLabel}</span>
+										{isDetailsMode ? (
+											<span>{selectedEventCalendarLabel}</span>
+										) : (
+											<Select
+												value={editor.calendarId}
+												onValueChange={(value) =>
+													setEditor((current) =>
+														current ? { ...current, calendarId: value } : current,
+													)
+												}
+											>
+												<SelectTrigger
+													size="sm"
+													className="h-8 min-w-[200px] border-border bg-background text-[0.84rem] text-foreground/90"
+												>
+													<SelectValue />
+												</SelectTrigger>
+												<SelectContent className="border-border bg-popover text-popover-foreground">
+													{editableGoogleCalendars.map((calendar) => (
+														<SelectItem key={calendar.id} value={calendar.id}>
+															{googleCalendarNamesById.get(calendar.id) ??
+																prettifyCalendarName(calendar.id)}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+										)}
 									</div>
-									<div className="grid grid-cols-2 gap-2 text-[0.9rem]">
-										<div className="text-foreground/80">Busy</div>
-										<div className="text-foreground/80">Default visibility</div>
+									<div className="grid grid-cols-2 gap-2 text-[0.84rem]">
+										{isDetailsMode ? (
+											<>
+												<div className="text-foreground/80">
+													{busyStatusLabel(editor.busyStatus)}
+												</div>
+												<div className="text-foreground/80">
+													{visibilityLabel(editor.visibility)}
+												</div>
+											</>
+										) : (
+											<>
+												<Select
+													value={editor.busyStatus}
+													onValueChange={(value) =>
+														setEditor((current) =>
+															current
+																? {
+																		...current,
+																		busyStatus: value as "free" | "busy" | "tentative",
+																	}
+																: current,
+														)
+													}
+												>
+													<SelectTrigger
+														size="sm"
+														className="h-8 border-border bg-background text-[0.82rem] text-foreground/85"
+													>
+														<SelectValue />
+													</SelectTrigger>
+													<SelectContent className="border-border bg-popover text-popover-foreground">
+														{busyStatusOptions.map((option) => (
+															<SelectItem key={option.value} value={option.value}>
+																{option.label}
+															</SelectItem>
+														))}
+													</SelectContent>
+												</Select>
+												<Select
+													value={editor.visibility}
+													onValueChange={(value) =>
+														setEditor((current) =>
+															current
+																? {
+																		...current,
+																		visibility: value as
+																			| "default"
+																			| "public"
+																			| "private"
+																			| "confidential",
+																	}
+																: current,
+														)
+													}
+												>
+													<SelectTrigger
+														size="sm"
+														className="h-8 border-border bg-background text-[0.82rem] text-foreground/85"
+													>
+														<SelectValue />
+													</SelectTrigger>
+													<SelectContent className="border-border bg-popover text-popover-foreground">
+														{visibilityOptions.map((option) => (
+															<SelectItem key={option.value} value={option.value}>
+																{option.label}
+															</SelectItem>
+														))}
+													</SelectContent>
+												</Select>
+											</>
+										)}
 									</div>
 									<div className="grid grid-cols-[20px_1fr] items-center gap-3 opacity-60">
 										<Bell className="size-4 text-muted-foreground" />
 										<div className="text-[0.95rem] text-muted-foreground">Reminders</div>
+									</div>
+								</div>
+
+								<div className="border-t border-border px-3 py-3 space-y-2">
+									<div className="grid grid-cols-[20px_1fr] items-start gap-3">
+										<Clock3 className="size-4 text-muted-foreground" />
+										<div className="space-y-1.5">
+											<div className="text-[0.9rem] text-foreground/85">Duration</div>
+											{isDetailsMode ? (
+												<div className="text-[0.92rem] text-foreground/80">
+													{formatDuration(
+														parseDateTimeInput(editor.start),
+														parseDateTimeInput(editor.end),
+													)}
+												</div>
+											) : (
+												<>
+													<div className="flex items-center gap-2">
+														<Select
+															value={editorDurationSelectValue}
+															onValueChange={(value) => {
+																if (value === "custom") return;
+																const parsed = Number.parseInt(value, 10);
+																if (!Number.isFinite(parsed)) return;
+																applyEditorDurationMinutes(parsed);
+															}}
+														>
+															<SelectTrigger
+																size="sm"
+																className="h-8 w-[130px] border-border bg-background text-[0.82rem] text-foreground/85"
+															>
+																<SelectValue />
+															</SelectTrigger>
+															<SelectContent className="border-border bg-popover text-popover-foreground">
+																{durationPresetMinutes.map((minutes) => (
+																	<SelectItem key={minutes} value={String(minutes)}>
+																		{minutes} min
+																	</SelectItem>
+																))}
+																<SelectItem value="custom">Custom</SelectItem>
+															</SelectContent>
+														</Select>
+														<div className="flex items-center gap-1.5">
+															<Input
+																type="number"
+																min={15}
+																step={15}
+																value={editorDurationMinutes}
+																onChange={(event) => {
+																	const parsed = Number.parseInt(event.target.value, 10);
+																	if (!Number.isFinite(parsed)) return;
+																	applyEditorDurationMinutes(parsed);
+																}}
+																className="h-8 w-[90px] border-border bg-background text-sm"
+															/>
+															<span className="text-[0.82rem] text-muted-foreground">min</span>
+														</div>
+													</div>
+													<div className="text-[0.72rem] text-muted-foreground">
+														Snaps to 15-minute increments.
+													</div>
+												</>
+											)}
+										</div>
 									</div>
 								</div>
 							</div>
@@ -2636,6 +3594,18 @@ export function CalendarClient() {
 					)}
 				</aside>
 			</div>
+			{isEventSheetMode ? (
+				<button
+					type="button"
+					aria-label="Close event sheet"
+					className={`fixed inset-0 z-40 bg-black/45 transition-opacity duration-300 ${
+						isMobileEventSheetOpen
+							? "opacity-100 pointer-events-auto"
+							: "opacity-0 pointer-events-none"
+					}`}
+					onClick={closeEventSheet}
+				/>
+			) : null}
 			<Dialog
 				open={Boolean(pendingMoveUpdate)}
 				onOpenChange={(open) => !open && setPendingMoveUpdate(null)}

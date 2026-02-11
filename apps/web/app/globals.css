@@ -5,6 +5,17 @@
 
 @custom-variant dark (&:is(.dark *));
 
+.sx-react-calendar-wrapper {
+	height: 100%;
+	min-height: 0;
+	display: flex;
+}
+
+.sx-react-calendar-wrapper > .sx__calendar-wrapper {
+	flex: 1;
+	min-height: 0;
+}
+
 :root {
 	/* Swiss Modern: Parchment base, Navy text, Gold accent */
 	--background: #f7f3ed;
@@ -618,6 +629,8 @@
 	--sx-rounding-extra-large: 8px;
 	--sx-calendar-week-grid-padding-left: 64px;
 	--sx-calendar-header-popup-z-index: 30;
+	--sx-now-indicator-color: #ef4444;
+	--sx-now-indicator-color-soft: rgba(239, 68, 68, 0.45);
 	--sx-font-small: 0.74rem;
 	--sx-font-extra-small: 0.65rem;
 	background: var(--background);
@@ -724,22 +737,53 @@
 }
 
 .sx-autocron-light .sx__current-time-indicator,
-.sx-autocron-light .sx__current-time-indicator-full-week,
-.sx-autocron-light .sx__current-time-indicator::before {
-	background-color: var(--accent);
-}
-
-.sx-autocron-light .sx__current-time-indicator,
 .sx-autocron-light .sx__current-time-indicator-full-week {
-	height: 1.5px;
-	z-index: 8;
+	z-index: 12;
 }
 
 .sx-autocron-light .sx__current-time-indicator::before {
-	width: 7px;
-	height: 7px;
-	border-radius: 50%;
-	background-color: var(--accent);
+	content: "";
+	position: absolute;
+	left: -1px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 3px;
+	height: 16px;
+	border-radius: 999px;
+	background-color: var(--sx-now-indicator-color);
+}
+
+.sx-autocron-light .sx__current-time-indicator-full-week {
+	display: block !important;
+	height: 1px;
+	background-color: color-mix(in oklab, var(--sx-now-indicator-color) 45%, transparent);
+	z-index: 10;
+}
+
+.sx-autocron-light .sx__current-time-indicator {
+	position: relative;
+	height: 2px;
+	margin-top: -1px;
+	border-radius: 999px;
+	background-color: var(--sx-now-indicator-color);
+	z-index: 13;
+}
+
+.sx-autocron-light .sx__current-time-badge {
+	position: absolute;
+	left: 8px;
+	transform: translateY(-50%);
+	padding: 5px 8px;
+	border-radius: 8px;
+	background: var(--sx-now-indicator-color);
+	color: #ffffff;
+	font-size: 0.66rem;
+	font-weight: 700;
+	line-height: 1;
+	letter-spacing: 0.02em;
+	z-index: 14;
+	pointer-events: none;
+	box-shadow: 0 4px 10px rgba(20, 33, 61, 0.18);
 }
 
 .sx-autocron-light .sx__event-modal-default {
@@ -754,21 +798,8 @@
 	animation: none !important;
 }
 
-.sx-autocron-light .sx__view-container,
-.sx-autocron-light .sx__view {
-	transition: none !important;
-	height: 100%;
-	min-height: 0;
-}
-
-.sx-autocron-light .sx__week-wrapper,
 .sx-autocron-light .sx__view-container {
-	overflow-y: auto !important;
-	scroll-behavior: smooth;
-	overscroll-behavior-y: contain;
-	-webkit-overflow-scrolling: touch;
-	scrollbar-width: thin;
-	scrollbar-color: var(--border) var(--background);
+	transition: none !important;
 }
 
 @media (max-width: 1080px) {
@@ -778,10 +809,7 @@
 }
 .sx-autocron-light,
 .sx-autocron-dark {
-	overflow: auto;
 	position: relative;
-	scroll-behavior: smooth;
-	-webkit-overflow-scrolling: touch;
 }
 
 /* ── DARK CALENDAR THEME ── */
@@ -809,6 +837,8 @@
 	--sx-rounding-extra-large: 8px;
 	--sx-calendar-week-grid-padding-left: 64px;
 	--sx-calendar-header-popup-z-index: 30;
+	--sx-now-indicator-color: #f15b5b;
+	--sx-now-indicator-color-soft: rgba(241, 91, 91, 0.45);
 	--sx-font-small: 0.74rem;
 	--sx-font-extra-small: 0.65rem;
 	background: var(--background);
@@ -917,22 +947,53 @@
 }
 
 .sx-autocron-dark .sx__current-time-indicator,
-.sx-autocron-dark .sx__current-time-indicator-full-week,
-.sx-autocron-dark .sx__current-time-indicator::before {
-	background-color: var(--accent);
-}
-
-.sx-autocron-dark .sx__current-time-indicator,
 .sx-autocron-dark .sx__current-time-indicator-full-week {
-	height: 1.5px;
-	z-index: 8;
+	z-index: 12;
 }
 
 .sx-autocron-dark .sx__current-time-indicator::before {
-	width: 7px;
-	height: 7px;
-	border-radius: 50%;
-	background-color: var(--accent);
+	content: "";
+	position: absolute;
+	left: -1px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 3px;
+	height: 16px;
+	border-radius: 999px;
+	background-color: var(--sx-now-indicator-color);
+}
+
+.sx-autocron-dark .sx__current-time-indicator-full-week {
+	display: block !important;
+	height: 1px;
+	background-color: color-mix(in oklab, var(--sx-now-indicator-color) 45%, transparent);
+	z-index: 10;
+}
+
+.sx-autocron-dark .sx__current-time-indicator {
+	position: relative;
+	height: 4px;
+	margin-top: -1.5px;
+	border-radius: 999px;
+	background-color: var(--sx-now-indicator-color);
+	z-index: 13;
+}
+
+.sx-autocron-dark .sx__current-time-badge {
+	position: absolute;
+	left: 8px;
+	transform: translateY(-50%);
+	padding: 5px 8px;
+	border-radius: 8px;
+	background: var(--sx-now-indicator-color);
+	color: #ffffff;
+	font-size: 0.66rem;
+	font-weight: 700;
+	line-height: 1;
+	letter-spacing: 0.02em;
+	z-index: 14;
+	pointer-events: none;
+	box-shadow: 0 4px 10px rgba(0, 0, 0, 0.28);
 }
 
 .sx-autocron-dark .sx__event-modal-default {
@@ -947,25 +1008,46 @@
 	animation: none !important;
 }
 
-.sx-autocron-dark .sx__view-container,
-.sx-autocron-dark .sx__view {
-	transition: none !important;
-	height: 100%;
-	min-height: 0;
-}
-
-.sx-autocron-dark .sx__week-wrapper,
 .sx-autocron-dark .sx__view-container {
-	overflow-y: auto !important;
-	scroll-behavior: smooth;
-	overscroll-behavior-y: contain;
-	-webkit-overflow-scrolling: touch;
-	scrollbar-width: thin;
-	scrollbar-color: var(--border) var(--background);
+	transition: none !important;
 }
 
 @media (max-width: 1080px) {
 	.sx-autocron-dark {
 		--sx-calendar-week-grid-padding-left: 52px;
 	}
+}
+
+/* ── Compact Week Header Density ── */
+.sx-autocron-light .sx__week-header,
+.sx-autocron-dark .sx__week-header {
+	min-height: 5.2rem;
+}
+
+.sx-autocron-light .sx__week-grid__date,
+.sx-autocron-dark .sx__week-grid__date {
+	padding-block: 0.45rem 0.55rem;
+	gap: 0.28rem;
+}
+
+.sx-autocron-light .sx__week-grid__day-name,
+.sx-autocron-dark .sx__week-grid__day-name {
+	font-size: 0.6rem;
+	letter-spacing: 0.1em;
+	line-height: 1;
+}
+
+.sx-autocron-light .sx__week-grid__date-number,
+.sx-autocron-dark .sx__week-grid__date-number {
+	font-size: 1.15rem;
+	line-height: 1;
+}
+
+.sx-autocron-light .sx__week-grid__date--is-today .sx__week-grid__date-number,
+.sx-autocron-dark .sx__week-grid__date--is-today .sx__week-grid__date-number {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.2rem;
+	height: 2.2rem;
 }

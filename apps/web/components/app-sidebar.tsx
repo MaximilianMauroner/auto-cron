@@ -40,6 +40,7 @@ import {
 	UserCircle,
 } from "lucide-react";
 import { useTheme } from "next-themes";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -113,14 +114,15 @@ export function AppSidebar() {
 				return a.name.localeCompare(b.name);
 			});
 	}, [googleCalendars]);
-	const localCalendars = useMemo(
-		() => calendarAccounts.filter((calendar) => !calendar.isRemote),
-		[calendarAccounts],
-	);
-	const remoteCalendars = useMemo(
-		() => calendarAccounts.filter((calendar) => calendar.isRemote),
-		[calendarAccounts],
-	);
+	const orderedCalendars = useMemo(() => {
+		return [...calendarAccounts].sort((a, b) => {
+			if (a.isDefault && !b.isDefault) return -1;
+			if (!a.isDefault && b.isDefault) return 1;
+			if (!a.isRemote && b.isRemote) return -1;
+			if (a.isRemote && !b.isRemote) return 1;
+			return a.name.localeCompare(b.name);
+		});
+	}, [calendarAccounts]);
 
 	const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "User";
 	const initials =
@@ -140,7 +142,17 @@ export function AppSidebar() {
 	return (
 		<Sidebar>
 			<SidebarHeader className="px-4 py-4">
-				<h2 className="text-[0.85rem] font-semibold tracking-tight">Auto Cron</h2>
+				<div className="flex items-center gap-2">
+					<Image
+						src="/logo.png"
+						alt="Auto Cron logo"
+						width={20}
+						height={20}
+						className="size-5 rounded-sm"
+						priority
+					/>
+					<h2 className="text-[0.85rem] font-semibold tracking-tight">Auto Cron</h2>
+				</div>
 			</SidebarHeader>
 			<SidebarContent className="flex flex-col overflow-hidden">
 				<SidebarGroup className="gap-0.5 p-1">
@@ -167,18 +179,25 @@ export function AppSidebar() {
 							<div className="px-1 pb-1 text-[0.62rem] uppercase tracking-[0.1em] text-muted-foreground">
 								Google Calendars
 							</div>
+							{email ? (
+								<div className="px-1 pb-1 text-[0.72rem] text-muted-foreground/85">{email}</div>
+							) : null}
 							<div className="grid gap-0.5">
-								{localCalendars.map((calendar) => (
+								{orderedCalendars.map((calendar) => (
 									<div
 										key={calendar.id}
 										title={calendar.name}
 										className="flex min-w-0 items-center rounded-md px-1.5 py-1 text-[0.74rem] text-sidebar-foreground/80 hover:bg-sidebar-accent"
 									>
 										<div className="flex min-w-0 flex-1 items-center gap-2">
-											<span
-												className="size-2.5 rounded-[4px] shrink-0"
-												style={{ backgroundColor: calendar.color }}
-											/>
+											{calendar.isRemote ? (
+												<Rss className="size-3.5 shrink-0" style={{ color: calendar.color }} />
+											) : (
+												<span
+													className="size-2.5 rounded-[4px] shrink-0"
+													style={{ backgroundColor: calendar.color }}
+												/>
+											)}
 											<span className="truncate">{calendar.name}</span>
 										</div>
 										{calendar.isDefault ? (
@@ -188,27 +207,6 @@ export function AppSidebar() {
 										) : null}
 									</div>
 								))}
-								{remoteCalendars.length ? (
-									<div className="mt-1 border-t border-sidebar-border pt-1.5">
-										<div className="px-1 pb-1 text-[0.6rem] uppercase tracking-[0.12em] text-muted-foreground">
-											Subscribed
-										</div>
-										<div className="grid gap-0.5">
-											{remoteCalendars.map((calendar) => (
-												<div
-													key={calendar.id}
-													title={calendar.name}
-													className="flex min-w-0 items-center rounded-md px-1.5 py-1 text-[0.72rem] text-sidebar-foreground/70 hover:bg-sidebar-accent"
-												>
-													<div className="flex min-w-0 flex-1 items-center gap-2">
-														<Rss className="size-3.5 shrink-0" style={{ color: calendar.color }} />
-														<span className="truncate">{calendar.name}</span>
-													</div>
-												</div>
-											))}
-										</div>
-									</div>
-								) : null}
 								<button
 									type="button"
 									disabled

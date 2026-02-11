@@ -9,6 +9,7 @@ export type CalendarSyncStatus = (typeof calendarSyncStatuses)[number];
 
 export type CalendarEventStatus = "confirmed" | "tentative" | "cancelled";
 export type CalendarBusyStatus = "free" | "busy" | "tentative";
+export type CalendarVisibility = "default" | "public" | "private" | "confidential";
 
 export type CalendarEventDTO = {
 	_id: string;
@@ -27,6 +28,8 @@ export type CalendarEventDTO = {
 	status?: CalendarEventStatus;
 	etag?: string;
 	busyStatus: CalendarBusyStatus;
+	visibility?: CalendarVisibility;
+	location?: string;
 	color?: string;
 	updatedAt: number;
 	lastSyncedAt?: number;
@@ -39,7 +42,10 @@ export type CalendarEventCreateInput = {
 	allDay?: boolean;
 	description?: string;
 	recurrenceRule?: string;
+	calendarId?: string;
 	busyStatus?: CalendarBusyStatus;
+	visibility?: CalendarVisibility;
+	location?: string;
 	color?: string;
 };
 
@@ -50,6 +56,9 @@ export type CalendarEventUpdateInput = {
 	end?: number;
 	allDay?: boolean;
 	recurrenceRule?: string;
+	calendarId?: string;
 	busyStatus?: CalendarBusyStatus;
+	visibility?: CalendarVisibility;
+	location?: string;
 	color?: string;
 };

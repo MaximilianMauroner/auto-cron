@@ -124,6 +124,15 @@ export default defineSchema({
 		etag: v.optional(v.string()),
 		lastSyncedAt: v.optional(v.number()),
 		busyStatus: v.optional(v.union(v.literal("free"), v.literal("busy"), v.literal("tentative"))),
+		visibility: v.optional(
+			v.union(
+				v.literal("default"),
+				v.literal("public"),
+				v.literal("private"),
+				v.literal("confidential"),
+			),
+		),
+		location: v.optional(v.string()),
 		color: v.optional(v.string()),
 	})
 		.index("by_userId", ["userId"])
@@ -154,6 +163,15 @@ export default defineSchema({
 			v.union(v.literal("confirmed"), v.literal("tentative"), v.literal("cancelled")),
 		),
 		busyStatus: v.union(v.literal("free"), v.literal("busy"), v.literal("tentative")),
+		visibility: v.optional(
+			v.union(
+				v.literal("default"),
+				v.literal("public"),
+				v.literal("private"),
+				v.literal("confidential"),
+			),
+		),
+		location: v.optional(v.string()),
 		color: v.optional(v.string()),
 		etag: v.optional(v.string()),
 		lastSyncedAt: v.optional(v.number()),

@@ -1,6 +1,7 @@
 "use client";
 
 import { Bebas_Neue, Cutive_Mono, Outfit } from "next/font/google";
+import Image from "next/image";
 import { useCallback, useEffect, useRef } from "react";
 
 const bebasNeue = Bebas_Neue({
@@ -218,9 +219,13 @@ export function LandingPage({ logoHref = "/" }: LandingPageProps) {
 								aria-label="Auto Cron home"
 								className="font-[family-name:var(--font-outfit)] font-extrabold text-lg tracking-[0.08em] no-underline text-lp-navy uppercase flex items-center gap-2.5"
 							>
-								<span
-									aria-hidden="true"
-									className="w-2 h-2 bg-lp-gold rounded-full inline-block shadow-[0_0_14px_var(--lp-gold)]"
+								<Image
+									src="/logo.png"
+									alt="Auto Cron logo"
+									width={28}
+									height={28}
+									className="size-7 rounded-md"
+									priority
 								/>
 								Auto&nbsp;Cron
 							</a>

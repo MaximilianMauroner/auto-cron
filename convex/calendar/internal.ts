@@ -40,6 +40,8 @@ const hydrateEvent = (
 	status: event.status ?? series?.status,
 	etag: event.etag ?? series?.etag,
 	busyStatus: event.busyStatus ?? series?.busyStatus ?? "busy",
+	visibility: event.visibility ?? series?.visibility,
+	location: event.location ?? series?.location,
 	color: event.color ?? series?.color,
 });
 
@@ -119,6 +121,15 @@ export const getEventById = internalQuery({
 			),
 			etag: v.optional(v.string()),
 			busyStatus: v.union(v.literal("free"), v.literal("busy"), v.literal("tentative")),
+			visibility: v.optional(
+				v.union(
+					v.literal("default"),
+					v.literal("public"),
+					v.literal("private"),
+					v.literal("confidential"),
+				),
+			),
+			location: v.optional(v.string()),
 			color: v.optional(v.string()),
 		}),
 	),
@@ -136,6 +147,7 @@ export const updateLocalEventFromGoogle = internalMutation({
 	args: {
 		id: v.id("calendarEvents"),
 		googleEventId: v.string(),
+		calendarId: v.optional(v.string()),
 		etag: v.optional(v.string()),
 		lastSyncedAt: v.number(),
 	},
@@ -146,6 +158,7 @@ export const updateLocalEventFromGoogle = internalMutation({
 		await ctx.db.patch(args.id, {
 			googleEventId: args.googleEventId,
 			sourceId: args.googleEventId,
+			calendarId: args.calendarId ?? event.calendarId,
 			etag: args.etag,
 			lastSyncedAt: args.lastSyncedAt,
 			occurrenceStart: normalizeToMinute(event.originalStartTime ?? event.start),
@@ -156,6 +169,7 @@ export const updateLocalEventFromGoogle = internalMutation({
 			if (series) {
 				await ctx.db.patch(series._id, {
 					sourceId: args.googleEventId,
+					calendarId: args.calendarId ?? series.calendarId,
 					googleSeriesId: series.googleSeriesId ?? args.googleEventId,
 					etag: args.etag ?? series.etag,
 					lastSyncedAt: args.lastSyncedAt,
@@ -231,6 +245,8 @@ export const normalizeGoogleEventsInRange = internalMutation({
 				recurrenceRule: event.recurrenceRule ?? series?.recurrenceRule,
 				status: event.status ?? series?.status,
 				busyStatus: event.busyStatus ?? series?.busyStatus ?? "busy",
+				visibility: event.visibility ?? series?.visibility,
+				location: event.location ?? series?.location,
 				color: event.color ?? series?.color,
 				etag: event.etag ?? series?.etag,
 				lastSyncedAt: event.lastSyncedAt ?? series?.lastSyncedAt,
@@ -269,6 +285,8 @@ export const normalizeGoogleEventsInRange = internalMutation({
 				allDay: isRecurringInstance ? undefined : event.allDay,
 				recurrenceRule: isRecurringInstance ? undefined : event.recurrenceRule,
 				busyStatus: isRecurringInstance ? undefined : event.busyStatus,
+				visibility: isRecurringInstance ? undefined : event.visibility,
+				location: isRecurringInstance ? undefined : event.location,
 				color: isRecurringInstance ? undefined : event.color,
 				updatedAt: Math.max(now, event.updatedAt),
 			};
@@ -282,6 +300,8 @@ export const normalizeGoogleEventsInRange = internalMutation({
 				event.allDay !== nextOccurrenceValues.allDay ||
 				event.recurrenceRule !== nextOccurrenceValues.recurrenceRule ||
 				event.busyStatus !== nextOccurrenceValues.busyStatus ||
+				event.visibility !== nextOccurrenceValues.visibility ||
+				event.location !== nextOccurrenceValues.location ||
 				event.color !== nextOccurrenceValues.color;
 			if (!shouldPatch) continue;
 
@@ -341,12 +361,16 @@ export const dedupeUserCalendarEventsInRange = internalMutation({
 					(a.description ? 1 : 0) +
 					(a.recurrenceRule ? 1 : 0) +
 					(a.busyStatus ? 1 : 0) +
+					(a.visibility ? 1 : 0) +
+					(a.location ? 1 : 0) +
 					(a.color ? 1 : 0);
 				const bScore =
 					(b.title ? 1 : 0) +
 					(b.description ? 1 : 0) +
 					(b.recurrenceRule ? 1 : 0) +
 					(b.busyStatus ? 1 : 0) +
+					(b.visibility ? 1 : 0) +
+					(b.location ? 1 : 0) +
 					(b.color ? 1 : 0);
 				return bScore - aScore;
 			})[0];
@@ -357,6 +381,8 @@ export const dedupeUserCalendarEventsInRange = internalMutation({
 					description: primary.description ?? richest.description,
 					recurrenceRule: primary.recurrenceRule ?? richest.recurrenceRule,
 					busyStatus: primary.busyStatus ?? richest.busyStatus,
+					visibility: primary.visibility ?? richest.visibility,
+					location: primary.location ?? richest.location,
 					color: primary.color ?? richest.color,
 					allDay: primary.allDay ?? richest.allDay,
 				});

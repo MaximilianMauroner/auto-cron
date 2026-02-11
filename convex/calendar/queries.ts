@@ -35,6 +35,8 @@ const hydrateEvent = (
 	status: event.status ?? series?.status,
 	etag: event.etag ?? series?.etag,
 	busyStatus: event.busyStatus ?? series?.busyStatus ?? "busy",
+	visibility: event.visibility ?? series?.visibility,
+	location: event.location ?? series?.location,
 	color: event.color ?? series?.color,
 	calendarId: event.calendarId ?? series?.calendarId,
 });
@@ -81,6 +83,15 @@ const calendarEventDtoValidator = v.object({
 	etag: v.optional(v.string()),
 	lastSyncedAt: v.optional(v.number()),
 	busyStatus: v.union(v.literal("free"), v.literal("busy"), v.literal("tentative")),
+	visibility: v.optional(
+		v.union(
+			v.literal("default"),
+			v.literal("public"),
+			v.literal("private"),
+			v.literal("confidential"),
+		),
+	),
+	location: v.optional(v.string()),
 	color: v.optional(v.string()),
 });
 
