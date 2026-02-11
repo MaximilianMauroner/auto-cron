@@ -11,9 +11,17 @@
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
+		"@types/node": "^25.2.2",
 		"@useautumn/convex": "^0.0.23",
+		"babel-plugin-react-compiler": "^1.0.0",
 		"turbo": "^2.4.4",
 		"typescript": "^5.7.3"
 	},
-	"packageManager": "bun@1.2.4"
+	"packageManager": "bun@1.2.4",
+	"dependencies": {
+		"@convex-dev/workos-authkit": "^0.1.6",
+		"@workos-inc/authkit-nextjs": "^2.13.0",
+		"atmn": "^0.0.36",
+		"convex": "^1.21.0"
+	}
 }

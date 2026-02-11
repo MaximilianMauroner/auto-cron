@@ -1,4 +1,4 @@
-import { feature, featureItem, priceItem, product } from "autumn-js/config";
+import { feature, featureItem, priceItem, product } from "atmn";
 
 // --- Features ---
 
@@ -33,7 +33,7 @@ export const basic = product({
 	name: "Basic",
 	items: [
 		priceItem({
-			price: 5,
+			price: 4.99,
 			interval: "month",
 		}),
 		featureItem({
@@ -90,17 +90,17 @@ export const premium = product({
 		}),
 		featureItem({
 			feature_id: tasks.id,
-			included_usage: -1, // unlimited
+			included_usage: "inf",
 			interval: "month",
 		}),
 		featureItem({
 			feature_id: habits.id,
-			included_usage: -1, // unlimited
+			included_usage: "inf",
 			interval: "month",
 		}),
 		featureItem({
 			feature_id: schedulingRuns.id,
-			included_usage: -1, // unlimited
+			included_usage: "inf",
 			interval: "month",
 		}),
 		featureItem({

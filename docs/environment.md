@@ -12,8 +12,10 @@ Copy from `.env.example` and set values:
 | `CONVEX_DEPLOY_KEY` | Convex deployment/auth key for backend operations | Yes |
 | `WORKOS_API_KEY` | WorkOS server API key | Yes |
 | `WORKOS_CLIENT_ID` | WorkOS AuthKit client ID | Yes |
+| `WORKOS_COOKIE_PASSWORD` | Session cookie encryption secret (>= 32 chars) | Yes |
 | `NEXT_PUBLIC_WORKOS_REDIRECT_URI` | Browser redirect URI for WorkOS auth flow | Yes |
 | `AUTUMN_SECRET_KEY` | Autumn secret key for billing calls | Yes |
+| `WORKOS_WEBHOOK_SECRET` | WorkOS webhook signing secret (set in Convex env via `npx convex env set`) | Yes |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID for calendar sync | Yes |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret for calendar sync | Yes |
 

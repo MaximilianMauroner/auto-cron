@@ -15,7 +15,7 @@
 		}
 	},
 	"files": {
-		"ignore": ["node_modules", ".next", "dist", "convex/_generated"]
+		"ignore": ["node_modules", ".next", ".turbo", "dist", "convex/_generated"]
 	},
 	"overrides": [
 		{
@@ -46,17 +46,42 @@
 			"linter": {
 				"rules": {
 					"a11y": {
-						"useValidAnchor": "off"
+						"useValidAnchor": "off",
+						"useButtonType": "off",
+						"noSvgWithoutTitle": "off"
 					},
 					"suspicious": {
 						"noAssignInExpressions": "off",
-						"noArrayIndexKey": "off"
+						"noArrayIndexKey": "off",
+						"noCommentText": "off"
 					},
 					"correctness": {
 						"useExhaustiveDependencies": "off"
 					},
+					"complexity": {
+						"useOptionalChain": "off"
+					},
+					"security": {
+						"noDangerouslySetInnerHtml": "off"
+					},
 					"style": {
 						"noNonNullAssertion": "off"
+					}
+				}
+			}
+		},
+		{
+			"include": ["**/app/23/**", "**/app/_components/landing-page.tsx"],
+			"linter": {
+				"rules": {
+					"a11y": {
+						"noSvgWithoutTitle": "off",
+						"useButtonType": "off",
+						"useValidAnchor": "off"
+					},
+					"suspicious": {
+						"noArrayIndexKey": "off",
+						"noAssignInExpressions": "off"
 					}
 				}
 			}

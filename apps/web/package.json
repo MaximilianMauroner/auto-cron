@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"private": true,
 	"scripts": {
-		"dev": "next dev --turbopack",
+		"dev": "next dev",
 		"build": "next build",
 		"start": "next start",
 		"typecheck": "tsc --noEmit"
@@ -14,7 +14,11 @@
 		"@hookform/resolvers": "^5.2.2",
 		"@radix-ui/react-accordion": "^1.2.12",
 		"@schedule-x/calendar": "^2.12.0",
+		"@schedule-x/calendar-controls": "^4.1.0",
+		"@schedule-x/current-time": "2.12.0",
+		"@schedule-x/drag-and-drop": "^3.7.3",
 		"@schedule-x/react": "^2.12.0",
+		"@schedule-x/scroll-controller": "^4.1.0",
 		"@schedule-x/theme-default": "^2.12.0",
 		"@tailwindcss/postcss": "^4.1.18",
 		"autumn-js": "^0.1.75",

@@ -1,0 +1,373 @@
+import { ConvexError, v } from "convex/values";
+import type { Doc } from "../_generated/dataModel";
+import { internalMutation, internalQuery } from "../_generated/server";
+import { requireAuth } from "../auth";
+import type { CalendarProviderEvent } from "../providers/calendar/types";
+
+const MINUTE_MS = 60 * 1000;
+const normalizeToMinute = (timestamp: number) => Math.floor(timestamp / MINUTE_MS) * MINUTE_MS;
+
+const recencyScore = (event: Doc<"calendarEvents">) =>
+	Math.max(event.lastSyncedAt ?? 0, event.updatedAt ?? 0, event._creationTime ?? 0);
+
+const buildDedupeKey = (event: Doc<"calendarEvents">) => {
+	if (event.seriesId && event.occurrenceStart !== undefined) {
+		return `series:${event.seriesId}:${event.occurrenceStart}`;
+	}
+	if (event.googleEventId) {
+		const occurrenceTs = normalizeToMinute(event.originalStartTime ?? event.start);
+		return `google:${event.calendarId ?? "primary"}:${event.googleEventId}:${occurrenceTs}`;
+	}
+	return `fallback:${event.source}:${event.sourceId ?? "none"}:${event.start}:${event.end}:${event.title ?? "untitled"}`;
+};
+
+const hydrateEvent = (
+	event: Doc<"calendarEvents">,
+	series?: Doc<"calendarEventSeries"> | null,
+): CalendarProviderEvent => ({
+	_id: String(event._id),
+	title: event.title ?? series?.title ?? "Untitled event",
+	description: event.description ?? series?.description,
+	start: event.start,
+	end: event.end,
+	allDay: event.allDay ?? series?.allDay ?? false,
+	sourceId: event.sourceId,
+	googleEventId: event.googleEventId,
+	calendarId: event.calendarId ?? series?.calendarId,
+	recurrenceRule: event.recurrenceRule ?? series?.recurrenceRule,
+	recurringEventId: event.recurringEventId ?? series?.googleSeriesId,
+	originalStartTime: event.originalStartTime,
+	status: event.status ?? series?.status,
+	etag: event.etag ?? series?.etag,
+	busyStatus: event.busyStatus ?? series?.busyStatus ?? "busy",
+	color: event.color ?? series?.color,
+});
+
+export const getUserGoogleSettings = internalQuery({
+	args: {
+		userId: v.optional(v.string()),
+	},
+	handler: async (ctx, args) => {
+		const userId = args.userId ?? (await requireAuth(ctx));
+		return ctx.db
+			.query("userSettings")
+			.withIndex("by_userId", (q) => q.eq("userId", userId))
+			.unique();
+	},
+});
+
+export const listUsersWithGoogleSync = internalQuery({
+	args: {
+		limit: v.optional(v.number()),
+	},
+	returns: v.array(
+		v.object({
+			userId: v.string(),
+			googleRefreshToken: v.string(),
+			googleSyncToken: v.optional(v.string()),
+			googleCalendarSyncTokens: v.optional(
+				v.array(
+					v.object({
+						calendarId: v.string(),
+						syncToken: v.string(),
+					}),
+				),
+			),
+		}),
+	),
+	handler: async (ctx, args) => {
+		const limit = Math.max(1, Math.min(args.limit ?? 1000, 1000));
+		const settings = await ctx.db
+			.query("userSettings")
+			.withIndex("by_googleRefreshToken_userId", (q) => q.gte("googleRefreshToken", ""))
+			.take(limit);
+		return settings
+			.filter(
+				(setting): setting is typeof setting & { googleRefreshToken: string } =>
+					typeof setting.googleRefreshToken === "string" && setting.googleRefreshToken.length > 0,
+			)
+			.map((setting) => ({
+				userId: setting.userId,
+				googleRefreshToken: setting.googleRefreshToken,
+				googleSyncToken: setting.googleSyncToken,
+				googleCalendarSyncTokens: setting.googleCalendarSyncTokens,
+			}));
+	},
+});
+
+export const getEventById = internalQuery({
+	args: {
+		id: v.id("calendarEvents"),
+	},
+	returns: v.union(
+		v.null(),
+		v.object({
+			_id: v.string(),
+			title: v.string(),
+			description: v.optional(v.string()),
+			start: v.number(),
+			end: v.number(),
+			allDay: v.boolean(),
+			sourceId: v.optional(v.string()),
+			googleEventId: v.optional(v.string()),
+			calendarId: v.optional(v.string()),
+			recurrenceRule: v.optional(v.string()),
+			recurringEventId: v.optional(v.string()),
+			originalStartTime: v.optional(v.number()),
+			status: v.optional(
+				v.union(v.literal("confirmed"), v.literal("tentative"), v.literal("cancelled")),
+			),
+			etag: v.optional(v.string()),
+			busyStatus: v.union(v.literal("free"), v.literal("busy"), v.literal("tentative")),
+			color: v.optional(v.string()),
+		}),
+	),
+	handler: async (ctx, args) => {
+		const userId = await requireAuth(ctx);
+		const event = await ctx.db.get(args.id);
+		if (!event || event.userId !== userId) return null;
+
+		const series = event.seriesId ? await ctx.db.get(event.seriesId) : null;
+		return hydrateEvent(event, series);
+	},
+});
+
+export const updateLocalEventFromGoogle = internalMutation({
+	args: {
+		id: v.id("calendarEvents"),
+		googleEventId: v.string(),
+		etag: v.optional(v.string()),
+		lastSyncedAt: v.number(),
+	},
+	handler: async (ctx, args) => {
+		const event = await ctx.db.get(args.id);
+		if (!event) return;
+
+		await ctx.db.patch(args.id, {
+			googleEventId: args.googleEventId,
+			sourceId: args.googleEventId,
+			etag: args.etag,
+			lastSyncedAt: args.lastSyncedAt,
+			occurrenceStart: normalizeToMinute(event.originalStartTime ?? event.start),
+		});
+
+		if (event.seriesId) {
+			const series = await ctx.db.get(event.seriesId);
+			if (series) {
+				await ctx.db.patch(series._id, {
+					sourceId: args.googleEventId,
+					googleSeriesId: series.googleSeriesId ?? args.googleEventId,
+					etag: args.etag ?? series.etag,
+					lastSyncedAt: args.lastSyncedAt,
+				});
+			}
+		}
+	},
+});
+
+export const normalizeGoogleEventsInRange = internalMutation({
+	args: {
+		userId: v.optional(v.string()),
+		start: v.optional(v.number()),
+		end: v.optional(v.number()),
+	},
+	returns: v.object({
+		seriesCreated: v.number(),
+		seriesUpdated: v.number(),
+		occurrencesPatched: v.number(),
+	}),
+	handler: async (ctx, args) => {
+		const userId = args.userId ?? (await requireAuth(ctx));
+		const now = Date.now();
+
+		const events =
+			typeof args.start === "number" && typeof args.end === "number"
+				? await (() => {
+						const rangeStart = args.start;
+						const rangeEnd = args.end;
+						return ctx.db
+							.query("calendarEvents")
+							.withIndex("by_userId_start", (q) => q.eq("userId", userId).lte("start", rangeEnd))
+							.filter((q) => q.gte(q.field("end"), rangeStart))
+							.collect();
+					})()
+				: await ctx.db
+						.query("calendarEvents")
+						.withIndex("by_userId", (q) => q.eq("userId", userId))
+						.collect();
+
+		const seriesCache = new Map<string, Doc<"calendarEventSeries"> | null>();
+		let seriesCreated = 0;
+		let seriesUpdated = 0;
+		let occurrencesPatched = 0;
+
+		for (const event of events) {
+			if (event.source !== "google") continue;
+			const googleSeriesId = event.recurringEventId ?? event.googleEventId ?? event.sourceId;
+			if (!googleSeriesId) continue;
+
+			const seriesCacheKey = `${event.calendarId ?? "primary"}:${googleSeriesId}`;
+			let series = seriesCache.get(seriesCacheKey);
+			if (!series) {
+				series = await ctx.db
+					.query("calendarEventSeries")
+					.withIndex("by_userId_calendarId_googleSeriesId", (q) =>
+						q
+							.eq("userId", userId)
+							.eq("calendarId", event.calendarId ?? "primary")
+							.eq("googleSeriesId", googleSeriesId),
+					)
+					.unique();
+			}
+
+			const nextSeriesValues = {
+				source: "google" as const,
+				sourceId: event.sourceId ?? event.googleEventId,
+				calendarId: event.calendarId ?? "primary",
+				googleSeriesId,
+				title: event.title ?? series?.title ?? "Untitled event",
+				description: event.description ?? series?.description,
+				allDay: event.allDay ?? series?.allDay ?? false,
+				recurrenceRule: event.recurrenceRule ?? series?.recurrenceRule,
+				status: event.status ?? series?.status,
+				busyStatus: event.busyStatus ?? series?.busyStatus ?? "busy",
+				color: event.color ?? series?.color,
+				etag: event.etag ?? series?.etag,
+				lastSyncedAt: event.lastSyncedAt ?? series?.lastSyncedAt,
+				updatedAt: Math.max(now, event.updatedAt),
+				isRecurring: Boolean(event.recurringEventId || event.recurrenceRule),
+			};
+
+			if (!series) {
+				const seriesId = await ctx.db.insert("calendarEventSeries", {
+					userId,
+					...nextSeriesValues,
+				});
+				series = await ctx.db.get(seriesId);
+				if (!series) {
+					throw new ConvexError({
+						code: "SERIES_CREATE_FAILED",
+						message: "Could not create calendar event series",
+					});
+				}
+				seriesCreated += 1;
+			} else {
+				await ctx.db.patch(series._id, nextSeriesValues);
+				seriesUpdated += 1;
+				series = { ...series, ...nextSeriesValues };
+			}
+			seriesCache.set(seriesCacheKey, series);
+
+			const isRecurringInstance = Boolean(event.recurringEventId);
+			const occurrenceStart = normalizeToMinute(event.originalStartTime ?? event.start);
+			const nextOccurrenceValues = {
+				seriesId: series._id,
+				occurrenceStart,
+				sourceId: event.sourceId ?? event.googleEventId,
+				title: isRecurringInstance ? undefined : event.title,
+				description: isRecurringInstance ? undefined : event.description,
+				allDay: isRecurringInstance ? undefined : event.allDay,
+				recurrenceRule: isRecurringInstance ? undefined : event.recurrenceRule,
+				busyStatus: isRecurringInstance ? undefined : event.busyStatus,
+				color: isRecurringInstance ? undefined : event.color,
+				updatedAt: Math.max(now, event.updatedAt),
+			};
+
+			const shouldPatch =
+				event.seriesId !== nextOccurrenceValues.seriesId ||
+				event.occurrenceStart !== nextOccurrenceValues.occurrenceStart ||
+				event.sourceId !== nextOccurrenceValues.sourceId ||
+				event.title !== nextOccurrenceValues.title ||
+				event.description !== nextOccurrenceValues.description ||
+				event.allDay !== nextOccurrenceValues.allDay ||
+				event.recurrenceRule !== nextOccurrenceValues.recurrenceRule ||
+				event.busyStatus !== nextOccurrenceValues.busyStatus ||
+				event.color !== nextOccurrenceValues.color;
+			if (!shouldPatch) continue;
+
+			await ctx.db.patch(event._id, nextOccurrenceValues);
+			occurrencesPatched += 1;
+		}
+
+		return {
+			seriesCreated,
+			seriesUpdated,
+			occurrencesPatched,
+		};
+	},
+});
+
+export const dedupeUserCalendarEventsInRange = internalMutation({
+	args: {
+		userId: v.optional(v.string()),
+		start: v.number(),
+		end: v.number(),
+	},
+	returns: v.object({
+		merged: v.number(),
+		removed: v.number(),
+	}),
+	handler: async (ctx, args) => {
+		const userId = args.userId ?? (await requireAuth(ctx));
+
+		const events = await ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_start", (q) => q.eq("userId", userId).lte("start", args.end))
+			.filter((q) => q.gte(q.field("end"), args.start))
+			.collect();
+
+		const groups = new Map<string, Doc<"calendarEvents">[]>();
+		for (const event of events) {
+			const key = buildDedupeKey(event);
+			const existing = groups.get(key) ?? [];
+			existing.push(event);
+			groups.set(key, existing);
+		}
+
+		let merged = 0;
+		let removed = 0;
+
+		for (const group of groups.values()) {
+			if (group.length <= 1) continue;
+			merged += 1;
+			const sorted = [...group].sort((a, b) => recencyScore(b) - recencyScore(a));
+			const [primary, ...duplicates] = sorted;
+			if (!primary) continue;
+
+			// Keep the canonical row hydrated with the most complete data.
+			const richest = [...group].sort((a, b) => {
+				const aScore =
+					(a.title ? 1 : 0) +
+					(a.description ? 1 : 0) +
+					(a.recurrenceRule ? 1 : 0) +
+					(a.busyStatus ? 1 : 0) +
+					(a.color ? 1 : 0);
+				const bScore =
+					(b.title ? 1 : 0) +
+					(b.description ? 1 : 0) +
+					(b.recurrenceRule ? 1 : 0) +
+					(b.busyStatus ? 1 : 0) +
+					(b.color ? 1 : 0);
+				return bScore - aScore;
+			})[0];
+
+			if (richest && richest._id !== primary._id) {
+				await ctx.db.patch(primary._id, {
+					title: primary.title ?? richest.title,
+					description: primary.description ?? richest.description,
+					recurrenceRule: primary.recurrenceRule ?? richest.recurrenceRule,
+					busyStatus: primary.busyStatus ?? richest.busyStatus,
+					color: primary.color ?? richest.color,
+					allDay: primary.allDay ?? richest.allDay,
+				});
+			}
+
+			for (const duplicate of duplicates) {
+				await ctx.db.delete(duplicate._id);
+				removed += 1;
+			}
+		}
+
+		return { merged, removed };
+	},
+});

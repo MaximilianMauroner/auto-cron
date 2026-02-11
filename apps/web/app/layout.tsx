@@ -11,6 +11,8 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+	const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL ?? process.env.CONVEX_URL;
+
 	return (
 		<html lang="en" suppressHydrationWarning>
 			<body>
@@ -20,7 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 					enableSystem
 					disableTransitionOnChange
 				>
-					<ConvexClientProvider>
+					<ConvexClientProvider convexUrl={convexUrl}>
 						<AutumnProvider>
 							<TooltipProvider>{children}</TooltipProvider>
 						</AutumnProvider>

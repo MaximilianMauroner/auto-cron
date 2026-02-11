@@ -64,7 +64,7 @@ Use skills when they clearly match the task. Prefer the minimum set needed.
   - `convex/auth.config.ts`
   - `convex/http.ts` webhook route TODO
 
-## Roadmap-aware priorities (from `todo.md`)
+## Roadmap-aware priorities (from `docs/todo.md`)
 
 Completed foundations:
 - Monorepo setup, Convex base, shared packages, Biome, Tailwind v4

@@ -1,15 +1,44 @@
-export default function SignInPage() {
+import { getWorkOS } from "@workos-inc/authkit-nextjs";
+import Link from "next/link";
+
+export default async function SignInPage() {
+	const clientId = process.env.WORKOS_CLIENT_ID;
+	const redirectUri = process.env.NEXT_PUBLIC_WORKOS_REDIRECT_URI;
+	if (!clientId || !redirectUri) {
+		throw new Error(
+			"Missing WorkOS env vars. Set WORKOS_CLIENT_ID and NEXT_PUBLIC_WORKOS_REDIRECT_URI.",
+		);
+	}
+
+	const signInUrl = getWorkOS().userManagement.getAuthorizationUrl({
+		clientId,
+		redirectUri,
+		provider: "GoogleOAuth",
+		providerScopes: [
+			"openid",
+			"https://www.googleapis.com/auth/userinfo.email",
+			"https://www.googleapis.com/auth/userinfo.profile",
+			"https://www.googleapis.com/auth/calendar.readonly",
+			"https://www.googleapis.com/auth/calendar.events",
+			"https://www.googleapis.com/auth/calendar.events.readonly",
+		],
+		providerQueryParams: {
+			access_type: "offline",
+			prompt: "consent",
+			include_granted_scopes: true,
+		},
+	});
+
 	return (
 		<div className="space-y-6 text-center">
 			<h1 className="text-2xl font-bold">Sign in to Auto Cron</h1>
 			<p className="text-muted-foreground">Sign in with your Google account to get started.</p>
-			{/* TODO: Add WorkOS AuthKit sign-in button */}
-			<button
-				type="button"
+			<Link
+				href={signInUrl}
 				className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-primary-foreground"
 			>
 				Sign in with Google
-			</button>
+			</Link>
 		</div>
 	);
 }

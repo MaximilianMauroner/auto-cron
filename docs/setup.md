@@ -26,6 +26,7 @@ cp .env.example .env
 ```
 
 Then populate values for Convex, WorkOS, Autumn, and Google OAuth.
+For WorkOS AuthKit local dev, set `NEXT_PUBLIC_WORKOS_REDIRECT_URI=http://localhost:3000/callback`.
 
 See [environment.md](./environment.md) for the source of truth.
 
