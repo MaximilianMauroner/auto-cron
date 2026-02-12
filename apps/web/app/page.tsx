@@ -5,7 +5,7 @@ import { LandingPage } from "./_components/landing-page";
 export default async function Home() {
 	const { user } = await withAuth();
 	if (user) {
-		redirect("/calendar");
+		redirect("/app/calendar");
 	}
 
 	return <LandingPage />;

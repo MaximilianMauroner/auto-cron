@@ -11,7 +11,7 @@ const upsertGoogleTokensRef = makeFunctionReference<
 >("calendar/mutations:upsertGoogleTokens");
 
 export const GET = handleAuth({
-	returnPathname: "/calendar",
+	returnPathname: "/app/calendar",
 	onSuccess: async ({ accessToken, oauthTokens }) => {
 		const cookieStore = await cookies();
 		const isProd = serverEnv.NODE_ENV === "production";

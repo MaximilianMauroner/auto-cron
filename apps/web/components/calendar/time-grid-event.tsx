@@ -154,7 +154,7 @@ function TimeGridEventComponent({ calendarEvent, timeZone, hour12 }: TimeGridEve
 			<ContextMenuTrigger asChild>
 				<div
 					className={cn(
-						"group relative grid gap-px leading-tight content-start rounded-[4px] h-full w-full pl-2 pr-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing",
+						"group relative grid gap-px leading-tight content-start rounded-[5px] h-full w-full pl-2 pr-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing transition-[filter] duration-200 hover:brightness-[1.12]",
 						isFree && "bg-transparent",
 					)}
 					style={{ ...eventStyle, ...freeStyle }}
@@ -254,7 +254,7 @@ function TimeGridEventComponent({ calendarEvent, timeZone, hour12 }: TimeGridEve
 						aria-label="Resize event"
 						title="Resize event"
 					>
-						<span className="pointer-events-none absolute left-1/2 top-1/2 h-[2px] w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-black/35 opacity-75" />
+						<span className="pointer-events-none absolute left-1/2 top-1/2 h-[2px] w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-current opacity-20" />
 					</button>
 				</div>
 			</ContextMenuTrigger>
