@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 export default async function SignInPage() {
 	const { user } = await withAuth();
 	if (user) {
-		redirect("/calendar");
+		redirect("/app/calendar");
 	}
 
 	const clientId = serverEnv.WORKOS_CLIENT_ID;

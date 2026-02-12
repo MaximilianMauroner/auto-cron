@@ -20,6 +20,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { useUserPreferences } from "@/components/user-preferences-context";
 import {
 	useActionWithStatus,
 	useAuthenticatedQueryWithStatus,
@@ -70,23 +71,63 @@ const defaultWorkWindows: HoursWindow[] = [1, 2, 3, 4, 5].map((day) => ({
 	endMinute: 17 * 60,
 }));
 
-const minuteToTime = (minute: number) => {
-	const clampedMinute = Math.max(0, Math.min(minute, 24 * 60));
-	// Native time inputs cannot represent 24:00, so keep end-of-day values in range.
-	const safe = clampedMinute === 24 * 60 ? 23 * 60 + 45 : clampedMinute;
+const minuteToTime24 = (minute: number) => {
+	const safe = Math.max(0, Math.min(minute, 23 * 60 + 45));
 	const hours = Math.floor(safe / 60);
 	const minutes = safe % 60;
 	return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 };
 
-const timeToMinute = (value: string, fallback: number) => {
-	const match = value.match(/^(\d{2}):(\d{2})$/);
-	if (!match) return fallback;
-	const [_, rawHours = "0", rawMinutes = "0"] = match;
-	const hours = Number.parseInt(rawHours, 10);
-	const minutes = Number.parseInt(rawMinutes, 10);
-	if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return fallback;
-	return Math.max(0, Math.min(hours * 60 + minutes, 1440));
+const minuteToTime12 = (minute: number) => {
+	const safe = Math.max(0, Math.min(minute, 23 * 60 + 45));
+	const hours = Math.floor(safe / 60);
+	const minutes = safe % 60;
+	const period = hours >= 12 ? "PM" : "AM";
+	const displayHour = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+	return `${String(displayHour).padStart(2, "0")}:${String(minutes).padStart(2, "0")} ${period}`;
+};
+
+const formatMinuteAsTime = (minute: number, hour12: boolean) =>
+	hour12 ? minuteToTime12(minute) : minuteToTime24(minute);
+
+const parseTimeToMinute = (value: string, fallback: number) => {
+	const trimmed = value.trim();
+	// Try 24h format: "HH:MM" or "H:MM"
+	const match24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
+	if (match24) {
+		const hours = Number.parseInt(match24[1] ?? "0", 10);
+		const minutes = Number.parseInt(match24[2] ?? "0", 10);
+		if (
+			Number.isFinite(hours) &&
+			Number.isFinite(minutes) &&
+			hours >= 0 &&
+			hours <= 23 &&
+			minutes >= 0 &&
+			minutes <= 59
+		) {
+			return hours * 60 + minutes;
+		}
+	}
+	// Try 12h format: "HH:MM AM/PM" or "H:MM AM/PM"
+	const match12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+	if (match12) {
+		let hours = Number.parseInt(match12[1] ?? "0", 10);
+		const minutes = Number.parseInt(match12[2] ?? "0", 10);
+		const period = (match12[3] ?? "AM").toUpperCase();
+		if (
+			Number.isFinite(hours) &&
+			Number.isFinite(minutes) &&
+			hours >= 1 &&
+			hours <= 12 &&
+			minutes >= 0 &&
+			minutes <= 59
+		) {
+			if (period === "AM" && hours === 12) hours = 0;
+			if (period === "PM" && hours !== 12) hours += 12;
+			return hours * 60 + minutes;
+		}
+	}
+	return fallback;
 };
 
 const compareWindows = (a: HoursWindow, b: HoursWindow) => {
@@ -114,6 +155,7 @@ const defaultWindowForDay = (day: HoursWindow["day"]): HoursWindow => ({
 const toHoursSetId = (value: string) => value as Id<"hoursSets">;
 
 export default function SettingsHoursPage() {
+	const { hour12 } = useUserPreferences();
 	const [selectedSetId, setSelectedSetId] = useState<string>("");
 	const [draft, setDraft] = useState<HoursSetDraft | null>(null);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -279,7 +321,7 @@ export default function SettingsHoursPage() {
 		const windows = windowsByDay.get(day) ?? [];
 		const target = windows[index];
 		if (!target) return;
-		const nextMinute = timeToMinute(value, target[field]);
+		const nextMinute = parseTimeToMinute(value, target[field]);
 		const nextWindows = draft.windows.map((window) => {
 			if (
 				window.day === target.day &&
@@ -472,7 +514,10 @@ export default function SettingsHoursPage() {
 						<CardDescription className="text-xs uppercase tracking-[0.14em]">
 							Scheduling
 						</CardDescription>
-						<CardTitle className="text-2xl">Working Hours Sets</CardTitle>
+						<CardTitle className="flex items-center gap-2 text-xl">
+							<Clock3 className="size-4 text-primary" />
+							Working Hours Sets
+						</CardTitle>
 					</CardHeader>
 					<CardContent className="space-y-3">
 						<p className="max-w-2xl text-sm text-muted-foreground">
@@ -675,9 +720,12 @@ export default function SettingsHoursPage() {
 																className="flex items-center gap-2"
 															>
 																<Input
-																	type="time"
-																	step={schedulingStepSeconds}
-																	value={minuteToTime(window.startMinute)}
+																	type="text"
+																	inputMode="text"
+																	value={formatMinuteAsTime(window.startMinute, hour12)}
+																	onBlur={(event) =>
+																		updateWindow(day, index, "startMinute", event.target.value)
+																	}
 																	onChange={(event) =>
 																		updateWindow(day, index, "startMinute", event.target.value)
 																	}
@@ -685,9 +733,12 @@ export default function SettingsHoursPage() {
 																/>
 																<span className="text-sm text-muted-foreground">to</span>
 																<Input
-																	type="time"
-																	step={schedulingStepSeconds}
-																	value={minuteToTime(window.endMinute)}
+																	type="text"
+																	inputMode="text"
+																	value={formatMinuteAsTime(window.endMinute, hour12)}
+																	onBlur={(event) =>
+																		updateWindow(day, index, "endMinute", event.target.value)
+																	}
 																	onChange={(event) =>
 																		updateWindow(day, index, "endMinute", event.target.value)
 																	}

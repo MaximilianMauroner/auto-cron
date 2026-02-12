@@ -16,6 +16,7 @@ import {
 	listUsersWithGoogleSync,
 	normalizeGoogleEventsInRange,
 	updateLocalEventFromGoogle,
+	upsertSyncedEventsBatch,
 	upsertSyncedEventsForUser,
 } from "./syncRuntime";
 
@@ -254,42 +255,79 @@ const syncUserFromGoogle = async (
 		}
 	}
 
-	await upsertSyncedEventsForUser(ctx, {
-		userId,
-		resetCalendars: Array.from(resetCalendars),
-		events: allEvents.map((event) => ({
-			googleEventId: event.googleEventId,
-			title: event.title,
-			description: event.description,
-			start: event.start,
-			end: event.end,
-			allDay: event.allDay,
-			calendarId: event.calendarId,
-			recurrenceRule: event.recurrenceRule,
-			recurringEventId: event.recurringEventId,
-			originalStartTime: event.originalStartTime,
-			status: event.status,
-			etag: event.etag,
-			busyStatus: event.busyStatus,
-			visibility: event.visibility,
-			location: event.location,
-			color: event.color,
-			lastSyncedAt: event.lastSyncedAt,
-		})),
-		deletedEvents: allDeletedEvents,
-		nextSyncToken:
-			nextTokens.find((token) => token.calendarId === "primary")?.syncToken ??
-			nextTokens[0]?.syncToken,
-		syncTokens: nextTokens,
-		connectedCalendars: syncedCalendars.map((calendar) => ({
-			calendarId: calendar.id,
-			name: calendar.summary,
-			primary: calendar.primary,
-			color: calendar.color,
-			accessRole: calendar.accessRole,
-			isExternal: calendar.isExternal,
-		})),
-	});
+	const mappedEvents = allEvents.map((event) => ({
+		googleEventId: event.googleEventId,
+		title: event.title,
+		description: event.description,
+		start: event.start,
+		end: event.end,
+		allDay: event.allDay,
+		calendarId: event.calendarId,
+		recurrenceRule: event.recurrenceRule,
+		recurringEventId: event.recurringEventId,
+		originalStartTime: event.originalStartTime,
+		status: event.status,
+		etag: event.etag,
+		busyStatus: event.busyStatus,
+		visibility: event.visibility,
+		location: event.location,
+		color: event.color,
+		lastSyncedAt: event.lastSyncedAt,
+	}));
+
+	// Batch events into chunks to avoid OCC (Optimistic Concurrency Control)
+	// failures when syncing large numbers of calendar events.
+	const BATCH_SIZE = 50;
+	if (mappedEvents.length <= BATCH_SIZE) {
+		// Small sync — single mutation handles everything.
+		await upsertSyncedEventsForUser(ctx, {
+			userId,
+			resetCalendars: Array.from(resetCalendars),
+			events: mappedEvents,
+			deletedEvents: allDeletedEvents,
+			nextSyncToken:
+				nextTokens.find((token) => token.calendarId === "primary")?.syncToken ??
+				nextTokens[0]?.syncToken,
+			syncTokens: nextTokens,
+			connectedCalendars: syncedCalendars.map((calendar) => ({
+				calendarId: calendar.id,
+				name: calendar.summary,
+				primary: calendar.primary,
+				color: calendar.color,
+				accessRole: calendar.accessRole,
+				isExternal: calendar.isExternal,
+			})),
+		});
+	} else {
+		// Large sync — first handle reset, deleted events, and settings update
+		// without events to keep the transaction small.
+		await upsertSyncedEventsForUser(ctx, {
+			userId,
+			resetCalendars: Array.from(resetCalendars),
+			events: [],
+			deletedEvents: allDeletedEvents,
+			nextSyncToken:
+				nextTokens.find((token) => token.calendarId === "primary")?.syncToken ??
+				nextTokens[0]?.syncToken,
+			syncTokens: nextTokens,
+			connectedCalendars: syncedCalendars.map((calendar) => ({
+				calendarId: calendar.id,
+				name: calendar.summary,
+				primary: calendar.primary,
+				color: calendar.color,
+				accessRole: calendar.accessRole,
+				isExternal: calendar.isExternal,
+			})),
+		});
+
+		// Then upsert events in batches to avoid OCC conflicts.
+		for (let i = 0; i < mappedEvents.length; i += BATCH_SIZE) {
+			await upsertSyncedEventsBatch(ctx, {
+				userId,
+				events: mappedEvents.slice(i, i + BATCH_SIZE),
+			});
+		}
+	}
 
 	await normalizeGoogleEventsInRange(ctx, {
 		userId,

@@ -4,10 +4,10 @@ import { withQueryAuth } from "../auth";
 import {
 	defaultTaskQuickCreateSettings,
 	hoursSetValidator,
+	isValidTimeZone,
 	normalizeSchedulingDowntimeMinutes,
 	normalizeSchedulingStepMinutes,
 	normalizeTimeFormatPreference,
-	normalizeTimeZone,
 	schedulingStepMinutesValidator,
 	taskCreationStatusValidator,
 	taskPriorityValidator,
@@ -191,7 +191,7 @@ export const getTaskSchedulingDefaults = query({
 export const getCalendarDisplayPreferences = query({
 	args: {},
 	returns: v.object({
-		timezone: v.string(),
+		timezone: v.union(v.null(), v.string()),
 		timeFormatPreference: v.union(v.null(), timeFormatPreferenceValidator),
 	}),
 	handler: withQueryAuth(async (ctx) => {
@@ -199,8 +199,9 @@ export const getCalendarDisplayPreferences = query({
 			.query("userSettings")
 			.withIndex("by_userId", (q) => q.eq("userId", ctx.userId))
 			.unique();
+		const rawTimezone = settings?.timezone?.trim();
 		return {
-			timezone: normalizeTimeZone(settings?.timezone),
+			timezone: rawTimezone && isValidTimeZone(rawTimezone) ? rawTimezone : null,
 			timeFormatPreference: normalizeTimeFormatPreference(settings?.timeFormatPreference),
 		};
 	}),

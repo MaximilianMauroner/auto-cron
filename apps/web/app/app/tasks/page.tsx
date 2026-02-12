@@ -33,6 +33,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useUserPreferences } from "@/components/user-preferences-context";
 import {
 	useActionWithStatus,
 	useAuthenticatedQueryWithStatus,
@@ -239,7 +240,7 @@ const toDateTimeInput = (timestamp?: number) => {
 	return `${year}-${month}-${day}T${hours}:${minutes}`;
 };
 
-const readableDeadline = (timestamp?: number) => {
+const readableDeadline = (timestamp?: number, hour12?: boolean) => {
 	if (!timestamp) return "No deadline";
 	return new Intl.DateTimeFormat(undefined, {
 		month: "short",
@@ -247,6 +248,7 @@ const readableDeadline = (timestamp?: number) => {
 		year: "numeric",
 		hour: "numeric",
 		minute: "2-digit",
+		hour12,
 	}).format(new Date(timestamp));
 };
 
@@ -598,7 +600,7 @@ export default function TasksPage() {
 							<CardDescription className="text-xs uppercase tracking-[0.14em]">
 								Task Engine
 							</CardDescription>
-							<CardTitle className="flex items-center gap-2 text-2xl">
+							<CardTitle className="flex items-center gap-2 text-xl">
 								<Target className="size-5 text-primary" />
 								Tasks
 							</CardTitle>
@@ -608,7 +610,11 @@ export default function TasksPage() {
 								Plan what matters, queue next execution, and keep scheduling unlimited on all plans.
 								Only creation is plan-metered.
 							</p>
-							<Button onClick={openCreate} disabled={busy} className="gap-1.5">
+							<Button
+								onClick={openCreate}
+								disabled={busy}
+								className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90 shadow-[0_2px_8px_-2px_rgba(252,163,17,0.2)]"
+							>
 								<Plus className="size-4" />
 								New task
 							</Button>
@@ -660,6 +666,9 @@ export default function TasksPage() {
 					<div className="grid min-h-[58vh] gap-4 lg:grid-cols-[0.95fr_1.45fr]">
 						<Card className="border-border/70 bg-card/70">
 							<CardHeader className="pb-2">
+								<CardDescription className="text-xs uppercase tracking-[0.14em]">
+									Backlog
+								</CardDescription>
 								<CardTitle className="flex items-center justify-between text-base">
 									<span>{statusTitles.backlog}</span>
 									<Badge variant="secondary">{tasksByStatus.backlog.length}</Badge>
@@ -688,6 +697,9 @@ export default function TasksPage() {
 
 						<Card className="border-border/70 bg-card/70">
 							<CardHeader className="pb-2">
+								<CardDescription className="text-xs uppercase tracking-[0.14em]">
+									Execution lanes
+								</CardDescription>
 								<CardTitle className="flex items-center justify-between text-base">
 									<span>Execution lanes</span>
 									<Badge variant="secondary">{activeCount + completedCount}</Badge>
@@ -784,9 +796,9 @@ function MetricTile({
 	icon: ComponentType<{ className?: string }>;
 }) {
 	return (
-		<div className="rounded-lg border border-border/70 bg-background/50 p-3">
+		<div className="rounded-lg border border-border/70 bg-background/50 p-3 transition-colors hover:border-primary/30">
 			<div className="flex items-center justify-between text-muted-foreground">
-				<span>{label}</span>
+				<span className="text-xs uppercase tracking-[0.08em]">{label}</span>
 				<Icon className="size-3.5" />
 			</div>
 			<div className="mt-1.5 text-xl font-semibold">{value}</div>
@@ -809,6 +821,7 @@ function TaskCard({
 	onReorder: (direction: -1 | 1) => void;
 	isBusy: boolean;
 }) {
+	const { hour12 } = useUserPreferences();
 	return (
 		<div className="rounded-lg border border-border/70 bg-background/70 p-3 shadow-sm transition-colors hover:bg-background/95">
 			<div className="flex items-start justify-between gap-3">
@@ -833,7 +846,7 @@ function TaskCard({
 				</span>
 				<span className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-0.5">
 					<CheckCircle2 className="size-3" />
-					{readableDeadline(task.deadline)}
+					{readableDeadline(task.deadline, hour12)}
 				</span>
 				{task.splitAllowed ? (
 					<span className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-0.5">
@@ -1048,7 +1061,7 @@ function TaskDialog({
 							<p className="text-xs text-muted-foreground">
 								Using account defaults for split, rest, travel, visibility, color, hours, and
 								calendar. Change these in{" "}
-								<a href="/settings/scheduling" className="underline underline-offset-2">
+								<a href="/app/settings/scheduling" className="underline underline-offset-2">
 									Settings
 								</a>
 								.

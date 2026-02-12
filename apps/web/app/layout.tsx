@@ -1,6 +1,7 @@
 import { FeedbackFloatingButton } from "@/components/feedback-floating-button";
 import { ToastProvider } from "@/components/ui/toast-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { UserPreferencesProvider } from "@/components/user-preferences-context";
 import { getConvexUrl } from "@/env/server";
 import type { Metadata } from "next";
 import { ThemeProvider } from "next-themes";
@@ -51,14 +52,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 					disableTransitionOnChange
 				>
 					<ConvexClientProvider convexUrl={convexUrl}>
-						<AutumnProvider>
-							<ToastProvider>
-								<TooltipProvider>
-									{children}
-									<FeedbackFloatingButton />
-								</TooltipProvider>
-							</ToastProvider>
-						</AutumnProvider>
+						<UserPreferencesProvider>
+							<AutumnProvider>
+								<ToastProvider>
+									<TooltipProvider>
+										{children}
+										<FeedbackFloatingButton />
+									</TooltipProvider>
+								</ToastProvider>
+							</AutumnProvider>
+						</UserPreferencesProvider>
 					</ConvexClientProvider>
 				</ThemeProvider>
 			</body>
