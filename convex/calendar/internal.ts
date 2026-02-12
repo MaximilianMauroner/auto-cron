@@ -348,6 +348,7 @@ export const normalizeGoogleEventsInRange = internalMutation({
 						.collect();
 
 		const seriesCache = new Map<string, Doc<"calendarEventSeries"> | null>();
+		const processedSeriesCacheKeys = new Set<string>();
 		let seriesCreated = 0;
 		let seriesUpdated = 0;
 		let occurrencesPatched = 0;
@@ -359,7 +360,7 @@ export const normalizeGoogleEventsInRange = internalMutation({
 
 			const seriesCacheKey = `${event.calendarId ?? "primary"}:${googleSeriesId}`;
 			let series = seriesCache.get(seriesCacheKey);
-			if (!series) {
+			if (!seriesCache.has(seriesCacheKey)) {
 				series = await ctx.db
 					.query("calendarEventSeries")
 					.withIndex("by_userId_calendarId_googleSeriesId", (q) =>
@@ -369,6 +370,7 @@ export const normalizeGoogleEventsInRange = internalMutation({
 							.eq("googleSeriesId", googleSeriesId),
 					)
 					.unique();
+				seriesCache.set(seriesCacheKey, series);
 			}
 
 			const nextSeriesValues = {
@@ -387,29 +389,60 @@ export const normalizeGoogleEventsInRange = internalMutation({
 				color: event.color ?? series?.color,
 				etag: event.etag ?? series?.etag,
 				lastSyncedAt: event.lastSyncedAt ?? series?.lastSyncedAt,
-				updatedAt: Math.max(now, event.updatedAt),
 				isRecurring: Boolean(event.recurringEventId || event.recurrenceRule),
 			};
+			const nextSeriesUpdatedAt = Math.max(now, event.updatedAt);
 
-			if (!series) {
-				const seriesId = await ctx.db.insert("calendarEventSeries", {
-					userId,
-					...nextSeriesValues,
-				});
-				series = await ctx.db.get(seriesId);
+			if (!processedSeriesCacheKeys.has(seriesCacheKey)) {
 				if (!series) {
-					throw new ConvexError({
-						code: "SERIES_CREATE_FAILED",
-						message: "Could not create calendar event series",
+					const seriesId = await ctx.db.insert("calendarEventSeries", {
+						userId,
+						...nextSeriesValues,
+						updatedAt: nextSeriesUpdatedAt,
 					});
+					series = await ctx.db.get(seriesId);
+					if (!series) {
+						throw new ConvexError({
+							code: "SERIES_CREATE_FAILED",
+							message: "Could not create calendar event series",
+						});
+					}
+					seriesCreated += 1;
+				} else {
+					const shouldPatchSeries =
+						series.source !== nextSeriesValues.source ||
+						series.sourceId !== nextSeriesValues.sourceId ||
+						series.calendarId !== nextSeriesValues.calendarId ||
+						series.googleSeriesId !== nextSeriesValues.googleSeriesId ||
+						series.title !== nextSeriesValues.title ||
+						series.description !== nextSeriesValues.description ||
+						series.allDay !== nextSeriesValues.allDay ||
+						series.recurrenceRule !== nextSeriesValues.recurrenceRule ||
+						series.status !== nextSeriesValues.status ||
+						series.busyStatus !== nextSeriesValues.busyStatus ||
+						series.visibility !== nextSeriesValues.visibility ||
+						series.location !== nextSeriesValues.location ||
+						series.color !== nextSeriesValues.color ||
+						series.etag !== nextSeriesValues.etag ||
+						series.lastSyncedAt !== nextSeriesValues.lastSyncedAt ||
+						series.isRecurring !== nextSeriesValues.isRecurring;
+					if (shouldPatchSeries) {
+						await ctx.db.patch(series._id, {
+							...nextSeriesValues,
+							updatedAt: nextSeriesUpdatedAt,
+						});
+						seriesUpdated += 1;
+						series = {
+							...series,
+							...nextSeriesValues,
+							updatedAt: nextSeriesUpdatedAt,
+						};
+					}
 				}
-				seriesCreated += 1;
-			} else {
-				await ctx.db.patch(series._id, nextSeriesValues);
-				seriesUpdated += 1;
-				series = { ...series, ...nextSeriesValues };
+				seriesCache.set(seriesCacheKey, series);
+				processedSeriesCacheKeys.add(seriesCacheKey);
 			}
-			seriesCache.set(seriesCacheKey, series);
+			if (!series) continue;
 
 			const isRecurringInstance = Boolean(event.recurringEventId);
 			const occurrenceStart = normalizeToMinute(event.originalStartTime ?? event.start);

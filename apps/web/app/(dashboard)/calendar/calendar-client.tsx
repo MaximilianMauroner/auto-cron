@@ -1210,13 +1210,17 @@ const useResettableCalendarApp = <TCalendarApp,>(factory: () => TCalendarApp, re
 	return calendarApp;
 };
 
-export function CalendarClient() {
+type CalendarClientProps = {
+	initialErrorMessage?: string | null;
+};
+
+export function CalendarClient({ initialErrorMessage = null }: CalendarClientProps) {
 	const { resolvedTheme } = useTheme();
 	const [isThemeMounted, setIsThemeMounted] = useState(false);
 	const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
 	const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "error">("idle");
 	const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
-	const [error, setError] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(initialErrorMessage);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [sourceFilter, setSourceFilter] = useState<CalendarSource[]>(DEFAULT_SOURCE_FILTER);
 	const [editor, setEditor] = useState<EditorState | null>(null);

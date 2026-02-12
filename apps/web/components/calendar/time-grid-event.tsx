@@ -1,5 +1,6 @@
 "use client";
 
+import { toCssSafeColorKey } from "@/components/calendar/color-key";
 import {
 	ContextMenu,
 	ContextMenuContent,
@@ -124,7 +125,7 @@ function TimeGridEventComponent({ calendarEvent, timeZone, hour12 }: TimeGridEve
 	const semiCompact = minutes >= 45 && minutes < 90;
 	const full = minutes >= 90;
 	const timeLabel = `${formatTime(calendarEvent.start, timeZone, hour12)} – ${formatTime(calendarEvent.end, timeZone, hour12)}`;
-	const colorKey = calendarEvent.calendarId ?? "google-default";
+	const colorKey = toCssSafeColorKey(calendarEvent.calendarId);
 	const eventStyle = {
 		backgroundColor: `var(--sx-color-${colorKey}-container, #1b2640)`,
 		color: `var(--sx-color-on-${colorKey}-container, #b8d0ff)`,

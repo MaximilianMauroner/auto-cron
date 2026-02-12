@@ -918,7 +918,7 @@ export const createEvent = mutation({
 
 		const seriesId = await ctx.db.insert("calendarEventSeries", {
 			userId,
-			source: "google",
+			source: "manual",
 			sourceId: undefined,
 			calendarId,
 			googleSeriesId: undefined,
@@ -945,7 +945,7 @@ export const createEvent = mutation({
 			end: args.input.end,
 			allDay: undefined,
 			updatedAt: now,
-			source: "google",
+			source: "manual",
 			sourceId: undefined,
 			googleEventId: undefined,
 			calendarId,

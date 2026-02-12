@@ -699,7 +699,7 @@ describe("scheduling run queueing", () => {
 				end: now + 2 * 60 * 60 * 1000,
 			});
 			expect(events.some((event) => event.source === "task")).toBe(true);
-			expect(events.some((event) => event.source === "google")).toBe(true);
+			expect(events.some((event) => event.source === "manual")).toBe(true);
 		});
 
 		test("updating an event into overlap with scheduled task enqueues calendar_change", async () => {

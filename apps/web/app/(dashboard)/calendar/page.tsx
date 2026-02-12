@@ -20,6 +20,7 @@ export default async function CalendarPage() {
 	const { accessToken } = await withAuth();
 	const cookieStore = await cookies();
 	const refreshToken = cookieStore.get("google_refresh_token")?.value;
+	let backfillFailureMessage: string | null = null;
 
 	if (accessToken && refreshToken) {
 		try {
@@ -29,12 +30,14 @@ export default async function CalendarPage() {
 			});
 		} catch (error) {
 			console.error("Failed to backfill Google refresh token:", error);
+			backfillFailureMessage =
+				"We couldn't reconnect your Google Calendar token. Sync may fail until you reconnect Google Calendar.";
 		}
 	}
 
 	return (
 		<div className="relative h-full min-h-0">
-			<CalendarClient />
+			<CalendarClient initialErrorMessage={backfillFailureMessage} />
 			<div className="pointer-events-none absolute right-3 bottom-3 z-20 sm:right-4 sm:bottom-4">
 				<div className="pointer-events-auto">
 					<SchedulingDiagnostics />

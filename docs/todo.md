@@ -58,7 +58,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Install shadcn Autumn components (pricing-table, paywall-dialog, checkout-dialog)
 - [x] Create `/pricing` page with plan comparison
 - [x] Push config to Autumn dashboard (`npx atmn push`) - requires `AUTUMN_SECRET_KEY`
-- [ ] Wire up `identify` in API route + Convex once WorkOS auth is live
+- [x] Wire up `identify` in API route + Convex once WorkOS auth is live
 - [x] Add feature gating + reservation flow for `createTask`/`createHabit` actions only
 - [ ] Add billing portal link to settings page
 

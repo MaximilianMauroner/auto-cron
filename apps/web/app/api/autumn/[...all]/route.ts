@@ -1,6 +1,7 @@
 import { serverEnv } from "@/env/server";
-import { withAuth } from "@workos-inc/authkit-nextjs";
+import { authkit } from "@workos-inc/authkit-nextjs";
 import { autumnHandler } from "autumn-js/next";
+import type { NextRequest } from "next/server";
 
 const normalizeOptionalString = (value: string | null | undefined) => {
 	if (!value) return undefined;
@@ -11,8 +12,9 @@ const normalizeOptionalString = (value: string | null | undefined) => {
 const handlers = autumnHandler({
 	secretKey: serverEnv.AUTUMN_SECRET_KEY,
 	suppressLogs: true,
-	identify: async () => {
-		const { user } = await withAuth();
+	identify: async (request) => {
+		const { session } = await authkit(request as NextRequest);
+		const user = session.user;
 		if (!user?.id) return null;
 
 		const email = normalizeOptionalString(user.email);
