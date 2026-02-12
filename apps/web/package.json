@@ -20,6 +20,7 @@
 		"@schedule-x/react": "^2.37.0",
 		"@schedule-x/scroll-controller": "^3.0.0",
 		"@schedule-x/theme-default": "^3.0.0",
+		"@t3-oss/env-nextjs": "^0.13.10",
 		"@tailwindcss/postcss": "^4.1.18",
 		"autumn-js": "^0.1.75",
 		"class-variance-authority": "^0.7.1",

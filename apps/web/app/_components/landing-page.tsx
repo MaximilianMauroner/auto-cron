@@ -85,7 +85,7 @@ const PLANS = [
 	{
 		name: "Basic",
 		price: "5",
-		features: ["50 tasks", "5 habits", "100 scheduling runs", "Google Calendar sync"],
+		features: ["50 tasks", "5 habits", "Unlimited scheduling", "Google Calendar sync"],
 		highlight: false,
 	},
 	{
@@ -94,7 +94,7 @@ const PLANS = [
 		features: [
 			"200 tasks",
 			"20 habits",
-			"500 scheduling runs",
+			"Unlimited scheduling",
 			"Smart rescheduling",
 			"Priority support",
 		],

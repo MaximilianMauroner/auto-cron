@@ -16,7 +16,7 @@ type AutumnIdentifyContext = {
 // 1. It must return null (not throw) when unauthenticated
 // 2. Its AutumnIdentifyContext type lacks `runQuery`, so requireAuthUser() won't work
 export const autumn = new Autumn(components.autumn, {
-	secretKey: env().AUTUMN_SECRET_KEY ?? "",
+	secretKey: env().AUTUMN_SECRET_KEY,
 	identify: async (ctx: AutumnIdentifyContext) => {
 		const user = await ctx.auth.getUserIdentity();
 		if (!user) return null;

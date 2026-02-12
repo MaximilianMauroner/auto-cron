@@ -13,6 +13,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 3. [x] Shared package structure (`packages/types`, `packages/config`)
 4. [x] Billing scaffolding with Autumn
 5. [x] WorkOS auth integration (web + Convex wiring)
+6. [x] Pre-commit quality gate (format staged files, lint, typecheck, tests)
 
 ### UX + Performance
 
@@ -22,13 +23,13 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 
 ### Core product
 
-1. [ ] Task CRUD and prioritization flows
-2. [ ] Habit CRUD and scheduling preference flows
+1. [x] Task CRUD and prioritization flows
+2. [x] Habit CRUD and scheduling preference flows
 3. [ ] Auto-scheduling engine with conflict handling
 4. [x] Calendar views with drag/drop rescheduling
 5. [~] Google Calendar bidirectional sync
 6. [ ] Scheduling run history and diagnostics UI
-7. [ ] Feature gating via Autumn `check()` in Convex functions
+7. [~] Feature gating via Autumn `check()` in Convex functions (task/habit create only)
 
 ## Implementation roadmap
 
@@ -44,12 +45,13 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Create `convex/` - schema, auth config, HTTP router
 - [x] Create placeholder apps (mobile, desktop)
 - [x] Verify: `bun install`, `turbo build`, `biome check .` all pass
+- [x] Add Husky pre-commit hook with staged formatting + lint/typecheck/tests gate
 
 ### Phase 1.5: Billing with Autumn [DONE]
 
 - [x] Install `autumn-js` and `@useautumn/convex`
 - [x] Create `autumn.config.ts` with 3 plans: Basic (EUR 5/mo), Pro (EUR 8/mo), Premium (EUR 16/mo)
-- [x] Define features: tasks, habits, scheduling_runs, analytics (Google Sync is free for all plans)
+- [x] Define features: tasks, habits, analytics (Google Sync + scheduling are free for all plans)
 - [x] Set up Convex Autumn component (`convex/convex.config.ts`, `convex/autumn.ts`)
 - [x] Create Next.js API route handler (`app/api/autumn/[...all]/route.ts`)
 - [x] Add `AutumnProvider` wrapper to root layout
@@ -57,7 +59,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Create `/pricing` page with plan comparison
 - [x] Push config to Autumn dashboard (`npx atmn push`) - requires `AUTUMN_SECRET_KEY`
 - [ ] Wire up `identify` in API route + Convex once WorkOS auth is live
-- [ ] Add feature gating with `check()` in Convex mutations (tasks, habits, scheduling runs)
+- [x] Add feature gating + reservation flow for `createTask`/`createHabit` actions only
 - [ ] Add billing portal link to settings page
 
 ### Phase 2: Auth + Convex backend
@@ -71,6 +73,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Add auth guard to dashboard layout (redirect to /sign-in if unauthenticated)
 - [x] Install Convex component: `@convex-dev/workos-authkit`
 - [x] Add Convex auth wrappers + structured unauthorized errors (`UNAUTHORIZED`)
+- [x] Add Convex auth hardening tests (`convex-test` + `vitest` + edge-runtime)
 - [~] Install Convex components: `@convex-dev/crons` done; `@convex-dev/workpool`, `@convex-dev/workflow`, `@convex-dev/action-retrier`, and `@convex-dev/rate-limiter` pending
 
 ### Cross-cutting UX + performance
@@ -78,32 +81,37 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [ ] Unified design language based on the dataset (so it works well with shadcn/ui)
 - [ ] Use shadcn/ui whenever possible for UI primitives and patterns
 - [ ] Store a bit of calendar events on-device for fast initial load
+- [x] Standardize Convex query usage on status-aware hooks (`useQueryWithStatus` + authenticated wrappers)
 
 ### Phase 3: Task system
 
-- [ ] Task CRUD mutations (create, update, delete, reorder)
-- [ ] Task queries (by status, by user, sorted by priority/deadline)
-- [ ] Tasks page UI - split view: Backlog (left) + Queue (right)
+- [x] Task CRUD API surface (`create` action + `update/delete/reorder` mutations)
+- [x] Task queries (by status, by user, sorted by status/sort order)
+- [x] Tasks page UI - split view: Backlog (left) + execution lanes (right)
 - [ ] Drag-and-drop between backlog and queue (change status on drop)
-- [ ] Task creation dialog (title, description, priority, estimated duration, deadline)
-- [ ] Task detail sheet/dialog with edit capability
-- [ ] Inline priority badge + deadline indicator
+- [x] Task creation dialog (title, description, priority, estimated duration, deadline)
+- [x] Task detail/edit dialog with update capability
+- [x] Inline priority badge + deadline indicator
+- [x] Per-task hours set assignment (`hoursSetId`) + scheduling mode override (`fastest|backfacing|parallel`)
 - [ ] Bulk actions (mark done, change priority, delete)
 
 ### Phase 4: Habits system
 
-- [ ] Habit CRUD mutations
-- [ ] Habit queries (active habits by user)
-- [ ] Habits page UI - grid/list of habits with frequency badges
-- [ ] Habit creation dialog (title, category, frequency, duration, preferred time window, preferred days)
-- [ ] Habit toggle (active/inactive)
-- [ ] Habit scheduling windows - preferred time ranges per habit
+- [x] Habit CRUD API surface (`create` action + `update/delete/toggle` mutations)
+- [x] Habit queries (all by user + optional active filter)
+- [x] Habits page UI - dense list/cards with frequency/category/duration chips
+- [x] Habit creation/edit dialog (title, category, frequency, duration, preferred window, preferred days)
+- [x] Habit advanced options editor (priority, calendar, visibility, time defense, reminders, location)
+- [x] Habit toggle (active/inactive)
+- [x] Habit scheduling windows - preferred time ranges per habit
+- [x] Habit hours set assignment (`hoursSetId`)
 - [ ] Smart free/busy detection for habit placement
 
 ### Phase 5: Auto-scheduling engine
 
 - [ ] Priority-based greedy solver: sort tasks by (deadline urgency * priority weight), place in earliest available slot
-- [ ] Respect working hours from `userSettings`
+- [x] Hours-set model + bootstrap migration (`Work`, `Anytime (24/7)`, default enforcement)
+- [ ] Respect selected hours sets in scheduler placement logic
 - [ ] Respect existing calendar events (busy status)
 - [ ] Place habits in preferred windows when possible, fallback to any free slot
 - [ ] Trigger system: auto-reschedule on task create/update/delete, on habit change, on calendar event change
@@ -112,6 +120,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [ ] Use `@convex-dev/workflow` for durable multi-step scheduling pipeline
 - [ ] Apply scheduling results as mutations to `calendarEvents` table
 - [ ] Scheduling run history (track in `schedulingRuns` table)
+- [x] Keep scheduling unlimited for all plans (remove scheduling metering)
 
 ### Phase 6: Calendar views
 
@@ -148,7 +157,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 
 ### Phase 9: Analytics dashboard
 
-- [ ] Settings page: working hours, timezone, scheduling horizon, sync preferences
+- [~] Settings page: hours sets manager + default task scheduling mode implemented; remaining settings sections pending (timezone, scheduling horizon, sync preferences)
 - [ ] Weekly/monthly productivity stats (tasks completed, habits maintained)
 - [ ] Time allocation breakdown (chart: tasks vs habits vs meetings vs free)
 - [ ] Streak tracking for habits

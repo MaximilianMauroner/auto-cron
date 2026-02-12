@@ -4,7 +4,8 @@
 	"workspaces": ["apps/*", "packages/*"],
 	"scripts": {
 		"dev": "turbo dev",
-		"build": "turbo build",
+		"build": "bun run env:check && turbo build",
+		"env:check": "bun run scripts/validate-env.ts",
 		"lint": "biome check .",
 		"format": "biome check --write .",
 		"format:staged": "lint-staged",
@@ -34,8 +35,10 @@
 	"dependencies": {
 		"@convex-dev/crons": "^0.2.0",
 		"@convex-dev/workos-authkit": "^0.1.6",
+		"@t3-oss/env-core": "^0.13.10",
 		"@workos-inc/authkit-nextjs": "^2.13.0",
 		"atmn": "^0.0.36",
-		"convex": "^1.21.0"
+		"convex": "^1.21.0",
+		"zod": "^4.3.6"
 	}
 }

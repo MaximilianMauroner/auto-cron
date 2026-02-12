@@ -14,12 +14,6 @@ export const habits = feature({
 	type: "single_use",
 });
 
-export const schedulingRuns = feature({
-	id: "scheduling_runs",
-	name: "Auto-scheduling runs",
-	type: "single_use",
-});
-
 export const analytics = feature({
 	id: "analytics",
 	name: "Analytics Dashboard",
@@ -46,11 +40,6 @@ export const basic = product({
 			included_usage: 5,
 			interval: "month",
 		}),
-		featureItem({
-			feature_id: schedulingRuns.id,
-			included_usage: 100,
-			interval: "month",
-		}),
 	],
 });
 
@@ -72,11 +61,6 @@ export const pro = product({
 			included_usage: 20,
 			interval: "month",
 		}),
-		featureItem({
-			feature_id: schedulingRuns.id,
-			included_usage: 500,
-			interval: "month",
-		}),
 	],
 });
 
@@ -95,11 +79,6 @@ export const premium = product({
 		}),
 		featureItem({
 			feature_id: habits.id,
-			included_usage: "inf",
-			interval: "month",
-		}),
-		featureItem({
-			feature_id: schedulingRuns.id,
 			included_usage: "inf",
 			interval: "month",
 		}),

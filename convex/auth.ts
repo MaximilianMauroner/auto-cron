@@ -85,10 +85,10 @@ export const { authKitEvent } = authKit.events({
 		await ctx.db.insert("userSettings", {
 			userId: event.data.id,
 			timezone: "UTC",
-			workingHoursStart: "09:00",
-			workingHoursEnd: "17:00",
-			workingDays: [1, 2, 3, 4, 5],
-			schedulingHorizonDays: 7,
+			defaultTaskSchedulingMode: "fastest",
+			schedulingHorizonDays: 75,
+			googleCalendarSyncTokens: [],
+			googleConnectedCalendars: [],
 		});
 	},
 	"user.deleted": async (ctx, event) => {

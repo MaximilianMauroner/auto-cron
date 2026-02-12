@@ -30,6 +30,7 @@ import {
 	Calendar,
 	CheckSquare,
 	ChevronsUpDown,
+	Clock3,
 	CreditCard,
 	LogOut,
 	Moon,
@@ -52,6 +53,15 @@ const navItems = [
 	{ title: "Tasks", href: "/tasks", icon: CheckSquare },
 	{ title: "Habits", href: "/habits", icon: Repeat },
 ];
+
+type GoogleCalendarListItem = {
+	id: string;
+	name: string;
+	primary: boolean;
+	color?: string;
+	accessRole?: "owner" | "writer" | "reader" | "freeBusyReader";
+	isExternal: boolean;
+};
 
 const prettifyCalendarName = (id: string) => {
 	if (id === "primary") return "Default";
@@ -100,11 +110,11 @@ export function AppSidebar() {
 		api.calendar.queries.listGoogleCalendars,
 		isCalendarRoute ? {} : "skip",
 	);
-	const googleCalendars = googleCalendarsQuery.data;
+	const googleCalendars = (googleCalendarsQuery.data ?? []) as GoogleCalendarListItem[];
 	const isGoogleCalendarsLoading =
 		isCalendarRoute && isAuthenticated && (isConvexAuthLoading || googleCalendarsQuery.isPending);
 	const calendarAccounts = useMemo(() => {
-		return (googleCalendars ?? [])
+		return googleCalendars
 			.map((calendar) => ({
 				id: calendar.id,
 				name: calendar.name?.trim() ? calendar.name : prettifyCalendarName(calendar.id),
@@ -173,6 +183,24 @@ export function AppSidebar() {
 									</SidebarMenuButton>
 								</SidebarMenuItem>
 							))}
+						</SidebarMenu>
+					</SidebarGroupContent>
+				</SidebarGroup>
+				<SidebarGroup className="gap-0.5 p-1">
+					<SidebarGroupLabel>Quick Actions</SidebarGroupLabel>
+					<SidebarGroupContent>
+						<SidebarMenu>
+							<SidebarMenuItem>
+								<SidebarMenuButton asChild isActive={false}>
+									<Link
+										href="/settings/hours"
+										className="relative flex w-full items-center gap-2.5"
+									>
+										<Clock3 className="size-3.5 shrink-0" />
+										<span className="text-[0.76rem] font-medium">Hours settings</span>
+									</Link>
+								</SidebarMenuButton>
+							</SidebarMenuItem>
 						</SidebarMenu>
 					</SidebarGroupContent>
 				</SidebarGroup>
@@ -274,6 +302,12 @@ export function AppSidebar() {
 								<DropdownMenuGroup>
 									<DropdownMenuItem asChild>
 										<Link href="/settings">
+											<Settings />
+											Settings
+										</Link>
+									</DropdownMenuItem>
+									<DropdownMenuItem asChild>
+										<Link href="/settings/account">
 											<UserCircle />
 											Account
 										</Link>
@@ -285,7 +319,7 @@ export function AppSidebar() {
 										</Link>
 									</DropdownMenuItem>
 									<DropdownMenuItem asChild>
-										<Link href="/settings">
+										<Link href="/settings/notifications">
 											<Bell />
 											Notifications
 										</Link>

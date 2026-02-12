@@ -1,3 +1,4 @@
+import { serverEnv } from "@/env/server";
 import { createConvexHttpClient } from "@/lib/convex-http";
 import { handleAuth } from "@workos-inc/authkit-nextjs";
 import { makeFunctionReference } from "convex/server";
@@ -13,7 +14,7 @@ export const GET = handleAuth({
 	returnPathname: "/calendar",
 	onSuccess: async ({ accessToken, oauthTokens }) => {
 		const cookieStore = await cookies();
-		const isProd = process.env.NODE_ENV === "production";
+		const isProd = serverEnv.NODE_ENV === "production";
 		const existingRefreshToken = cookieStore.get("google_refresh_token")?.value;
 
 		if (!oauthTokens) {

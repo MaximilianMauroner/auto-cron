@@ -51,6 +51,16 @@ bun run test:convex:run
   - unauthenticated access rejection for public calendar query/mutation
   - user scoping verification for `listEvents`
   - regression check that removed public sync mutation is not callable
+  - task/habit create authorization checks
+  - billing limit rejections (`FEATURE_LIMIT_REACHED`) for tasks/habits
+  - idempotent create behavior via `requestId` and committed reservations
+  - compensation rollback when billing track fails
+  - verification that task/habit update/delete/toggle are not billing-gated
+  - verification that calendar scheduling endpoints remain ungated
+  - hours-set bootstrap guarantees (`Work` + `Anytime (24/7)`)
+  - hours window validation (overlap/range/granularity)
+  - default fallback reassignment when deleting non-default hours sets
+  - task scheduling mode default + per-task override behavior
 
 ## Manual verification checklist
 
@@ -58,6 +68,7 @@ bun run test:convex:run
 - Task and habit operations update UI and backend consistently.
 - Calendar events reflect scheduling results without overlap regressions.
 - Billing-gated actions are correctly blocked/unblocked by plan.
+- Task and habit create flows open paywall when limit is reached.
 
 ## Manual auth + middleware checklist
 

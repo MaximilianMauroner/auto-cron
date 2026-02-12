@@ -1,5 +1,6 @@
 "use client";
 
+import { clientEnv } from "@/env/client";
 import { AutumnProvider as BaseAutumnProvider } from "autumn-js/react";
 import type { ReactNode } from "react";
 
@@ -8,17 +9,11 @@ function normalizeBaseUrl(url: string) {
 }
 
 function resolveBackendUrl() {
-	const explicitUrl =
-		process.env.NEXT_PUBLIC_AUTUMN_BACKEND_URL ??
-		process.env.NEXT_PUBLIC_APP_URL ??
-		process.env.NEXT_PUBLIC_SITE_URL;
+	const explicitUrl = clientEnv.NEXT_PUBLIC_AUTUMN_BACKEND_URL;
 
 	if (explicitUrl) return normalizeBaseUrl(explicitUrl);
 
 	if (typeof window !== "undefined") return window.location.origin;
-
-	const vercelUrl = process.env.VERCEL_URL;
-	if (vercelUrl) return `https://${vercelUrl}`;
 
 	return "http://localhost:3000";
 }

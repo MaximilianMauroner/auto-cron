@@ -1,4 +1,5 @@
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { getConvexUrl } from "@/env/server";
 import type { Metadata } from "next";
 import { ThemeProvider } from "next-themes";
 import { AutumnProvider } from "./AutumnProvider";
@@ -31,7 +32,7 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-	const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL ?? process.env.CONVEX_URL;
+	const convexUrl = getConvexUrl();
 
 	return (
 		<html lang="en" suppressHydrationWarning>

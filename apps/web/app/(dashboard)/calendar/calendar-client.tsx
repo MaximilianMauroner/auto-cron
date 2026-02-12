@@ -1155,11 +1155,12 @@ export function CalendarClient() {
 		end: queryRange.end,
 		sourceFilter,
 	});
-	const events = eventsQuery.data;
-	const { data: googleCalendars } = useAuthenticatedQueryWithStatus(
+	const events = (eventsQuery.data ?? []) as CalendarEventDTO[];
+	const googleCalendarsQuery = useAuthenticatedQueryWithStatus(
 		api.calendar.queries.listGoogleCalendars,
 		{},
 	);
+	const googleCalendars = (googleCalendarsQuery.data ?? []) as GoogleCalendarListItem[];
 
 	const { mutate: createEventMutation } = useMutationWithStatus(api.calendar.mutations.createEvent);
 	const { mutate: updateEventMutation } = useMutationWithStatus(api.calendar.mutations.updateEvent);
@@ -1172,7 +1173,7 @@ export function CalendarClient() {
 
 	const normalizedEvents = useMemo(() => {
 		const deduped = new Map<string, CalendarEventDTO>();
-		for (const event of events ?? []) {
+		for (const event of events) {
 			const key = buildDedupeKey(event);
 			const previous = deduped.get(key);
 			if (!previous || recencyScore(event) > recencyScore(previous)) {
@@ -1323,7 +1324,7 @@ export function CalendarClient() {
 	}, [normalizedEvents]);
 	const googleCalendarNamesById = useMemo(() => {
 		const names = new Map<string, string>();
-		for (const calendar of googleCalendars ?? []) {
+		for (const calendar of googleCalendars) {
 			names.set(
 				calendar.id,
 				calendar.name?.trim() ? calendar.name : prettifyCalendarName(calendar.id),
@@ -1335,7 +1336,7 @@ export function CalendarClient() {
 		return names;
 	}, [googleCalendars]);
 	const editableGoogleCalendars = useMemo(() => {
-		const writable = (googleCalendars ?? []).filter((calendar) => {
+		const writable = googleCalendars.filter((calendar) => {
 			const accessRole = calendar.accessRole;
 			return !accessRole || accessRole === "owner" || accessRole === "writer";
 		});
@@ -1362,7 +1363,7 @@ export function CalendarClient() {
 	);
 	const googleCalendarColorById = useMemo(() => {
 		const colorById = new Map<string, string | undefined>();
-		for (const calendar of googleCalendars ?? []) {
+		for (const calendar of googleCalendars) {
 			colorById.set(calendar.id, calendar.color);
 		}
 		return colorById;

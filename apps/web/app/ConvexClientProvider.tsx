@@ -1,6 +1,7 @@
 "use client";
 
 import { AuthKitProvider, useAccessToken, useAuth } from "@workos-inc/authkit-nextjs/components";
+import { ConvexQueryCacheProvider } from "convex-helpers/react/cache/provider";
 import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
 import { type ReactNode, useCallback, useMemo } from "react";
 
@@ -43,7 +44,7 @@ export function ConvexClientProvider({
 	return (
 		<AuthKitProvider>
 			<ConvexProviderWithAuth client={convex} useAuth={useWorkOSAuthForConvex}>
-				{children}
+				<ConvexQueryCacheProvider>{children}</ConvexQueryCacheProvider>
 			</ConvexProviderWithAuth>
 		</AuthKitProvider>
 	);

@@ -6,6 +6,7 @@ import {
 	type OptionalRestArgsOrSkip,
 	type PaginatedQueryArgs,
 	type PaginatedQueryReference,
+	useAction,
 	useConvexAuth,
 	useMutation,
 	usePaginatedQuery,
@@ -14,6 +15,7 @@ import type { FunctionReference, OptionalRestArgs } from "convex/server";
 import { useCallback, useState } from "react";
 
 export type MutationStatus = "idle" | "pending" | "success" | "error";
+export type ActionStatus = "idle" | "pending" | "success" | "error";
 
 export const useQueryWithStatus = makeUseQueryWithStatus(useQueries);
 
@@ -65,6 +67,47 @@ export const useMutationWithStatus = <Mutation extends FunctionReference<"mutati
 
 	return {
 		mutate,
+		status,
+		error,
+		reset,
+		isIdle: status === "idle",
+		isPending: status === "pending",
+		isSuccess: status === "success",
+		isError: status === "error",
+	};
+};
+
+export const useActionWithStatus = <Action extends FunctionReference<"action">>(
+	actionRef: Action,
+) => {
+	const action = useAction(actionRef);
+	const [status, setStatus] = useState<ActionStatus>("idle");
+	const [error, setError] = useState<unknown>(null);
+
+	const execute = useCallback(
+		async (...args: OptionalRestArgs<Action>): Promise<Action["_returnType"]> => {
+			setStatus("pending");
+			setError(null);
+			try {
+				const result = await action(...args);
+				setStatus("success");
+				return result;
+			} catch (err) {
+				setStatus("error");
+				setError(err);
+				throw err;
+			}
+		},
+		[action],
+	);
+
+	const reset = useCallback(() => {
+		setStatus("idle");
+		setError(null);
+	}, []);
+
+	return {
+		execute,
 		status,
 		error,
 		reset,

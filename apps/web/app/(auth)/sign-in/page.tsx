@@ -1,15 +1,11 @@
+import { serverEnv } from "@/env/server";
 import { getWorkOS } from "@workos-inc/authkit-nextjs";
 import Image from "next/image";
 import Link from "next/link";
 
 export default async function SignInPage() {
-	const clientId = process.env.WORKOS_CLIENT_ID;
-	const redirectUri = process.env.NEXT_PUBLIC_WORKOS_REDIRECT_URI;
-	if (!clientId || !redirectUri) {
-		throw new Error(
-			"Missing WorkOS env vars. Set WORKOS_CLIENT_ID and NEXT_PUBLIC_WORKOS_REDIRECT_URI.",
-		);
-	}
+	const clientId = serverEnv.WORKOS_CLIENT_ID;
+	const redirectUri = serverEnv.NEXT_PUBLIC_WORKOS_REDIRECT_URI;
 
 	const signInUrl = getWorkOS().userManagement.getAuthorizationUrl({
 		clientId,

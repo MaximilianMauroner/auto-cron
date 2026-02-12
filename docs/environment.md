@@ -8,7 +8,8 @@ Copy from `.env.example` and set values:
 
 | Variable | Purpose | Required |
 |----------|---------|----------|
-| `NEXT_PUBLIC_CONVEX_URL` | Convex URL used by the web client | Yes |
+| `NEXT_PUBLIC_CONVEX_URL` | Convex URL used by the web client (public) | Yes* |
+| `CONVEX_URL` | Server-side Convex URL fallback when `NEXT_PUBLIC_CONVEX_URL` is not set | Yes* |
 | `CONVEX_DEPLOY_KEY` | Convex deployment/auth key for backend operations | Yes |
 | `WORKOS_API_KEY` | WorkOS server API key | Yes |
 | `WORKOS_CLIENT_ID` | WorkOS AuthKit client ID | Yes |
@@ -22,6 +23,11 @@ Copy from `.env.example` and set values:
 
 ## Notes
 
+- Env validation uses `@t3-oss/env-nextjs` in web (`apps/web/env/*`) and `@t3-oss/env-core` for root checks (`scripts/validate-env.ts`).
+- Convex runtime reads env directly via `process.env` in `convex/env.ts` (Convex-managed env behavior).
+- `bun run build` now fails fast when required env variables are missing or invalid.
+- `bun run env:check` validates build/runtime vars; Convex-only secrets like `WORKOS_WEBHOOK_SECRET` still need to be configured in Convex separately.
+- `*` Convex URL requirement means at least one of `NEXT_PUBLIC_CONVEX_URL` or `CONVEX_URL` must be set.
 - `NEXT_PUBLIC_*` variables are exposed to browser bundles.
 - `NEXT_PUBLIC_AUTUMN_BACKEND_URL` avoids Autumn SSR fetch errors caused by relative `/api/autumn/*` URLs.
 - Keep secrets out of client code and logs.

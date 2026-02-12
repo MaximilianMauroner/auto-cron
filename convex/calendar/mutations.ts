@@ -411,7 +411,18 @@ const performUpsertSyncedEventsForUser = async (
 			mergedSyncTokensByCalendarId.get("primary")?.syncToken ??
 			(resetCalendarIds.has("primary") ? undefined : settings.googleSyncToken);
 
-		await ctx.db.patch(settings._id, {
+		const currentMode = (settings as { defaultTaskSchedulingMode?: string })
+			.defaultTaskSchedulingMode;
+		const defaultTaskSchedulingMode =
+			currentMode === "fastest" || currentMode === "backfacing" || currentMode === "parallel"
+				? currentMode
+				: "fastest";
+		await ctx.db.replace(settings._id, {
+			userId: settings.userId,
+			timezone: settings.timezone ?? "UTC",
+			defaultTaskSchedulingMode,
+			schedulingHorizonDays: settings.schedulingHorizonDays ?? 75,
+			googleRefreshToken: settings.googleRefreshToken,
 			googleSyncToken: nextPrimaryToken,
 			googleCalendarSyncTokens: nextSyncTokens,
 			googleConnectedCalendars: args.connectedCalendars ?? settings.googleConnectedCalendars,
@@ -449,10 +460,21 @@ export const upsertGoogleTokens = mutation({
 						return Array.from(tokensByCalendarId.values());
 					})()
 				: (existing.googleCalendarSyncTokens ?? []);
-			await ctx.db.patch(existing._id, {
+			const currentMode = (existing as { defaultTaskSchedulingMode?: string })
+				.defaultTaskSchedulingMode;
+			const defaultTaskSchedulingMode =
+				currentMode === "fastest" || currentMode === "backfacing" || currentMode === "parallel"
+					? currentMode
+					: "fastest";
+			await ctx.db.replace(existing._id, {
+				userId: existing.userId,
+				timezone: existing.timezone ?? "UTC",
+				defaultTaskSchedulingMode,
+				schedulingHorizonDays: existing.schedulingHorizonDays ?? 75,
 				googleRefreshToken: args.refreshToken,
 				googleSyncToken: args.syncToken ?? existing.googleSyncToken,
 				googleCalendarSyncTokens: nextCalendarSyncTokens,
+				googleConnectedCalendars: existing.googleConnectedCalendars,
 			});
 			await ctx.scheduler.runAfter(0, internal.crons.ensureCalendarSyncGoogleCron, {});
 			return existing._id;
@@ -461,9 +483,7 @@ export const upsertGoogleTokens = mutation({
 		const insertedId = await ctx.db.insert("userSettings", {
 			userId,
 			timezone: "UTC",
-			workingHoursStart: "09:00",
-			workingHoursEnd: "17:00",
-			workingDays: [1, 2, 3, 4, 5],
+			defaultTaskSchedulingMode: "fastest",
 			schedulingHorizonDays: 75,
 			googleRefreshToken: args.refreshToken,
 			googleSyncToken: args.syncToken,
