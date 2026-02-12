@@ -1,3 +1,4 @@
+import { FeedbackFloatingButton } from "@/components/feedback-floating-button";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getConvexUrl } from "@/env/server";
 import type { Metadata } from "next";
@@ -45,7 +46,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 				>
 					<ConvexClientProvider convexUrl={convexUrl}>
 						<AutumnProvider>
-							<TooltipProvider>{children}</TooltipProvider>
+							<TooltipProvider>
+								{children}
+								<FeedbackFloatingButton />
+							</TooltipProvider>
 						</AutumnProvider>
 					</ConvexClientProvider>
 				</ThemeProvider>

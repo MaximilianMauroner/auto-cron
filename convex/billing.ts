@@ -20,6 +20,13 @@ type FeatureLimitError = {
 	preview?: string;
 };
 
+type BillingCheckFailedError = {
+	code: "BILLING_CHECK_FAILED";
+	message: string;
+	featureId: BillableFeatureId;
+	providerCode?: string;
+};
+
 type BillingLockError = {
 	code: "BILLING_LOCKED";
 	message: string;
@@ -28,8 +35,19 @@ type BillingLockError = {
 
 const getBillingMode = () => env().AUTUMN_BILLING_MODE?.trim().toLowerCase() ?? "live";
 
-const featureLimitMessage = (featureId: BillableFeatureId) =>
-	`You've reached your ${featureId} limit for the current billing cycle.`;
+const featureLimitMessage = (featureId: BillableFeatureId) => {
+	if (featureId === "habits") {
+		return "You've reached your total habits limit for your current plan.";
+	}
+	return "You've reached your tasks limit for the current billing cycle.";
+};
+
+const normalizeOptionalString = (value: unknown): string | undefined => {
+	if (typeof value !== "string") return undefined;
+	const normalized = value.trim();
+	if (!normalized || normalized === "undefined" || normalized === "null") return undefined;
+	return normalized;
+};
 
 const featureLimitError = ({
 	featureId,
@@ -44,8 +62,22 @@ const featureLimitError = ({
 		code: "FEATURE_LIMIT_REACHED",
 		message: featureLimitMessage(featureId),
 		featureId,
-		scenario,
-		preview,
+		...(scenario ? { scenario } : {}),
+		...(preview ? { preview } : {}),
+	});
+
+const billingCheckFailedError = ({
+	featureId,
+	providerCode,
+}: {
+	featureId: BillableFeatureId;
+	providerCode?: string;
+}) =>
+	new ConvexError<BillingCheckFailedError>({
+		code: "BILLING_CHECK_FAILED",
+		message: "Billing provider check failed. Please retry.",
+		featureId,
+		...(providerCode ? { providerCode } : {}),
 	});
 
 const billingLockedError = (featureId: BillableFeatureId) =>
@@ -64,6 +96,15 @@ const parseCheckOutcome = (checkResult: unknown) => {
 		topLevel && typeof topLevel.data === "object" && topLevel.data !== null
 			? (topLevel.data as Record<string, unknown>)
 			: topLevel;
+	const topLevelError =
+		topLevel && typeof topLevel.error === "object" && topLevel.error !== null
+			? (topLevel.error as Record<string, unknown>)
+			: undefined;
+	const dataError =
+		data && typeof data.error === "object" && data.error !== null
+			? (data.error as Record<string, unknown>)
+			: undefined;
+	const error = topLevelError ?? dataError;
 	const allowedCandidates = [
 		data?.allowed,
 		data?.isAllowed,
@@ -73,24 +114,27 @@ const parseCheckOutcome = (checkResult: unknown) => {
 		topLevel?.is_allowed,
 	];
 	const allowed = allowedCandidates.find((value) => typeof value === "boolean");
-	const scenarioCandidate = data?.scenario;
-	const scenario = typeof scenarioCandidate === "string" ? scenarioCandidate : undefined;
+	const scenario = normalizeOptionalString(data?.scenario);
 	let preview: string | undefined;
 	try {
 		const rawPreview = data?.preview;
 		if (typeof rawPreview === "string") {
-			preview = rawPreview;
+			preview = normalizeOptionalString(rawPreview);
 		} else if (rawPreview !== undefined) {
 			preview = JSON.stringify(rawPreview);
 		}
 	} catch {
 		preview = "unserializable_preview";
 	}
+	const providerCode = normalizeOptionalString(error?.code);
+	const providerMessage = normalizeOptionalString(error?.message);
 
 	return {
 		allowed: allowed === true,
 		scenario,
 		preview,
+		providerCode,
+		providerMessage,
 	};
 };
 
@@ -150,6 +194,12 @@ export async function assertFeatureAvailable(ctx: ActionCtx, featureId: Billable
 		withPreview: true,
 	});
 	const outcome = parseCheckOutcome(checkResult);
+	if (outcome.providerCode || outcome.providerMessage) {
+		throw billingCheckFailedError({
+			featureId,
+			providerCode: outcome.providerCode,
+		});
+	}
 	if (!outcome.allowed) {
 		throw featureLimitError({
 			featureId,

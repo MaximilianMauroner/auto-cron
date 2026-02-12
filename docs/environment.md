@@ -20,6 +20,8 @@ Copy from `.env.example` and set values:
 | `WORKOS_WEBHOOK_SECRET` | WorkOS webhook signing secret (set in Convex env via `npx convex env set`) | Yes |
 | `GOOGLE_CLIENT_ID` | Google OAuth client ID for calendar sync | Yes |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth client secret for calendar sync | Yes |
+| `GOOGLE_CALENDAR_WEBHOOK_URL` | Public HTTPS endpoint for Google Calendar push notifications (Convex HTTP route) | Yes (for push sync) |
+| `GOOGLE_CALENDAR_WEBHOOK_TOKEN_SECRET` | Secret used to hash/validate Google watch channel tokens | Yes (for push sync) |
 
 ## Notes
 
@@ -32,11 +34,13 @@ Copy from `.env.example` and set values:
 - `NEXT_PUBLIC_AUTUMN_BACKEND_URL` avoids Autumn SSR fetch errors caused by relative `/api/autumn/*` URLs.
 - Keep secrets out of client code and logs.
 - For production, mirror required values in your deployment platform + Convex dashboard.
+- `GOOGLE_CALENDAR_WEBHOOK_URL` must be externally reachable by Google (localhost URLs will not receive production push notifications).
 
 ## Scheduler configuration source
 
 Scheduler behavior is configured from Convex user data, not environment variables:
 
 - `userSettings.timezone`
+- `userSettings.timeFormatPreference` (`12h` or `24h`)
 - `userSettings.schedulingHorizonDays` (clamped to 4-12 weeks)
 - `userSettings.defaultTaskSchedulingMode` (`fastest|balanced|packed`)

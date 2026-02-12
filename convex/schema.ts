@@ -5,11 +5,33 @@ export default defineSchema({
 	userSettings: defineTable({
 		userId: v.string(),
 		timezone: v.string(),
+		timeFormatPreference: v.optional(v.union(v.literal("12h"), v.literal("24h"))),
 		defaultTaskSchedulingMode: v.union(
 			v.literal("fastest"),
 			v.literal("balanced"),
 			v.literal("packed"),
 		),
+		taskQuickCreatePriority: v.optional(
+			v.union(
+				v.literal("low"),
+				v.literal("medium"),
+				v.literal("high"),
+				v.literal("critical"),
+				v.literal("blocker"),
+			),
+		),
+		taskQuickCreateStatus: v.optional(v.union(v.literal("backlog"), v.literal("queued"))),
+		taskQuickCreateEstimatedMinutes: v.optional(v.number()),
+		taskQuickCreateSplitAllowed: v.optional(v.boolean()),
+		taskQuickCreateMinChunkMinutes: v.optional(v.number()),
+		taskQuickCreateMaxChunkMinutes: v.optional(v.number()),
+		taskQuickCreateRestMinutes: v.optional(v.number()),
+		taskQuickCreateTravelMinutes: v.optional(v.number()),
+		taskQuickCreateSendToUpNext: v.optional(v.boolean()),
+		taskQuickCreateVisibilityPreference: v.optional(
+			v.union(v.literal("default"), v.literal("private")),
+		),
+		taskQuickCreateColor: v.optional(v.string()),
 		googleRefreshToken: v.optional(v.string()),
 		googleSyncToken: v.optional(v.string()),
 		googleCalendarSyncTokens: v.optional(
@@ -40,6 +62,8 @@ export default defineSchema({
 			),
 		),
 		schedulingHorizonDays: v.number(), // default: 75
+		schedulingDowntimeMinutes: v.optional(v.number()),
+		schedulingStepMinutes: v.optional(v.union(v.literal(15), v.literal(30), v.literal(60))),
 	})
 		.index("by_userId", ["userId"])
 		.index("by_googleRefreshToken_userId", ["googleRefreshToken", "userId"]),
@@ -72,6 +96,9 @@ export default defineSchema({
 		splitAllowed: v.optional(v.boolean()),
 		minChunkMinutes: v.optional(v.number()),
 		maxChunkMinutes: v.optional(v.number()),
+		restMinutes: v.optional(v.number()),
+		travelMinutes: v.optional(v.number()),
+		location: v.optional(v.string()),
 		sendToUpNext: v.optional(v.boolean()),
 		hoursSetId: v.optional(v.id("hoursSets")),
 		schedulingMode: v.optional(
@@ -260,6 +287,48 @@ export default defineSchema({
 		.index("by_userId_source_googleSeriesId", ["userId", "source", "googleSeriesId"])
 		.index("by_userId_calendarId_googleSeriesId", ["userId", "calendarId", "googleSeriesId"]),
 
+	googleCalendarWatchChannels: defineTable({
+		userId: v.string(),
+		calendarId: v.string(),
+		channelId: v.string(),
+		resourceId: v.string(),
+		resourceUri: v.optional(v.string()),
+		channelTokenHash: v.string(),
+		expirationAt: v.number(),
+		status: v.union(v.literal("active"), v.literal("expired"), v.literal("stopped")),
+		lastNotifiedAt: v.optional(v.number()),
+		lastMessageNumber: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_channelId", ["channelId"])
+		.index("by_userId", ["userId"])
+		.index("by_userId_calendarId", ["userId", "calendarId"])
+		.index("by_expirationAt", ["expirationAt"]),
+
+	googleSyncRuns: defineTable({
+		userId: v.string(),
+		triggeredBy: v.union(
+			v.literal("webhook"),
+			v.literal("cron"),
+			v.literal("manual"),
+			v.literal("oauth_connect"),
+		),
+		status: v.union(
+			v.literal("pending"),
+			v.literal("running"),
+			v.literal("completed"),
+			v.literal("failed"),
+		),
+		startedAt: v.number(),
+		completedAt: v.optional(v.number()),
+		imported: v.optional(v.number()),
+		deleted: v.optional(v.number()),
+		error: v.optional(v.string()),
+	})
+		.index("by_userId_status_startedAt", ["userId", "status", "startedAt"])
+		.index("by_userId_startedAt", ["userId", "startedAt"]),
+
 	schedulingRuns: defineTable({
 		userId: v.string(),
 		triggeredBy: v.string(), // "manual" | "task_change" | "cron"
@@ -359,4 +428,19 @@ export default defineSchema({
 		expiresAt: v.number(),
 		updatedAt: v.number(),
 	}).index("by_userId_featureId", ["userId", "featureId"]),
+
+	feedback: defineTable({
+		userId: v.optional(v.string()),
+		category: v.union(v.literal("bug"), v.literal("idea"), v.literal("general")),
+		subject: v.optional(v.string()),
+		message: v.string(),
+		page: v.optional(v.string()),
+		timezone: v.optional(v.string()),
+		userAgent: v.optional(v.string()),
+		status: v.union(v.literal("new"), v.literal("reviewed"), v.literal("resolved")),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_createdAt", ["createdAt"])
+		.index("by_userId_createdAt", ["userId", "createdAt"]),
 });

@@ -54,6 +54,35 @@ describe("hours sets", () => {
 		);
 	});
 
+	test("default planner bootstrap seeds starter tasks and habits idempotently", async () => {
+		const testConvex = createTestConvex();
+		const user = testConvex.withIdentity({ subject: "hours_default_seed_user" });
+
+		const firstRun = await user.action(api.hours.actions.bootstrapDefaultPlannerDataForUser, {});
+		expect(firstRun.createdTasks).toBeGreaterThan(0);
+		expect(firstRun.createdHabits).toBeGreaterThan(0);
+
+		const tasksAfterFirstRun = await user.query(api.tasks.queries.listTasks, {});
+		const habitsAfterFirstRun = await user.query(api.habits.queries.listHabits, {});
+		expect(tasksAfterFirstRun.length).toBe(firstRun.createdTasks);
+		expect(habitsAfterFirstRun.length).toBe(firstRun.createdHabits);
+		expect(tasksAfterFirstRun.every((task) => task.hoursSetId === firstRun.defaultHoursSetId)).toBe(
+			true,
+		);
+		expect(
+			habitsAfterFirstRun.every((habit) => habit.hoursSetId === firstRun.defaultHoursSetId),
+		).toBe(true);
+
+		const secondRun = await user.action(api.hours.actions.bootstrapDefaultPlannerDataForUser, {});
+		expect(secondRun.createdTasks).toBe(0);
+		expect(secondRun.createdHabits).toBe(0);
+
+		const tasksAfterSecondRun = await user.query(api.tasks.queries.listTasks, {});
+		const habitsAfterSecondRun = await user.query(api.habits.queries.listHabits, {});
+		expect(tasksAfterSecondRun).toHaveLength(tasksAfterFirstRun.length);
+		expect(habitsAfterSecondRun).toHaveLength(habitsAfterFirstRun.length);
+	});
+
 	test("hours windows validation rejects overlapping windows", async () => {
 		const testConvex = createTestConvex();
 		const user = testConvex.withIdentity({ subject: "hours_invalid_windows" });
@@ -150,6 +179,40 @@ describe("hours sets", () => {
 		const updated = tasks.find((task) => task._id === taskId);
 		expect(updated?.schedulingMode).toBe("balanced");
 		expect(updated?.effectiveSchedulingMode).toBe("balanced");
+	});
+
+	test("scheduling downtime defaults to zero and can be updated", async () => {
+		const testConvex = createTestConvex();
+		const user = testConvex.withIdentity({ subject: "scheduling_downtime_user" });
+		await user.action(api.hours.actions.bootstrapHoursSetsForUser, {});
+
+		const initialDefaults = await user.query(api.hours.queries.getTaskSchedulingDefaults, {});
+		expect(initialDefaults.schedulingDowntimeMinutes).toBe(0);
+
+		const updatedDowntime = await user.mutation(api.hours.mutations.setSchedulingDowntimeMinutes, {
+			minutes: 30,
+		});
+		expect(updatedDowntime).toBe(30);
+
+		const updatedDefaults = await user.query(api.hours.queries.getTaskSchedulingDefaults, {});
+		expect(updatedDefaults.schedulingDowntimeMinutes).toBe(30);
+	});
+
+	test("scheduling step defaults to 15 and can be updated globally", async () => {
+		const testConvex = createTestConvex();
+		const user = testConvex.withIdentity({ subject: "scheduling_step_user" });
+		await user.action(api.hours.actions.bootstrapHoursSetsForUser, {});
+
+		const initialDefaults = await user.query(api.hours.queries.getTaskSchedulingDefaults, {});
+		expect(initialDefaults.schedulingStepMinutes).toBe(15);
+
+		const updatedStep = await user.mutation(api.hours.mutations.setSchedulingStepMinutes, {
+			minutes: 30,
+		});
+		expect(updatedStep).toBe(30);
+
+		const updatedDefaults = await user.query(api.hours.queries.getTaskSchedulingDefaults, {});
+		expect(updatedDefaults.schedulingStepMinutes).toBe(30);
 	});
 
 	test("system hours sets are not deletable", async () => {

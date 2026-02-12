@@ -33,10 +33,12 @@ export default async function CalendarPage() {
 	}
 
 	return (
-		<div className="flex h-full min-h-0 flex-col gap-4">
-			<SchedulingDiagnostics />
-			<div className="min-h-0 flex-1">
-				<CalendarClient />
+		<div className="relative h-full min-h-0">
+			<CalendarClient />
+			<div className="pointer-events-none absolute right-3 bottom-3 z-20 sm:right-4 sm:bottom-4">
+				<div className="pointer-events-auto">
+					<SchedulingDiagnostics />
+				</div>
 			</div>
 		</div>
 	);

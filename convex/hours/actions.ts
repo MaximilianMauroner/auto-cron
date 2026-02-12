@@ -18,6 +18,28 @@ export const bootstrapHoursSetsForUser = action({
 	}),
 });
 
+export const bootstrapDefaultPlannerDataForUser = action({
+	args: {},
+	returns: v.object({
+		defaultHoursSetId: v.id("hoursSets"),
+		createdTasks: v.number(),
+		createdHabits: v.number(),
+	}),
+	handler: withActionAuth(
+		async (
+			ctx,
+		): Promise<{
+			defaultHoursSetId: Id<"hoursSets">;
+			createdTasks: number;
+			createdHabits: number;
+		}> => {
+			return ctx.runMutation(internal.hours.mutations.internalBootstrapDefaultPlannerDataForUser, {
+				userId: ctx.userId,
+			});
+		},
+	),
+});
+
 export const migrateSchedulingDataForCurrentUser = action({
 	args: {},
 	returns: v.object({

@@ -140,6 +140,21 @@ export const runForUser: ReturnType<typeof internalAction> = internalAction({
 				reasonCode: solved.reasonCode,
 			});
 
+			try {
+				await ctx.runAction(internal.calendar.actions.syncScheduledBlocksToGoogle, {
+					userId: args.userId,
+					horizonStart: solved.horizonStart,
+					horizonEnd: solved.horizonEnd,
+					removedGoogleEvents: applied.removedGoogleEvents,
+				});
+			} catch (syncError) {
+				console.error("[scheduling] post-run Google sync failed", {
+					userId: args.userId,
+					runId: args.runId,
+					error: syncError instanceof Error ? syncError.message : syncError,
+				});
+			}
+
 			return {
 				runId: args.runId,
 				status: "completed" as const,

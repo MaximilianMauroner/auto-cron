@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalQuery, query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
+import { normalizeSchedulingDowntimeMinutes } from "../hours/shared";
 import { recurrenceFromLegacyFrequency } from "./rrule";
 import { isRunNewer } from "./run_order";
 
@@ -119,10 +120,15 @@ const sanitizeHabitPriority = (
 const isBlockingBusyStatus = (busyStatus: string | undefined) =>
 	busyStatus === "busy" || busyStatus === "tentative";
 
-type SchedulableTaskStatus = "queued" | "scheduled" | "in_progress";
+const normalizeTravelMinutes = (value: number | undefined) => {
+	if (!Number.isFinite(value)) return 0;
+	return Math.max(0, Math.round(value ?? 0));
+};
+
+type SchedulableTaskStatus = "queued" | "scheduled";
 
 const isSchedulableTaskStatus = (status: string): status is SchedulableTaskStatus =>
-	status === "queued" || status === "scheduled" || status === "in_progress";
+	status === "queued" || status === "scheduled";
 
 export const getSchedulingInputForUser = internalQuery({
 	args: {
@@ -133,6 +139,7 @@ export const getSchedulingInputForUser = internalQuery({
 		userId: v.string(),
 		timezone: v.string(),
 		horizonWeeks: v.number(),
+		downtimeMinutes: v.number(),
 		defaultTaskMode: schedulingModeValidator,
 		defaultHoursSetId: v.optional(v.id("hoursSets")),
 		tasks: v.array(
@@ -142,13 +149,16 @@ export const getSchedulingInputForUser = internalQuery({
 				title: v.string(),
 				priority: taskPriorityValidator,
 				blocker: v.boolean(),
-				status: v.union(v.literal("queued"), v.literal("scheduled"), v.literal("in_progress")),
+				status: v.union(v.literal("queued"), v.literal("scheduled")),
 				estimatedMinutes: v.number(),
 				deadline: v.optional(v.number()),
 				scheduleAfter: v.optional(v.number()),
 				splitAllowed: v.optional(v.boolean()),
 				minChunkMinutes: v.optional(v.number()),
 				maxChunkMinutes: v.optional(v.number()),
+				restMinutes: v.optional(v.number()),
+				travelMinutes: v.optional(v.number()),
+				location: v.optional(v.string()),
 				hoursSetId: v.optional(v.id("hoursSets")),
 				schedulingMode: v.optional(schedulingModeValidator),
 				effectiveSchedulingMode: schedulingModeValidator,
@@ -218,6 +228,10 @@ export const getSchedulingInputForUser = internalQuery({
 			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
 			.unique();
 		const timezone = settings?.timezone ?? "UTC";
+		const defaultTravelMinutes = normalizeTravelMinutes(
+			(settings as { taskQuickCreateTravelMinutes?: number } | undefined)
+				?.taskQuickCreateTravelMinutes,
+		);
 		const horizonDays = settings?.schedulingHorizonDays ?? 7 * 8;
 		const horizonWeeks = Math.max(4, Math.min(12, Math.floor(horizonDays / 7)));
 		const defaultTaskMode = sanitizeTaskMode(
@@ -243,6 +257,9 @@ export const getSchedulingInputForUser = internalQuery({
 				splitAllowed: task.splitAllowed,
 				minChunkMinutes: task.minChunkMinutes,
 				maxChunkMinutes: task.maxChunkMinutes,
+				restMinutes: task.restMinutes,
+				travelMinutes: task.travelMinutes,
+				location: task.location,
 				hoursSetId: task.hoursSetId,
 				schedulingMode: task.schedulingMode ? sanitizeTaskMode(task.schedulingMode) : undefined,
 				effectiveSchedulingMode: task.schedulingMode
@@ -305,8 +322,14 @@ export const getSchedulingInputForUser = internalQuery({
 					isBlockingBusyStatus(event.busyStatus),
 			)
 			.map((event) => ({
-				start: event.start,
-				end: event.end,
+				start:
+					defaultTravelMinutes > 0 && Boolean(event.location?.trim()) && !event.allDay
+						? event.start - defaultTravelMinutes * 60 * 1000
+						: event.start,
+				end:
+					defaultTravelMinutes > 0 && Boolean(event.location?.trim()) && !event.allDay
+						? event.end + defaultTravelMinutes * 60 * 1000
+						: event.end,
 			}));
 		const existingPlacements = events
 			.filter(
@@ -330,6 +353,7 @@ export const getSchedulingInputForUser = internalQuery({
 			userId: args.userId,
 			timezone,
 			horizonWeeks,
+			downtimeMinutes: normalizeSchedulingDowntimeMinutes(settings?.schedulingDowntimeMinutes),
 			defaultTaskMode,
 			defaultHoursSetId,
 			tasks: schedulableTasks,
@@ -354,7 +378,21 @@ export const getLatestRun = query({
 		const latest = runs[0];
 		if (!latest) return null;
 		return {
-			...latest,
+			_id: latest._id,
+			status: latest.status,
+			triggeredBy: latest.triggeredBy,
+			startedAt: latest.startedAt,
+			completedAt: latest.completedAt,
+			feasibleOnTime: latest.feasibleOnTime,
+			horizonStart: latest.horizonStart,
+			horizonEnd: latest.horizonEnd,
+			objectiveScore: latest.objectiveScore,
+			tasksScheduled: latest.tasksScheduled,
+			habitsScheduled: latest.habitsScheduled,
+			lateTasks: latest.lateTasks,
+			habitShortfalls: latest.habitShortfalls,
+			reasonCode: latest.reasonCode,
+			error: latest.error,
 			dropSummary: latest.dropSummary?.map((drop) => ({
 				...drop,
 				priority: drop.priority === "blocker" ? "critical" : drop.priority,

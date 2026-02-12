@@ -5,7 +5,9 @@ import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { getPaywallContent } from "@/lib/autumn/paywall-content";
 import { cn } from "@/lib/utils";
-import { usePaywall } from "autumn-js/react";
+import { useCustomer, usePaywall } from "autumn-js/react";
+import { Loader2 } from "lucide-react";
+import { useState } from "react";
 
 export interface PaywallDialogProps {
 	open: boolean;
@@ -15,17 +17,45 @@ export interface PaywallDialogProps {
 }
 
 export default function PaywallDialog(params?: PaywallDialogProps) {
+	const [isRedirecting, setIsRedirecting] = useState(false);
+	const { checkout } = useCustomer({ errorOnNotFound: false });
 	const { data: preview } = usePaywall({
 		featureId: params?.featureId,
 		entityId: params?.entityId,
 	});
 
-	if (!params || !preview) {
+	if (!params) {
 		return <></>;
 	}
 
 	const { open, setOpen } = params;
 	const { title, message } = getPaywallContent(preview);
+	const nextProductId = preview?.products?.[0]?.id;
+
+	const onConfirm = async () => {
+		if (isRedirecting) return;
+		setIsRedirecting(true);
+		try {
+			if (nextProductId) {
+				await checkout({
+					productId: nextProductId,
+					successUrl: typeof window !== "undefined" ? window.location.href : undefined,
+				});
+				return;
+			}
+			if (typeof window !== "undefined") {
+				window.location.assign("/pricing");
+			}
+		} catch (error) {
+			console.error("Autumn checkout redirect failed", error);
+			if (typeof window !== "undefined") {
+				window.location.assign("/pricing");
+			}
+		} finally {
+			setOpen(false);
+			setIsRedirecting(false);
+		}
+	};
 
 	return (
 		<Dialog open={open} onOpenChange={setOpen}>
@@ -36,11 +66,19 @@ export default function PaywallDialog(params?: PaywallDialogProps) {
 					<Button
 						size="sm"
 						className="font-medium shadow transition min-w-20"
-						onClick={async () => {
-							setOpen(false);
-						}}
+						onClick={() => void onConfirm()}
+						disabled={isRedirecting}
 					>
-						Confirm
+						{isRedirecting ? (
+							<span className="inline-flex items-center gap-2">
+								<Loader2 className="size-4 animate-spin" />
+								Redirecting
+							</span>
+						) : nextProductId ? (
+							"Go to purchase"
+						) : (
+							"View pricing"
+						)}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

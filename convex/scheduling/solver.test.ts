@@ -74,6 +74,7 @@ const baseInput = (): SchedulingInput => {
 		userId: "test-user",
 		timezone: "UTC",
 		horizonWeeks: 4,
+		downtimeMinutes: 0,
 		defaultTaskMode: "fastest" as const,
 		tasks: [],
 		habits: [],
@@ -354,6 +355,36 @@ describe("scheduling solver", () => {
 		const start = firstStartForTask(solved, "task-busy-avoid");
 		expect(start).toBeDefined();
 		expect(ensureDefined(start, "taskBusyAvoidStart")).toBeGreaterThanOrEqual(input.now + HOUR_MS);
+	});
+
+	test("enforces configured downtime between scheduled tasks", () => {
+		const input = baseInput();
+		input.downtimeMinutes = 30;
+		input.tasks.push(
+			{
+				...taskDefaults(input),
+				id: asTaskId("task-gap-a"),
+				estimatedMinutes: 60,
+			},
+			{
+				...taskDefaults(input),
+				id: asTaskId("task-gap-b"),
+				estimatedMinutes: 60,
+			},
+		);
+
+		const solved = solveSchedule(input);
+		const blocks = solved.blocks
+			.filter(
+				(block) =>
+					block.source === "task" &&
+					(block.sourceId === "task-gap-a" || block.sourceId === "task-gap-b"),
+			)
+			.sort((a, b) => a.start - b.start);
+		expect(blocks).toHaveLength(2);
+		const firstBlock = ensureDefined(blocks[0], "firstDowntimeTaskBlock");
+		const secondBlock = ensureDefined(blocks[1], "secondDowntimeTaskBlock");
+		expect(secondBlock.start - firstBlock.end).toBeGreaterThanOrEqual(30 * 60 * 1000);
 	});
 
 	test("tasks without due dates are never reported as late", () => {

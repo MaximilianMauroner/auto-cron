@@ -19,6 +19,11 @@ type ScheduleXEventLike = {
 	isRecurring?: boolean;
 	busyStatus?: "free" | "busy" | "tentative";
 };
+export type DateGridEventProps = {
+	calendarEvent: ScheduleXEventLike;
+	timeZone?: string;
+	hour12?: boolean;
+};
 
 const toMillis = (value: unknown) => {
 	if (!value) return Date.now();
@@ -59,14 +64,24 @@ const toMillis = (value: unknown) => {
 	return Date.now();
 };
 
-const timeFormatter = new Intl.DateTimeFormat("en-US", {
-	hour: "numeric",
-	minute: "2-digit",
-});
+const formatterCache = new Map<string, Intl.DateTimeFormat>();
+const getTimeFormatter = (timeZone?: string, hour12?: boolean) => {
+	const key = `${timeZone ?? "local"}:${hour12 ? "h12" : "h24"}`;
+	const existing = formatterCache.get(key);
+	if (existing) return existing;
+	const formatter = new Intl.DateTimeFormat(undefined, {
+		timeZone,
+		hour: "numeric",
+		minute: "2-digit",
+		hour12,
+	});
+	formatterCache.set(key, formatter);
+	return formatter;
+};
 
-const formatTime = (value: unknown) => {
+const formatTime = (value: unknown, timeZone?: string, hour12?: boolean) => {
 	const date = new Date(toMillis(value));
-	return timeFormatter.format(date);
+	return getTimeFormatter(timeZone, hour12).format(date);
 };
 
 const sanitizeDenseTitle = (title?: string) => (title ?? "Untitled").replace(/\s+/g, " ").trim();
@@ -98,7 +113,7 @@ const deleteFromEvent = (eventId?: string | number) => {
 	);
 };
 
-function DateGridEventComponent({ calendarEvent }: { calendarEvent: ScheduleXEventLike }) {
+function DateGridEventComponent({ calendarEvent, timeZone, hour12 }: DateGridEventProps) {
 	const colorKey = calendarEvent.calendarId ?? "google-default";
 	const isFree = calendarEvent.busyStatus === "free";
 	const eventStyle = {
@@ -153,7 +168,7 @@ function DateGridEventComponent({ calendarEvent }: { calendarEvent: ScheduleXEve
 						{sanitizeDenseTitle(calendarEvent.title)}
 					</span>
 					<span className="text-[0.6rem] opacity-40 shrink-0">
-						{formatTime(calendarEvent.start)}
+						{formatTime(calendarEvent.start, timeZone, hour12)}
 					</span>
 				</div>
 			</ContextMenuTrigger>

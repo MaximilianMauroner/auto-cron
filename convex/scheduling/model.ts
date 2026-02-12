@@ -7,6 +7,7 @@ export type PlacementSearchArgs = {
 	durationSlots: number;
 	earliestStartSlot: number;
 	latestEndSlot?: number;
+	downtimeSlots?: number;
 	mode: SchedulingMode;
 	slotScore?: (slot: number) => number;
 };
@@ -23,6 +24,7 @@ export const findPlacementSlot = ({
 	durationSlots,
 	earliestStartSlot,
 	latestEndSlot,
+	downtimeSlots = 0,
 	mode,
 	slotScore,
 }: PlacementSearchArgs) => {
@@ -42,9 +44,31 @@ export const findPlacementSlot = ({
 	}
 
 	for (const startSlot of candidateSlots) {
-		if (isRangeAvailable(availabilityMask, occupancyMask, startSlot, durationSlots)) {
+		if (
+			isRangeAvailable(availabilityMask, occupancyMask, startSlot, durationSlots) &&
+			hasDowntimeClearance(occupancyMask, startSlot, durationSlots, downtimeSlots)
+		) {
 			return startSlot;
 		}
 	}
 	return null;
+};
+
+const hasDowntimeClearance = (
+	occupancyMask: boolean[],
+	startSlot: number,
+	durationSlots: number,
+	downtimeSlots: number,
+) => {
+	if (downtimeSlots <= 0) return true;
+	const endSlot = startSlot + durationSlots;
+	const gapBeforeStart = Math.max(0, startSlot - downtimeSlots);
+	for (let slot = gapBeforeStart; slot < startSlot; slot += 1) {
+		if (occupancyMask[slot]) return false;
+	}
+	const gapAfterEnd = Math.min(occupancyMask.length, endSlot + downtimeSlots);
+	for (let slot = endSlot; slot < gapAfterEnd; slot += 1) {
+		if (occupancyMask[slot]) return false;
+	}
+	return true;
 };

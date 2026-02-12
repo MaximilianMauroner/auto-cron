@@ -47,3 +47,4 @@ See [docs/setup.md](docs/setup.md) for local development quickstart and deployme
 - Habits use canonical `recurrenceRule` (`RRULE:...`) plus `recoveryPolicy` (`skip` or `recover`).
 - Scheduling runs are tracked in `schedulingRuns` with diagnostics (`feasibleOnTime`, late tasks, shortfalls, reason code, objective score).
 - Hard infeasible runs do not partially apply changes; existing scheduler-generated calendar blocks remain unchanged.
+- Google Calendar sync supports push notifications via `events.watch` (`/google/calendar/webhook`) with deduped background sync runs (`googleSyncRuns`) plus low-frequency cron fallback.

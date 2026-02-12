@@ -57,6 +57,20 @@ const parseIdealMinute = (idealTime: string | undefined) => {
 	return hours * 60 + minutes;
 };
 
+const toDowntimeSlots = (downtimeMinutes: number | undefined) => {
+	if (!Number.isFinite(downtimeMinutes)) return 0;
+	const safeMinutes = Math.max(0, Math.round(downtimeMinutes ?? 0));
+	if (safeMinutes === 0) return 0;
+	return Math.ceil(safeMinutes / (SLOT_MS / 60000));
+};
+
+const buildTravelSourceId = (
+	taskId: string,
+	placementStart: number,
+	placementEnd: number,
+	segment: "before" | "after",
+) => `task:${taskId}:travel:${segment}:${placementStart}:${placementEnd}`;
+
 type TaskScheduleResult = {
 	success: boolean;
 	reasonCode?: string;
@@ -105,6 +119,7 @@ const scheduleTasks = (
 	horizonEnd: number,
 	slotCount: number,
 	busyMask: boolean[],
+	downtimeSlots: number,
 	enforceDue: boolean,
 ) => {
 	const tasks = sortTasksForScheduling(input.tasks);
@@ -135,6 +150,10 @@ const scheduleTasks = (
 		}
 		const availability = taskAvailabilityMask(input, task, horizonStart, slotCount, busyMask);
 		availabilityByTaskId.set(String(task.id), availability);
+		const hasLocation = Boolean(task.location?.trim());
+		const restSlots = toDowntimeSlots(task.restMinutes);
+		const travelSlots = hasLocation ? toDowntimeSlots(task.travelMinutes) : 0;
+		const taskDowntimeSlots = Math.max(downtimeSlots, restSlots + travelSlots);
 
 		const earliestStartSlot = Math.max(
 			0,
@@ -153,6 +172,7 @@ const scheduleTasks = (
 				durationSlots,
 				earliestStartSlot,
 				latestEndSlot: enforceDue ? dueEndSlot : undefined,
+				downtimeSlots: taskDowntimeSlots,
 				mode: task.blocker ? "fastest" : task.effectiveSchedulingMode,
 				slotScore: (slot) => {
 					if (task.effectiveSchedulingMode !== "balanced") return slot;
@@ -188,7 +208,33 @@ const scheduleTasks = (
 				priority: task.priority,
 				calendarId: task.preferredCalendarId,
 				color: task.color,
+				location: task.location,
 			});
+			if (hasLocation && travelSlots > 0) {
+				const travelDurationMs = travelSlots * SLOT_MS;
+				blocks.push({
+					source: "task",
+					sourceId: buildTravelSourceId(String(task.id), start, end, "before"),
+					title: `Travel: ${task.title}`,
+					start: start - travelDurationMs,
+					end: start,
+					priority: task.priority,
+					calendarId: task.preferredCalendarId,
+					color: task.color,
+					location: task.location,
+				});
+				blocks.push({
+					source: "task",
+					sourceId: buildTravelSourceId(String(task.id), start, end, "after"),
+					title: `Travel: ${task.title}`,
+					start: end,
+					end: end + travelDurationMs,
+					priority: task.priority,
+					calendarId: task.preferredCalendarId,
+					color: task.color,
+					location: task.location,
+				});
+			}
 		}
 
 		const completion = Math.max(
@@ -227,6 +273,7 @@ const scheduleHabits = (
 	slotCount: number,
 	busyMask: boolean[],
 	taskOccupancyMask: boolean[],
+	downtimeSlots: number,
 ) => {
 	const blocks: ScheduledBlock[] = [];
 	const shortfalls: HabitShortfallDiagnostic[] = [];
@@ -301,12 +348,24 @@ const scheduleHabits = (
 					if (candidate.startSlot < 0 || candidate.startSlot >= slotCount) continue;
 					let finalDuration = durationSlots;
 					if (
-						!isRangeSchedulable(availability, occupancyMask, candidate.startSlot, finalDuration)
+						!isRangeSchedulable(
+							availability,
+							occupancyMask,
+							candidate.startSlot,
+							finalDuration,
+							downtimeSlots,
+						)
 					) {
 						if (minDurationSlots === finalDuration) continue;
 						finalDuration = minDurationSlots;
 						if (
-							!isRangeSchedulable(availability, occupancyMask, candidate.startSlot, finalDuration)
+							!isRangeSchedulable(
+								availability,
+								occupancyMask,
+								candidate.startSlot,
+								finalDuration,
+								downtimeSlots,
+							)
 						) {
 							continue;
 						}
@@ -383,11 +442,22 @@ const isRangeSchedulable = (
 	occupancyMask: boolean[],
 	startSlot: number,
 	durationSlots: number,
+	downtimeSlots: number,
 ) => {
 	const endSlot = startSlot + durationSlots;
 	if (startSlot < 0 || endSlot > availabilityMask.length) return false;
 	for (let slot = startSlot; slot < endSlot; slot += 1) {
 		if (!availabilityMask[slot] || occupancyMask[slot]) return false;
+	}
+	if (downtimeSlots > 0) {
+		const gapBeforeStart = Math.max(0, startSlot - downtimeSlots);
+		for (let slot = gapBeforeStart; slot < startSlot; slot += 1) {
+			if (occupancyMask[slot]) return false;
+		}
+		const gapAfterEnd = Math.min(occupancyMask.length, endSlot + downtimeSlots);
+		for (let slot = endSlot; slot < gapAfterEnd; slot += 1) {
+			if (occupancyMask[slot]) return false;
+		}
 	}
 	return true;
 };
@@ -470,11 +540,28 @@ export const solveSchedule = (input: SchedulingInput): SolverResult => {
 	const horizonEnd = horizonStart + horizonWeeks * 7 * DAY_MS;
 	const slotCount = slotCountBetween(horizonStart, horizonEnd);
 	const busyMask = buildBusyMask(horizonStart, horizonEnd, slotCount, input.busy);
+	const downtimeSlots = toDowntimeSlots(input.downtimeMinutes);
 
-	const onTimeCheck = scheduleTasks(input, horizonStart, horizonEnd, slotCount, busyMask, true);
+	const onTimeCheck = scheduleTasks(
+		input,
+		horizonStart,
+		horizonEnd,
+		slotCount,
+		busyMask,
+		downtimeSlots,
+		true,
+	);
 	const feasibleOnTime = onTimeCheck.success;
 
-	const taskPass = scheduleTasks(input, horizonStart, horizonEnd, slotCount, busyMask, false);
+	const taskPass = scheduleTasks(
+		input,
+		horizonStart,
+		horizonEnd,
+		slotCount,
+		busyMask,
+		downtimeSlots,
+		false,
+	);
 	if (!taskPass.success) {
 		return {
 			horizonStart,
@@ -497,6 +584,7 @@ export const solveSchedule = (input: SchedulingInput): SolverResult => {
 		slotCount,
 		busyMask,
 		taskPass.occupancyMask,
+		downtimeSlots,
 	);
 
 	const existingStartBySource = buildExistingStartSlotMap(input, horizonStart);

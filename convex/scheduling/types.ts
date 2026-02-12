@@ -23,13 +23,16 @@ export type SchedulingTaskInput = {
 	title: string;
 	priority: PriorityLevel;
 	blocker: boolean;
-	status: "queued" | "scheduled" | "in_progress";
+	status: "queued" | "scheduled";
 	estimatedMinutes: number;
 	deadline?: number;
 	scheduleAfter?: number;
 	splitAllowed?: boolean;
 	minChunkMinutes?: number;
 	maxChunkMinutes?: number;
+	restMinutes?: number;
+	travelMinutes?: number;
+	location?: string;
 	hoursSetId?: Id<"hoursSets">;
 	schedulingMode?: SchedulingMode;
 	effectiveSchedulingMode: SchedulingMode;
@@ -74,6 +77,7 @@ export type SchedulingInput = {
 	userId: string;
 	timezone: string;
 	horizonWeeks: number;
+	downtimeMinutes: number;
 	defaultTaskMode: SchedulingMode;
 	tasks: SchedulingTaskInput[];
 	habits: SchedulingHabitInput[];
@@ -93,6 +97,7 @@ export type ScheduledBlock = {
 	priority: PriorityLevel;
 	calendarId?: string;
 	color?: string;
+	location?: string;
 };
 
 export type LateTaskDiagnostic = {

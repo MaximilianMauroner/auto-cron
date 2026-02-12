@@ -142,7 +142,9 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Preserve per-calendar sync tokens during refresh-token backfill/update flows
 - [x] Recover invalid sync tokens (Google 410) and persist replacement tokens
 - [ ] Use `@convex-dev/action-retrier` for Google Calendar API calls
-- [x] Periodic sync every 15 minutes via `@convex-dev/crons` component (`convex/crons.ts`)
+- [x] Queue-backed periodic fallback sync via cron (6h) for connected users
+- [x] Push-triggered sync via Google Calendar watch channels (`events.watch`) + Convex webhook
+- [x] Watch-channel renewal cron (6h) with expiring-channel refresh
 - [ ] Conflict resolution: Google events take precedence, reschedule displaced tasks
 - [x] Handle event deletions (both directions)
 - [x] Allow local event deletion when provider-side delete fails
@@ -158,7 +160,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 
 ### Phase 9: Analytics dashboard
 
-- [~] Settings page: hours sets manager + default task scheduling mode implemented; remaining sections pending (timezone, scheduling horizon, sync preferences)
+- [~] Settings page: hours sets manager + default task scheduling mode + calendar timezone/clock mode implemented; remaining sections pending (scheduling horizon, sync preferences)
 - [x] Calendar diagnostics panel with latest run, late tasks, shortfalls, and manual run trigger
 - [ ] Weekly/monthly productivity stats (tasks completed, habits maintained)
 - [ ] Time allocation breakdown (chart: tasks vs habits vs meetings vs free)

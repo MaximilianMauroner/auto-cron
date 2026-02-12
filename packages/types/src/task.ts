@@ -36,6 +36,9 @@ export type TaskDTO = {
 	splitAllowed?: boolean;
 	minChunkMinutes?: number;
 	maxChunkMinutes?: number;
+	restMinutes?: number;
+	travelMinutes?: number;
+	location?: string;
 	sendToUpNext?: boolean;
 	hoursSetId?: string;
 	schedulingMode?: TaskSchedulingMode;
@@ -56,6 +59,9 @@ export type TaskCreateInput = {
 	splitAllowed?: boolean;
 	minChunkMinutes?: number;
 	maxChunkMinutes?: number;
+	restMinutes?: number;
+	travelMinutes?: number;
+	location?: string;
 	sendToUpNext?: boolean;
 	hoursSetId?: string;
 	schedulingMode?: TaskSchedulingMode;
@@ -78,6 +84,9 @@ export type TaskUpdateInput = {
 	splitAllowed?: boolean;
 	minChunkMinutes?: number;
 	maxChunkMinutes?: number;
+	restMinutes?: number;
+	travelMinutes?: number;
+	location?: string;
 	sendToUpNext?: boolean;
 	hoursSetId?: string;
 	schedulingMode?: TaskSchedulingMode;
