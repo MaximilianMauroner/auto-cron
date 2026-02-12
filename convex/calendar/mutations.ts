@@ -3,7 +3,7 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
-import { requireAuth } from "../auth";
+import { withMutationAuth } from "../auth";
 import type { RecurrenceEditScope } from "../providers/calendar/types";
 
 const MINUTE_MS = 60 * 1000;
@@ -102,6 +102,62 @@ type SyncEventInput = {
 	location?: string;
 	color?: string;
 	lastSyncedAt: number;
+};
+
+type BusyStatus = "free" | "busy" | "tentative";
+type Visibility = "default" | "public" | "private" | "confidential";
+
+type UpsertGoogleTokensArgs = {
+	refreshToken: string;
+	syncToken?: string;
+};
+
+type CreateEventArgs = {
+	input: {
+		title: string;
+		description?: string;
+		start: number;
+		end: number;
+		allDay?: boolean;
+		recurrenceRule?: string;
+		calendarId?: string;
+		busyStatus?: BusyStatus;
+		visibility?: Visibility;
+		location?: string;
+		color?: string;
+	};
+};
+
+type UpdateEventPatch = {
+	title?: string;
+	description?: string;
+	start?: number;
+	end?: number;
+	allDay?: boolean;
+	recurrenceRule?: string;
+	calendarId?: string;
+	busyStatus?: BusyStatus;
+	visibility?: Visibility;
+	location?: string;
+	color?: string;
+};
+
+type UpdateEventArgs = {
+	id: Id<"calendarEvents">;
+	patch: UpdateEventPatch;
+	scope?: RecurrenceEditScope;
+};
+
+type DeleteEventArgs = {
+	id: Id<"calendarEvents">;
+	scope?: RecurrenceEditScope;
+};
+
+type MoveResizeEventArgs = {
+	id: Id<"calendarEvents">;
+	start: number;
+	end: number;
+	scope?: RecurrenceEditScope;
 };
 
 const upsertSeriesForGoogleEvent = async (
@@ -371,9 +427,8 @@ export const upsertGoogleTokens = mutation({
 		syncToken: v.optional(v.string()),
 	},
 	returns: v.id("userSettings"),
-	handler: async (ctx, args) => {
-		const userId = await requireAuth(ctx);
-
+	handler: withMutationAuth(async (ctx, args: UpsertGoogleTokensArgs) => {
+		const { userId } = ctx;
 		const existing = await ctx.db
 			.query("userSettings")
 			.withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -416,7 +471,7 @@ export const upsertGoogleTokens = mutation({
 		});
 		await ctx.scheduler.runAfter(0, internal.crons.ensureCalendarSyncGoogleCron, {});
 		return insertedId;
-	},
+	}),
 });
 
 export const createEvent = mutation({
@@ -443,8 +498,8 @@ export const createEvent = mutation({
 		}),
 	},
 	returns: v.id("calendarEvents"),
-	handler: async (ctx, args) => {
-		const userId = await requireAuth(ctx);
+	handler: withMutationAuth(async (ctx, args: CreateEventArgs) => {
+		const { userId } = ctx;
 		const now = Date.now();
 		const allDay = args.input.allDay ?? false;
 		const calendarId = args.input.calendarId ?? "primary";
@@ -497,7 +552,7 @@ export const createEvent = mutation({
 			location: undefined,
 			color: undefined,
 		});
-	},
+	}),
 });
 
 export const updateEvent = mutation({
@@ -529,8 +584,8 @@ export const updateEvent = mutation({
 		id: v.id("calendarEvents"),
 		scope: recurrenceScopeValidator,
 	}),
-	handler: async (ctx, args) => {
-		const userId = await requireAuth(ctx);
+	handler: withMutationAuth(async (ctx, args: UpdateEventArgs) => {
+		const { userId } = ctx;
 		const event = await ctx.db.get(args.id);
 		if (!event || event.userId !== userId) {
 			throw new ConvexError({
@@ -605,7 +660,7 @@ export const updateEvent = mutation({
 			}
 		}
 		return { id: args.id, scope };
-	},
+	}),
 });
 
 export const deleteEvent = mutation({
@@ -616,8 +671,8 @@ export const deleteEvent = mutation({
 	returns: v.object({
 		scope: recurrenceScopeValidator,
 	}),
-	handler: async (ctx, args) => {
-		const userId = await requireAuth(ctx);
+	handler: withMutationAuth(async (ctx, args: DeleteEventArgs) => {
+		const { userId } = ctx;
 		const event = await ctx.db.get(args.id);
 		if (!event || event.userId !== userId) {
 			throw new ConvexError({
@@ -628,7 +683,7 @@ export const deleteEvent = mutation({
 
 		await ctx.db.delete(args.id);
 		return { scope: (args.scope ?? "single") as RecurrenceEditScope };
-	},
+	}),
 });
 
 export const moveResizeEvent = mutation({
@@ -642,8 +697,8 @@ export const moveResizeEvent = mutation({
 		id: v.id("calendarEvents"),
 		scope: recurrenceScopeValidator,
 	}),
-	handler: async (ctx, args) => {
-		const userId = await requireAuth(ctx);
+	handler: withMutationAuth(async (ctx, args: MoveResizeEventArgs) => {
+		const { userId } = ctx;
 		const event = await ctx.db.get(args.id);
 		if (!event || event.userId !== userId) {
 			throw new ConvexError({
@@ -698,18 +753,7 @@ export const moveResizeEvent = mutation({
 		}
 
 		return { id: args.id, scope };
-	},
-});
-
-export const upsertSyncedEvents = mutation({
-	args: syncArgsValidator,
-	returns: v.object({
-		upserted: v.number(),
 	}),
-	handler: async (ctx, args) => {
-		const userId = await requireAuth(ctx);
-		return performUpsertSyncedEventsForUser(ctx, userId, args);
-	},
 });
 
 export const upsertSyncedEventsForUser = internalMutation({

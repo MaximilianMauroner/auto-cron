@@ -31,6 +31,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
 import type {
 	CalendarEventCreateInput,
 	CalendarEventDTO,
@@ -50,7 +51,7 @@ import { createCurrentTimePlugin } from "@schedule-x/current-time";
 import { createDragAndDropPlugin } from "@schedule-x/drag-and-drop";
 import { ScheduleXCalendar, useCalendarApp } from "@schedule-x/react";
 import { createScrollControllerPlugin } from "@schedule-x/scroll-controller";
-import { useAction, useConvexAuth, useMutation, useQuery } from "convex/react";
+import { useAction, useConvexAuth } from "convex/react";
 import {
 	ArrowRight,
 	Bell,
@@ -116,6 +117,11 @@ type ResizeSelectionPreview = {
 	start: number;
 	end: number;
 	day: string;
+};
+type OptimisticEventUpdate = {
+	eventId: string;
+	start: number;
+	end: number;
 };
 type ResizeEventState = {
 	active: boolean;
@@ -1084,6 +1090,9 @@ export function CalendarClient() {
 	);
 	const [dragPreview, setDragPreview] = useState<DragSelectionPreview | null>(null);
 	const [resizePreview, setResizePreview] = useState<ResizeSelectionPreview | null>(null);
+	const [optimisticEventUpdate, setOptimisticEventUpdate] = useState<OptimisticEventUpdate | null>(
+		null,
+	);
 	const [pendingMoveUpdate, setPendingMoveUpdate] = useState<PendingMoveUpdate | null>(null);
 	const [activeView, setActiveView] = useState<"week" | "day" | "month-grid">("week");
 	const [selectedDate, setSelectedDate] = useState(() =>
@@ -1141,25 +1150,23 @@ export function CalendarClient() {
 		};
 	}, []);
 
-	const events = useQuery(
-		api.calendar.queries.listEvents,
-		isAuthenticated
-			? {
-					start: queryRange.start,
-					end: queryRange.end,
-					sourceFilter,
-				}
-			: "skip",
-	);
-	const googleCalendars = useQuery(
+	const eventsQuery = useAuthenticatedQueryWithStatus(api.calendar.queries.listEvents, {
+		start: queryRange.start,
+		end: queryRange.end,
+		sourceFilter,
+	});
+	const events = eventsQuery.data;
+	const { data: googleCalendars } = useAuthenticatedQueryWithStatus(
 		api.calendar.queries.listGoogleCalendars,
-		isAuthenticated ? {} : "skip",
+		{},
 	);
 
-	const createEventMutation = useMutation(api.calendar.mutations.createEvent);
-	const updateEventMutation = useMutation(api.calendar.mutations.updateEvent);
-	const deleteEventMutation = useMutation(api.calendar.mutations.deleteEvent);
-	const moveResizeEventMutation = useMutation(api.calendar.mutations.moveResizeEvent);
+	const { mutate: createEventMutation } = useMutationWithStatus(api.calendar.mutations.createEvent);
+	const { mutate: updateEventMutation } = useMutationWithStatus(api.calendar.mutations.updateEvent);
+	const { mutate: deleteEventMutation } = useMutationWithStatus(api.calendar.mutations.deleteEvent);
+	const { mutate: moveResizeEventMutation } = useMutationWithStatus(
+		api.calendar.mutations.moveResizeEvent,
+	);
 	const syncFromGoogle = useAction(api.calendar.actions.syncFromGoogle);
 	const pushEventToGoogle = useAction(api.calendar.actions.pushEventToGoogle);
 
@@ -1222,13 +1229,25 @@ export function CalendarClient() {
 	const scheduleXEvents = useMemo(() => {
 		const baseEvents = scheduleEvents
 			.map((event) => {
-				if (!resizePreview || event.event._id !== resizePreview.eventId) {
-					return event;
+				const optimisticPatchedEvent =
+					optimisticEventUpdate && event.event._id === optimisticEventUpdate.eventId
+						? {
+								...event.event,
+								start: optimisticEventUpdate.start,
+								end: optimisticEventUpdate.end,
+							}
+						: event.event;
+				if (!resizePreview || optimisticPatchedEvent._id !== resizePreview.eventId) {
+					if (optimisticPatchedEvent === event.event) return event;
+					return {
+						...event,
+						event: optimisticPatchedEvent,
+					};
 				}
 				return {
 					...event,
 					event: {
-						...event.event,
+						...optimisticPatchedEvent,
 						start: resizePreview.start,
 						end: resizePreview.end,
 					},
@@ -1251,7 +1270,7 @@ export function CalendarClient() {
 				busyStatus: "free",
 			},
 		];
-	}, [dragPreview, resizePreview, scheduleEvents, scheduleXTimeZone]);
+	}, [dragPreview, optimisticEventUpdate, resizePreview, scheduleEvents, scheduleXTimeZone]);
 	const customComponents = useMemo(
 		() => ({
 			timeGridEvent: TimeGridEvent,
@@ -1913,6 +1932,18 @@ export function CalendarClient() {
 	}, [calendar, pendingMoveUpdate, scheduleXEvents]);
 
 	useEffect(() => {
+		if (!optimisticEventUpdate) return;
+		const current = normalizedEvents.find((event) => event._id === optimisticEventUpdate.eventId);
+		if (!current) return;
+		if (
+			current.start === optimisticEventUpdate.start &&
+			current.end === optimisticEventUpdate.end
+		) {
+			setOptimisticEventUpdate(null);
+		}
+	}, [normalizedEvents, optimisticEventUpdate]);
+
+	useEffect(() => {
 		if (activeView === "month-grid") return;
 		const container = calendarContainerRef.current;
 		if (!container) return;
@@ -2257,6 +2288,11 @@ export function CalendarClient() {
 		if (!pendingMoveUpdate) return;
 		const payload = pendingMoveUpdate;
 		setPendingMoveUpdate(null);
+		setOptimisticEventUpdate({
+			eventId: payload.eventId,
+			start: payload.start,
+			end: payload.end,
+		});
 		try {
 			setError(null);
 			await applyMovedEventUpdate({
@@ -2266,6 +2302,7 @@ export function CalendarClient() {
 				scope,
 			});
 		} catch (updateError) {
+			setOptimisticEventUpdate(null);
 			setError(
 				updateError instanceof Error ? updateError.message : "Unable to move recurring event.",
 			);
@@ -2386,7 +2423,7 @@ export function CalendarClient() {
 	}, []);
 
 	const sourceButtons: CalendarSource[] = ["google", "task", "habit", "manual"];
-	const isLoading = isAuthLoading || (isAuthenticated && events === undefined);
+	const isLoading = isAuthLoading || (isAuthenticated && eventsQuery.isPending);
 	const isDetailsMode = editor?.mode === "edit" && editor.panelMode === "details";
 	const selectedEvent =
 		editor?.mode === "edit" && editor.eventId ? scheduleEventsById.get(editor.eventId) : null;

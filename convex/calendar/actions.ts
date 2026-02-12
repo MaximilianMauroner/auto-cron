@@ -2,7 +2,9 @@
 
 import { v } from "convex/values";
 import { ConvexError } from "convex/values";
+import type { Id } from "../_generated/dataModel";
 import { type ActionCtx, action, internalAction } from "../_generated/server";
+import { withActionAuth } from "../auth";
 import { getCalendarProvider } from "../providers/calendar";
 import type { GoogleEventUpsert } from "../providers/calendar/types";
 import {
@@ -18,6 +20,38 @@ import {
 const scopeValidator = v.optional(
 	v.union(v.literal("single"), v.literal("following"), v.literal("series")),
 );
+
+type RecurrenceScope = "single" | "following" | "series";
+type BusyStatus = "free" | "busy" | "tentative";
+type Visibility = "default" | "public" | "private" | "confidential";
+
+type SyncFromGoogleArgs = {
+	fullSync?: boolean;
+	rangeStart?: number;
+	rangeEnd?: number;
+};
+
+type PushEventPatch = {
+	title?: string;
+	description?: string;
+	start?: number;
+	end?: number;
+	allDay?: boolean;
+	recurrenceRule?: string;
+	calendarId?: string;
+	busyStatus?: BusyStatus;
+	visibility?: Visibility;
+	location?: string;
+	color?: string;
+};
+
+type PushEventToGoogleArgs = {
+	eventId: Id<"calendarEvents">;
+	operation: "create" | "update" | "delete" | "moveResize";
+	scope?: RecurrenceScope;
+	previousCalendarId?: string;
+	patch?: PushEventPatch;
+};
 
 const syncUserFromGoogle = async (
 	ctx: ActionCtx,
@@ -185,35 +219,37 @@ export const syncFromGoogle: ReturnType<typeof action> = action({
 		rangeStart: v.optional(v.number()),
 		rangeEnd: v.optional(v.number()),
 	},
-	handler: async (
-		ctx,
-		args,
-	): Promise<{
-		imported: number;
-		deleted: number;
-		resetCalendars: string[];
-		nextSyncToken?: string;
-	}> => {
-		const settings = await getCurrentUserGoogleSettings(ctx);
-		if (!settings?.googleRefreshToken) {
-			throw new ConvexError({
-				code: "GOOGLE_NOT_CONNECTED",
-				message:
-					"Google refresh token not configured. Reconnect Google with offline access and consent.",
+	handler: withActionAuth(
+		async (
+			ctx,
+			args: SyncFromGoogleArgs,
+		): Promise<{
+			imported: number;
+			deleted: number;
+			resetCalendars: string[];
+			nextSyncToken?: string;
+		}> => {
+			const settings = await getCurrentUserGoogleSettings(ctx);
+			if (!settings?.googleRefreshToken) {
+				throw new ConvexError({
+					code: "GOOGLE_NOT_CONNECTED",
+					message:
+						"Google refresh token not configured. Reconnect Google with offline access and consent.",
+				});
+			}
+			return syncUserFromGoogle(ctx, {
+				userId: settings.userId,
+				settings: {
+					googleRefreshToken: settings.googleRefreshToken,
+					googleSyncToken: settings.googleSyncToken,
+					googleCalendarSyncTokens: settings.googleCalendarSyncTokens,
+				},
+				fullSync: args.fullSync,
+				rangeStart: args.rangeStart,
+				rangeEnd: args.rangeEnd,
 			});
-		}
-		return syncUserFromGoogle(ctx, {
-			userId: settings.userId,
-			settings: {
-				googleRefreshToken: settings.googleRefreshToken,
-				googleSyncToken: settings.googleSyncToken,
-				googleCalendarSyncTokens: settings.googleCalendarSyncTokens,
-			},
-			fullSync: args.fullSync,
-			rangeStart: args.rangeStart,
-			rangeEnd: args.rangeEnd,
-		});
-	},
+		},
+	),
 });
 
 export const syncGoogleForAllUsers: ReturnType<typeof internalAction> = internalAction({
@@ -314,7 +350,7 @@ export const pushEventToGoogle = action({
 			}),
 		),
 	},
-	handler: async (ctx, args) => {
+	handler: withActionAuth(async (ctx, args: PushEventToGoogleArgs) => {
 		const settings = await getCurrentUserGoogleSettings(ctx);
 		if (!settings?.googleRefreshToken) {
 			throw new ConvexError({
@@ -402,5 +438,5 @@ export const pushEventToGoogle = action({
 		});
 
 		return { status: "updated" as const };
-	},
+	}),
 });

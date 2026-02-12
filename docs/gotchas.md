@@ -8,6 +8,8 @@ Hard-won lessons from debugging sessions. Agents should check this file when stu
 - WorkOS AuthKit webhook is wired via `@convex-dev/workos-authkit` component (`convex/auth.ts`, `convex/http.ts`). The `WORKOS_WEBHOOK_SECRET` env var must be set in Convex (not `.env.local`) via `npx convex env set`.
 - Google calendar sync can fail with `Google refresh token not configured` if OAuth callback token persistence races or misses. Backfill `google_refresh_token` from HTTP-only cookie into `calendar/mutations:upsertGoogleTokens` during `/calendar` server render to self-heal existing sessions.
 - Autumn web SDK can log `Fetch failed: /api/autumn/...` during SSR when `backendUrl` is relative. Use an absolute backend URL in `apps/web/app/AutumnProvider.tsx` and optionally set `NEXT_PUBLIC_AUTUMN_BACKEND_URL`.
+- Convex auth failures now throw a structured `ConvexError` with `code: "UNAUTHORIZED"` from `requireAuth` in `convex/auth.ts`. Client-side error handling should key off `error.data.code` rather than string-matching message text.
+- Use auth wrappers (`withQueryAuth`, `withMutationAuth`, `withActionAuth`) from `convex/auth.ts` when adding new public functions to avoid accidentally shipping a handler without auth enforcement.
 
 ## Monorepo
 

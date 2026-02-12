@@ -1,7 +1,14 @@
 import { v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { query } from "../_generated/server";
-import { requireAuth } from "../auth";
+import { withQueryAuth } from "../auth";
+
+type EventSource = "google" | "task" | "habit" | "manual";
+type ListEventsArgs = {
+	start: number;
+	end: number;
+	sourceFilter?: EventSource[];
+};
 
 const MINUTE_MS = 60 * 1000;
 const normalizeToMinute = (timestamp: number) => Math.floor(timestamp / MINUTE_MS) * MINUTE_MS;
@@ -106,9 +113,8 @@ export const listEvents = query({
 		),
 	},
 	returns: v.array(calendarEventDtoValidator),
-	handler: async (ctx, args) => {
-		const userId = await requireAuth(ctx);
-
+	handler: withQueryAuth(async (ctx, args: ListEventsArgs) => {
+		const { userId } = ctx;
 		const events = await ctx.db
 			.query("calendarEvents")
 			.withIndex("by_userId_start", (q) => q.eq("userId", userId).lte("start", args.end))
@@ -148,7 +154,7 @@ export const listEvents = query({
 		);
 
 		return hydratedEvents.sort((a, b) => a.start - b.start);
-	},
+	}),
 });
 
 export const listGoogleCalendars = query({
@@ -170,8 +176,8 @@ export const listGoogleCalendars = query({
 			isExternal: v.boolean(),
 		}),
 	),
-	handler: async (ctx) => {
-		const userId = await requireAuth(ctx);
+	handler: withQueryAuth(async (ctx) => {
+		const { userId } = ctx;
 		const settings = await ctx.db
 			.query("userSettings")
 			.withIndex("by_userId", (q) => q.eq("userId", userId))
@@ -250,5 +256,5 @@ export const listGoogleCalendars = query({
 				accessRole: calendar.accessRole,
 				isExternal: calendar.isExternal,
 			}));
-	},
+	}),
 });

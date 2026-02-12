@@ -17,6 +17,13 @@ Quickstart for local development and a lightweight production checklist.
 bun install
 ```
 
+`bun install` runs `prepare`, which installs Husky git hooks for this repo.
+If hooks are not active, run:
+
+```bash
+bun run prepare
+```
+
 ## 2. Configure environment variables
 
 Create and fill `.env` from `.env.example`:
@@ -51,6 +58,13 @@ bun run typecheck
 bun run lint
 bun run format
 ```
+
+Pre-commit also enforces:
+
+1. Format staged files (`lint-staged` + Biome)
+2. Lint (`bun run lint`)
+3. Typecheck (`bun run typecheck`)
+4. Convex tests (`bun run test:convex:run`)
 
 ## Production deployment checklist
 

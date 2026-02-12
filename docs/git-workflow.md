@@ -21,6 +21,21 @@ gt submit --publish
 gt log
 ```
 
+## Pre-commit gates
+
+Commits are blocked unless these checks pass:
+
+1. Staged files are formatted (Biome via `lint-staged`)
+2. `bun run lint`
+3. `bun run typecheck`
+4. `bun run test:convex:run`
+
+If hooks are missing locally, run:
+
+```bash
+bun run prepare
+```
+
 ## Commit message format
 
 Every commit/PR message should include:

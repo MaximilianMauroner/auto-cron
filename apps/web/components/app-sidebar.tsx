@@ -22,8 +22,9 @@ import {
 	SidebarMenuButton,
 	SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
-import { useConvexAuth, useQuery } from "convex/react";
+import { useConvexAuth } from "convex/react";
 import {
 	Bell,
 	Calendar,
@@ -86,7 +87,7 @@ export function AppSidebar() {
 	const pathname = usePathname();
 	const isCalendarRoute = pathname.startsWith("/calendar");
 	const { user, signOut } = useAuth();
-	const { isAuthenticated } = useConvexAuth();
+	const { isAuthenticated, isLoading: isConvexAuthLoading } = useConvexAuth();
 	const [isSigningOut, setIsSigningOut] = useState(false);
 	const { resolvedTheme, setTheme } = useTheme();
 	const [mounted, setMounted] = useState(false);
@@ -95,10 +96,13 @@ export function AppSidebar() {
 		setMounted(true);
 	}, []);
 
-	const googleCalendars = useQuery(
+	const googleCalendarsQuery = useAuthenticatedQueryWithStatus(
 		api.calendar.queries.listGoogleCalendars,
-		isCalendarRoute && isAuthenticated ? {} : "skip",
+		isCalendarRoute ? {} : "skip",
 	);
+	const googleCalendars = googleCalendarsQuery.data;
+	const isGoogleCalendarsLoading =
+		isCalendarRoute && isAuthenticated && (isConvexAuthLoading || googleCalendarsQuery.isPending);
 	const calendarAccounts = useMemo(() => {
 		return (googleCalendars ?? [])
 			.map((calendar) => ({
@@ -183,30 +187,36 @@ export function AppSidebar() {
 								<div className="px-1 pb-1 text-[0.72rem] text-muted-foreground/85">{email}</div>
 							) : null}
 							<div className="grid gap-0.5">
-								{orderedCalendars.map((calendar) => (
-									<div
-										key={calendar.id}
-										title={calendar.name}
-										className="flex min-w-0 items-center rounded-md px-1.5 py-1 text-[0.74rem] text-sidebar-foreground/80 hover:bg-sidebar-accent"
-									>
-										<div className="flex min-w-0 flex-1 items-center gap-2">
-											{calendar.isRemote ? (
-												<Rss className="size-3.5 shrink-0" style={{ color: calendar.color }} />
-											) : (
-												<span
-													className="size-2.5 rounded-[4px] shrink-0"
-													style={{ backgroundColor: calendar.color }}
-												/>
-											)}
-											<span className="truncate">{calendar.name}</span>
-										</div>
-										{calendar.isDefault ? (
-											<span className="ml-2 shrink-0 text-[0.66rem] text-muted-foreground">
-												Default
-											</span>
-										) : null}
+								{isGoogleCalendarsLoading ? (
+									<div className="rounded-md px-1.5 py-1 text-[0.74rem] text-muted-foreground/80">
+										Loading calendars...
 									</div>
-								))}
+								) : (
+									orderedCalendars.map((calendar) => (
+										<div
+											key={calendar.id}
+											title={calendar.name}
+											className="flex min-w-0 items-center rounded-md px-1.5 py-1 text-[0.74rem] text-sidebar-foreground/80 hover:bg-sidebar-accent"
+										>
+											<div className="flex min-w-0 flex-1 items-center gap-2">
+												{calendar.isRemote ? (
+													<Rss className="size-3.5 shrink-0" style={{ color: calendar.color }} />
+												) : (
+													<span
+														className="size-2.5 rounded-[4px] shrink-0"
+														style={{ backgroundColor: calendar.color }}
+													/>
+												)}
+												<span className="truncate">{calendar.name}</span>
+											</div>
+											{calendar.isDefault ? (
+												<span className="ml-2 shrink-0 text-[0.66rem] text-muted-foreground">
+													Default
+												</span>
+											) : null}
+										</div>
+									))
+								)}
 								<button
 									type="button"
 									disabled

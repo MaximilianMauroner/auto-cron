@@ -7,15 +7,28 @@
 		"build": "turbo build",
 		"lint": "biome check .",
 		"format": "biome check --write .",
-		"typecheck": "turbo typecheck"
+		"format:staged": "lint-staged",
+		"precommit": "bun run format:staged && bun run lint && bun run typecheck && bun run test:convex:run",
+		"prepare": "husky",
+		"typecheck": "turbo typecheck",
+		"test:convex": "vitest --config vitest.config.ts",
+		"test:convex:run": "vitest run --config vitest.config.ts"
+	},
+	"lint-staged": {
+		"*.{js,jsx,ts,tsx,cjs,mjs,json,css,md}": "biome check --write"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
+		"@edge-runtime/vm": "^5.0.0",
 		"@types/node": "^25.2.2",
 		"@useautumn/convex": "^0.0.23",
 		"babel-plugin-react-compiler": "^1.0.0",
+		"convex-test": "^0.0.41",
+		"husky": "^9.1.7",
+		"lint-staged": "^16.2.7",
 		"turbo": "^2.4.4",
-		"typescript": "^5.7.3"
+		"typescript": "^5.7.3",
+		"vitest": "^4.0.18"
 	},
 	"packageManager": "bun@1.2.4",
 	"dependencies": {

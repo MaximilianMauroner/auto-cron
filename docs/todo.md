@@ -70,6 +70,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Store Google refresh tokens in Convex `userSettings` table
 - [x] Add auth guard to dashboard layout (redirect to /sign-in if unauthenticated)
 - [x] Install Convex component: `@convex-dev/workos-authkit`
+- [x] Add Convex auth wrappers + structured unauthorized errors (`UNAUTHORIZED`)
 - [~] Install Convex components: `@convex-dev/crons` done; `@convex-dev/workpool`, `@convex-dev/workflow`, `@convex-dev/action-retrier`, and `@convex-dev/rate-limiter` pending
 
 ### Cross-cutting UX + performance
@@ -136,6 +137,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Handle event deletions (both directions)
 - [x] Allow local event deletion when provider-side delete fails
 - [x] Honor recurring move scope (`single`, `following`, `series`) in local mutations
+- [x] Internalize sync-upsert mutation surface (remove unused public `upsertSyncedEvents`)
 
 ### Phase 8: Focus time + buffer time
 
