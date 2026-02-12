@@ -70,6 +70,7 @@ type HabitVisibilityPreference = "default" | "public" | "private";
 type HabitTimeDefenseMode = "always_free" | "auto" | "always_busy";
 type HabitReminderMode = "default" | "custom" | "none";
 type HabitUnscheduledBehavior = "leave_on_calendar" | "remove_from_calendar";
+type HabitRecoveryPolicy = "skip" | "recover";
 
 type HabitEditorState = {
 	id?: string;
@@ -94,6 +95,7 @@ type HabitEditorState = {
 	reminderMode: HabitReminderMode;
 	customReminderMinutes: string;
 	unscheduledBehavior: HabitUnscheduledBehavior;
+	recoveryPolicy: HabitRecoveryPolicy;
 	autoDeclineInvites: boolean;
 	ccEmails: string;
 	duplicateAvoidKeywords: string;
@@ -125,12 +127,14 @@ const priorityLabels: Record<HabitPriority, string> = {
 	low: "Low priority",
 	medium: "Medium priority",
 	high: "High priority",
+	critical: "Critical priority",
 };
 
 const priorityClass: Record<HabitPriority, string> = {
 	low: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30",
 	medium: "bg-sky-500/10 text-sky-700 border-sky-500/30",
 	high: "bg-amber-500/10 text-amber-700 border-amber-500/30",
+	critical: "bg-orange-500/10 text-orange-700 border-orange-500/30",
 };
 
 const frequencyLabels: Record<HabitFrequency, string> = {
@@ -149,6 +153,11 @@ const reminderModeLabels: Record<HabitReminderMode, string> = {
 const unscheduledLabels: Record<HabitUnscheduledBehavior, string> = {
 	leave_on_calendar: "Leave it on the calendar",
 	remove_from_calendar: "Remove it from the calendar",
+};
+
+const recoveryLabels: Record<HabitRecoveryPolicy, string> = {
+	skip: "Skip missed occurrences",
+	recover: "Recover missed occurrences",
 };
 
 const visibilityLabels: Record<HabitVisibilityPreference, string> = {
@@ -207,6 +216,7 @@ const initialForm: HabitEditorState = {
 	reminderMode: "default",
 	customReminderMinutes: "15",
 	unscheduledBehavior: "remove_from_calendar",
+	recoveryPolicy: "skip",
 	autoDeclineInvites: false,
 	ccEmails: "",
 	duplicateAvoidKeywords: "",
@@ -251,6 +261,39 @@ const addMinutesToTime = (time: string, minutesToAdd: number) => {
 	const nextHours = Math.floor(total / 60);
 	const nextMinutes = total % 60;
 	return `${String(nextHours).padStart(2, "0")}:${String(nextMinutes).padStart(2, "0")}`;
+};
+
+const recurrenceFromFrequency = (frequency: HabitFrequency) => {
+	switch (frequency) {
+		case "daily":
+			return "RRULE:FREQ=DAILY;INTERVAL=1";
+		case "weekly":
+			return "RRULE:FREQ=WEEKLY;INTERVAL=1";
+		case "biweekly":
+			return "RRULE:FREQ=WEEKLY;INTERVAL=2";
+		case "monthly":
+			return "RRULE:FREQ=MONTHLY;INTERVAL=1";
+		default:
+			return "RRULE:FREQ=WEEKLY;INTERVAL=1";
+	}
+};
+
+const frequencyFromRecurrenceRule = (rule: string | undefined): HabitFrequency => {
+	if (!rule) return "weekly";
+	const normalized = rule.trim().replace(/^RRULE:/i, "");
+	const fields = new Map<string, string>();
+	for (const chunk of normalized.split(";")) {
+		const [key, value] = chunk.split("=", 2);
+		if (!key || !value) continue;
+		fields.set(key.toUpperCase(), value.toUpperCase());
+	}
+	const freq = fields.get("FREQ");
+	const interval = Number.parseInt(fields.get("INTERVAL") ?? "1", 10);
+	if (freq === "DAILY") return "daily";
+	if (freq === "WEEKLY" && interval >= 2) return "biweekly";
+	if (freq === "WEEKLY") return "weekly";
+	if (freq === "MONTHLY") return "monthly";
+	return "weekly";
 };
 
 const parseCsv = (value: string) =>
@@ -432,6 +475,8 @@ export default function HabitsPage() {
 			description: form.description.trim() || undefined,
 			priority: form.priority,
 			category: form.category,
+			recurrenceRule: recurrenceFromFrequency(form.frequency),
+			recoveryPolicy: form.recoveryPolicy,
 			frequency: form.frequency,
 			durationMinutes: maxDurationMinutes,
 			minDurationMinutes,
@@ -527,7 +572,7 @@ export default function HabitsPage() {
 			description: habit.description ?? "",
 			priority: habit.priority ?? "medium",
 			category: habit.category,
-			frequency: habit.frequency,
+			frequency: habit.frequency ?? frequencyFromRecurrenceRule(habit.recurrenceRule),
 			repeatsPerPeriod: String(habit.repeatsPerPeriod ?? 1),
 			minDurationMinutes: formatDurationFromMinutes(
 				habit.minDurationMinutes ?? habit.durationMinutes,
@@ -548,6 +593,7 @@ export default function HabitsPage() {
 			reminderMode: habit.reminderMode ?? "default",
 			customReminderMinutes: String(habit.customReminderMinutes ?? 15),
 			unscheduledBehavior: habit.unscheduledBehavior ?? "remove_from_calendar",
+			recoveryPolicy: habit.recoveryPolicy ?? "skip",
 			autoDeclineInvites: habit.autoDeclineInvites ?? false,
 			ccEmails: (habit.ccEmails ?? []).join(", "),
 			duplicateAvoidKeywords: (habit.duplicateAvoidKeywords ?? []).join(", "),
@@ -686,7 +732,12 @@ export default function HabitsPage() {
 												<div className="min-w-0">
 													<p className="truncate text-sm font-semibold">{habit.title}</p>
 													<p className="text-xs text-muted-foreground">
-														{frequencyLabels[habit.frequency]} / {habit.durationMinutes}m
+														{
+															frequencyLabels[
+																habit.frequency ?? frequencyFromRecurrenceRule(habit.recurrenceRule)
+															]
+														}{" "}
+														/ {habit.durationMinutes}m
 													</p>
 												</div>
 												<Button
@@ -1292,6 +1343,38 @@ function HabitDialog({
 											>
 												<RadioGroupItem value={mode} id={`habit-unscheduled-${mode}`} />
 												<Label htmlFor={`habit-unscheduled-${mode}`} className="cursor-pointer">
+													{label}
+												</Label>
+											</div>
+										))}
+									</RadioGroup>
+								</div>
+
+								<div className="space-y-2">
+									<Label>Recovery policy</Label>
+									<p className="text-sm text-muted-foreground">
+										Control whether missed occurrences should be recovered in later slots.
+									</p>
+									<RadioGroup
+										value={value.recoveryPolicy}
+										onValueChange={(recoveryPolicy) =>
+											onChange({
+												...value,
+												recoveryPolicy: recoveryPolicy as HabitRecoveryPolicy,
+											})
+										}
+										className="rounded-lg border border-border/70"
+									>
+										{Object.entries(recoveryLabels).map(([mode, label]) => (
+											<div
+												key={mode}
+												className={cn(
+													"flex cursor-pointer items-center gap-3 border-b border-border/70 px-3 py-3 last:border-b-0",
+													value.recoveryPolicy === mode && "bg-muted/50",
+												)}
+											>
+												<RadioGroupItem value={mode} id={`habit-recovery-${mode}`} />
+												<Label htmlFor={`habit-recovery-${mode}`} className="cursor-pointer">
 													{label}
 												</Label>
 											</div>

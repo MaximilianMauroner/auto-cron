@@ -3,6 +3,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
+import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
 import {
 	type HourWindow,
 	anytimeWindows,
@@ -122,11 +123,29 @@ const toWorkWindowsFromLegacySettings = (settings: Doc<"userSettings"> | null): 
 
 const sanitizeTaskSchedulingMode = (
 	mode: string | undefined,
-): "fastest" | "backfacing" | "parallel" => {
-	if (mode === "fastest" || mode === "backfacing" || mode === "parallel") {
+): "fastest" | "balanced" | "packed" => {
+	if (mode === "fastest" || mode === "balanced" || mode === "packed") {
 		return mode;
 	}
+	if (mode === "backfacing") return "packed";
+	if (mode === "parallel") return "balanced";
 	return "fastest";
+};
+
+const sanitizeHabitPriority = (
+	priority: string | undefined,
+): "low" | "medium" | "high" | "critical" => {
+	if (priority === "low" || priority === "medium" || priority === "high") return priority;
+	if (priority === "critical" || priority === "blocker") return "critical";
+	return "medium";
+};
+
+const recurrenceFromLegacyFrequency = (frequency: string | undefined) => {
+	if (frequency === "daily") return "RRULE:FREQ=DAILY;INTERVAL=1";
+	if (frequency === "weekly") return "RRULE:FREQ=WEEKLY;INTERVAL=1";
+	if (frequency === "biweekly") return "RRULE:FREQ=WEEKLY;INTERVAL=2";
+	if (frequency === "monthly") return "RRULE:FREQ=MONTHLY;INTERVAL=1";
+	return "RRULE:FREQ=WEEKLY;INTERVAL=1";
 };
 
 const ensureSettingsForUser = async (ctx: MutationCtx, userId: string) => {
@@ -236,6 +255,10 @@ export const setDefaultHoursSet = mutation({
 
 			await clearDefaultForUser(ctx, ctx.userId);
 			await ctx.db.patch(hoursSet._id, { isDefault: true, updatedAt: Date.now() });
+			await enqueueSchedulingRunFromMutation(ctx, {
+				userId: ctx.userId,
+				triggeredBy: "hours_change",
+			});
 			return hoursSet._id;
 		},
 	),
@@ -249,8 +272,8 @@ export const setDefaultTaskSchedulingMode = mutation({
 	handler: withMutationAuth(
 		async (
 			ctx,
-			args: { mode: "fastest" | "backfacing" | "parallel" },
-		): Promise<"fastest" | "backfacing" | "parallel"> => {
+			args: { mode: "fastest" | "balanced" | "packed" },
+		): Promise<"fastest" | "balanced" | "packed"> => {
 			await ensureSettingsForUser(ctx, ctx.userId);
 			const settings = await ctx.db
 				.query("userSettings")
@@ -267,10 +290,18 @@ export const setDefaultTaskSchedulingMode = mutation({
 					googleCalendarSyncTokens: [],
 					googleConnectedCalendars: [],
 				});
+				await enqueueSchedulingRunFromMutation(ctx, {
+					userId: ctx.userId,
+					triggeredBy: "hours_change",
+				});
 				return args.mode;
 			}
 			await ctx.db.patch(settings._id, {
 				defaultTaskSchedulingMode: args.mode,
+			});
+			await enqueueSchedulingRunFromMutation(ctx, {
+				userId: ctx.userId,
+				triggeredBy: "hours_change",
 			});
 			return args.mode;
 		},
@@ -298,7 +329,7 @@ export const createHoursSet = mutation({
 				await clearDefaultForUser(ctx, ctx.userId);
 			}
 
-			return ctx.db.insert("hoursSets", {
+			const createdId = await ctx.db.insert("hoursSets", {
 				userId: ctx.userId,
 				name,
 				isDefault,
@@ -307,6 +338,11 @@ export const createHoursSet = mutation({
 				defaultCalendarId: args.input.defaultCalendarId,
 				updatedAt: Date.now(),
 			});
+			await enqueueSchedulingRunFromMutation(ctx, {
+				userId: ctx.userId,
+				triggeredBy: "hours_change",
+			});
+			return createdId;
 		},
 	),
 });
@@ -351,6 +387,10 @@ export const updateHoursSet = mutation({
 			}
 
 			await ctx.db.patch(hoursSet._id, nextPatch);
+			await enqueueSchedulingRunFromMutation(ctx, {
+				userId: ctx.userId,
+				triggeredBy: "hours_change",
+			});
 			return hoursSet._id;
 		},
 	),
@@ -401,6 +441,10 @@ export const deleteHoursSet = mutation({
 		);
 
 		await ctx.db.delete(hoursSet._id);
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: ctx.userId,
+			triggeredBy: "hours_change",
+		});
 		return null;
 	}),
 });
@@ -529,5 +573,82 @@ export const internalGetDefaultHoursSetForUser = internalMutation({
 	handler: async (ctx, args) => {
 		const defaultHoursSet = await getDefaultHoursSet(ctx, args.userId);
 		return defaultHoursSet?._id ?? null;
+	},
+});
+
+export const internalMigrateSchedulingModelForUser = internalMutation({
+	args: {
+		userId: v.string(),
+	},
+	returns: v.object({
+		updatedSettings: v.number(),
+		updatedTasks: v.number(),
+		updatedHabits: v.number(),
+	}),
+	handler: async (ctx, args) => {
+		let updatedSettings = 0;
+		let updatedTasks = 0;
+		let updatedHabits = 0;
+
+		const settings = await ctx.db
+			.query("userSettings")
+			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
+			.unique();
+		if (settings) {
+			const normalizedMode = sanitizeTaskSchedulingMode(
+				(settings as { defaultTaskSchedulingMode?: string }).defaultTaskSchedulingMode,
+			);
+			if (settings.defaultTaskSchedulingMode !== normalizedMode) {
+				await ctx.db.patch(settings._id, {
+					defaultTaskSchedulingMode: normalizedMode,
+				});
+				updatedSettings += 1;
+			}
+		}
+
+		const tasks = await ctx.db
+			.query("tasks")
+			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
+			.collect();
+		for (const task of tasks) {
+			const nextMode = task.schedulingMode
+				? sanitizeTaskSchedulingMode(task.schedulingMode as string)
+				: undefined;
+			if (nextMode !== task.schedulingMode) {
+				await ctx.db.patch(task._id, {
+					schedulingMode: nextMode,
+				});
+				updatedTasks += 1;
+			}
+		}
+
+		const habits = await ctx.db
+			.query("habits")
+			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
+			.collect();
+		for (const habit of habits) {
+			const nextPriority = sanitizeHabitPriority(habit.priority as string | undefined);
+			const nextRecurrence =
+				habit.recurrenceRule ??
+				recurrenceFromLegacyFrequency((habit as { frequency?: string }).frequency);
+			const nextRecoveryPolicy = habit.recoveryPolicy ?? "skip";
+			const shouldPatch =
+				habit.priority !== nextPriority ||
+				habit.recurrenceRule !== nextRecurrence ||
+				habit.recoveryPolicy !== nextRecoveryPolicy;
+			if (!shouldPatch) continue;
+			await ctx.db.patch(habit._id, {
+				priority: nextPriority,
+				recurrenceRule: nextRecurrence,
+				recoveryPolicy: nextRecoveryPolicy,
+			});
+			updatedHabits += 1;
+		}
+
+		return {
+			updatedSettings,
+			updatedTasks,
+			updatedHabits,
+		};
 	},
 });

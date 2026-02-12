@@ -8,6 +8,7 @@ import {
 	getDefaultHoursSet,
 	taskSchedulingModeValidator,
 } from "../hours/shared";
+import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
 
 const taskStatusValidator = v.union(
 	v.literal("backlog"),
@@ -83,7 +84,7 @@ type TaskCreateInput = {
 	maxChunkMinutes?: number;
 	sendToUpNext?: boolean;
 	hoursSetId?: Id<"hoursSets">;
-	schedulingMode?: "fastest" | "backfacing" | "parallel";
+	schedulingMode?: "fastest" | "balanced" | "packed";
 	visibilityPreference?: "default" | "private";
 	preferredCalendarId?: string;
 	color?: string;
@@ -105,7 +106,7 @@ type TaskUpdatePatch = {
 	maxChunkMinutes?: number | null;
 	sendToUpNext?: boolean | null;
 	hoursSetId?: Id<"hoursSets"> | null;
-	schedulingMode?: "fastest" | "backfacing" | "parallel" | null;
+	schedulingMode?: "fastest" | "balanced" | "packed" | null;
 	visibilityPreference?: "default" | "private" | null;
 	preferredCalendarId?: string | null;
 	color?: string | null;
@@ -202,6 +203,10 @@ export const updateTask = mutation({
 			}
 		}
 		await ctx.db.patch(args.id, nextPatch as Partial<typeof task>);
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: ctx.userId,
+			triggeredBy: "task_change",
+		});
 		return args.id;
 	}),
 });
@@ -217,6 +222,10 @@ export const deleteTask = mutation({
 			throw notFoundError();
 		}
 		await ctx.db.delete(args.id);
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: ctx.userId,
+			triggeredBy: "task_change",
+		});
 		return null;
 	}),
 });
@@ -248,6 +257,10 @@ export const reorderTasks = mutation({
 				}),
 			),
 		);
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: ctx.userId,
+			triggeredBy: "task_change",
+		});
 		return null;
 	}),
 });
@@ -316,6 +329,11 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 				updatedAt: Date.now(),
 			});
 		}
+
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: args.userId,
+			triggeredBy: "task_change",
+		});
 
 		return insertedId;
 	},

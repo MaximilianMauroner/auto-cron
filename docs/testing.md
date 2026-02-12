@@ -4,7 +4,8 @@ Testing policy and practical guidance for `auto-cron`.
 
 ## Current status
 
-A comprehensive automated test suite is not fully established yet. Until then, use strict type/lint gates, focused Convex tests, and targeted manual verification.
+A comprehensive automated test suite is not fully established yet. Until then, use strict type/lint
+gates, focused Convex tests, and targeted manual verification.
 
 ## Required pre-merge checks
 
@@ -60,13 +61,33 @@ bun run test:convex:run
   - hours-set bootstrap guarantees (`Work` + `Anytime (24/7)`)
   - hours window validation (overlap/range/granularity)
   - default fallback reassignment when deleting non-default hours sets
-  - task scheduling mode default + per-task override behavior
+  - task scheduling mode default + per-task override behavior (`fastest|balanced|packed`)
+  - scheduler solver invariants in `convex/scheduling/solver.test.ts`:
+    - task coverage and chunk placement
+    - pass-A on-time infeasibility with pass-B late schedule
+    - hard infeasible no-apply behavior
+    - recover-vs-skip ordering under contention
+    - RRULE parsing support
+    - cross-midnight slot/window handling
+
+## Scheduler regression checklist
+
+Run this checklist when touching `convex/scheduling/*`, trigger wiring, or diagnostics UI:
+
+1. `scheduling.actions.runNow` creates exactly one run row and transitions `pending -> running -> completed|failed`.
+2. `scheduling.queries.getLatestRun` returns diagnostics used by Calendar panel.
+3. Hard infeasible runs keep existing scheduler-generated events unchanged.
+4. Legacy mode values (`backfacing`, `parallel`) normalize to canonical enums.
+5. Habit records missing `recurrenceRule`/`recoveryPolicy` are backfilled idempotently.
+6. Trigger debounce prevents duplicate pending/running runs inside the debounce window.
 
 ## Manual verification checklist
 
 - Sign-in/sign-out flow works end-to-end.
 - Task and habit operations update UI and backend consistently.
 - Calendar events reflect scheduling results without overlap regressions.
+- Calendar diagnostics panel reflects latest run status, late-task count, and shortfall count.
+- Hard infeasibility banner appears when `latestRun.feasibleOnTime === false`.
 - Billing-gated actions are correctly blocked/unblocked by plan.
 - Task and habit create flows open paywall when limit is reached.
 

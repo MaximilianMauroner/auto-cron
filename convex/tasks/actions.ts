@@ -59,7 +59,7 @@ type TaskCreateInput = {
 	maxChunkMinutes?: number;
 	sendToUpNext?: boolean;
 	hoursSetId?: Id<"hoursSets">;
-	schedulingMode?: "fastest" | "backfacing" | "parallel";
+	schedulingMode?: "fastest" | "balanced" | "packed";
 	visibilityPreference?: "default" | "private";
 	preferredCalendarId?: string;
 	color?: string;

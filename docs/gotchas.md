@@ -14,6 +14,9 @@ Hard-won lessons from debugging sessions. Agents should check this file when stu
 - Task/habit create billing uses lock + reservation orchestration in `convex/billing.ts`; when touching create actions, preserve `requestId` idempotency and rollback semantics to avoid double-consume or orphan inserts.
 - Convex billing tests rely on `AUTUMN_BILLING_MODE` (`allow_all`, `deny_tasks`, `deny_habits`, `track_fail`) to avoid external Autumn calls. Keep this behavior in sync with `convex/billing.ts` when adding new billable features.
 - Working-hours legacy fields (`workingHoursStart/End/workingDays`) were replaced by `hoursSets`. Run `api.hours.actions.bootstrapHoursSetsForUser` to guarantee system sets (`Work`, `Anytime (24/7)`), exactly one default, and task/habit `hoursSetId` backfills before relying on hours-aware scheduling.
+- Scheduling mode values are normalized for compatibility (`backfacing -> packed`, `parallel -> balanced`) via `hours.mutations.internalMigrateSchedulingModelForUser`; keep this mapping in sync if enums evolve.
+- Scheduler hard infeasible runs (`reasonCode=INFEASIBLE_HARD`) intentionally do not mutate task/habit-generated calendar blocks. Preserve this no-partial-apply behavior when refactoring run/apply flows.
+- Convex tests can fail on queued scheduler jobs if scheduled functions are not mocked. `convex/scheduling/enqueue.ts` skips `runAfter` in test runtime (`NODE_ENV=test` or `VITEST=true`); keep this guard when adjusting scheduling triggers.
 
 ## Monorepo
 

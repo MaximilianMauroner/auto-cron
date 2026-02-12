@@ -17,14 +17,14 @@ import { api } from "../../../../../../convex/_generated/api";
 
 const schedulingModeLabels: Record<TaskSchedulingMode, string> = {
 	fastest: "Fastest",
-	backfacing: "Backfacing",
-	parallel: "Parallel",
+	balanced: "Balanced",
+	packed: "Packed",
 };
 
 const schedulingModeDescriptions: Record<TaskSchedulingMode, string> = {
 	fastest: "Schedules tasks as early as possible to finish soonest before due time.",
-	backfacing: "Schedules tasks as late as possible while still finishing by the due time.",
-	parallel: "Distributes tasks with similar due dates in parallel across available windows.",
+	balanced: "Balances earlier completion with stability and preference adherence.",
+	packed: "Packs work later in the horizon while preserving hard constraints.",
 };
 
 export default function SchedulingSettingsPage() {
@@ -33,7 +33,7 @@ export default function SchedulingSettingsPage() {
 		api.hours.queries.getTaskSchedulingDefaults,
 		{},
 	);
-	const defaultTaskSchedulingMode =
+	const defaultTaskSchedulingMode: TaskSchedulingMode =
 		schedulingDefaultsQuery.data?.defaultTaskSchedulingMode ?? "fastest";
 	const { mutate: setDefaultTaskSchedulingMode, isPending } = useMutationWithStatus(
 		api.hours.mutations.setDefaultTaskSchedulingMode,

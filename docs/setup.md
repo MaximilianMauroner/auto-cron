@@ -56,6 +56,17 @@ Terminal 2 (Convex backend):
 npx convex dev
 ```
 
+## 3.1 Scheduler migration + normalization (recommended once per user)
+
+The scheduler now uses canonical task modes (`fastest|balanced|packed`) and habit RRULE/recovery fields.
+Legacy records are auto-normalized by scheduler runs, but you can proactively normalize a user from the
+Convex dashboard by running `hours.actions.migrateSchedulingDataForCurrentUser`.
+
+## 3.2 Manual scheduler run
+
+Use the Calendar diagnostics panel "Run scheduler" button (calls `scheduling.actions.runNow`) to force an
+immediate scheduling run and refresh diagnostics.
+
 ## 4. Validate before shipping changes
 
 ```bash

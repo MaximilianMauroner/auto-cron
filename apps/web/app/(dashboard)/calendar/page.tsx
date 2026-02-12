@@ -3,6 +3,7 @@ import { withAuth } from "@workos-inc/authkit-nextjs";
 import dynamic from "next/dynamic";
 import { cookies } from "next/headers";
 import { api } from "../../../../../convex/_generated/api";
+import { SchedulingDiagnostics } from "./scheduling-diagnostics";
 
 const CalendarClient = dynamic(
 	() => import("./calendar-client").then((module) => module.CalendarClient),
@@ -31,5 +32,12 @@ export default async function CalendarPage() {
 		}
 	}
 
-	return <CalendarClient />;
+	return (
+		<div className="flex h-full min-h-0 flex-col gap-4">
+			<SchedulingDiagnostics />
+			<div className="min-h-0 flex-1">
+				<CalendarClient />
+			</div>
+		</div>
+	);
 }

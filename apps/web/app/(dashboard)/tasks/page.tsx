@@ -136,8 +136,8 @@ const taskColors = [
 
 const schedulingModeLabels: Record<TaskSchedulingMode, string> = {
 	fastest: "Fastest",
-	backfacing: "Backfacing",
-	parallel: "Parallel",
+	balanced: "Balanced",
+	packed: "Packed",
 };
 
 const visibilityLabels: Record<TaskVisibilityPreference, string> = {

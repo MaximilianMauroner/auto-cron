@@ -39,3 +39,11 @@ See [docs/setup.md](docs/setup.md) for local development quickstart and deployme
 - `bun run format` - run Biome with auto-fix
 - `bun run typecheck` - run workspace type checks
 - `npx convex dev` - run Convex dev backend in a separate terminal
+
+## Scheduler snapshot
+
+- Scheduler runs on 15-minute slots with a clamped horizon of 4-12 weeks (default 8).
+- Task scheduling modes are `fastest`, `balanced`, and `packed` (global default + per-task override).
+- Habits use canonical `recurrenceRule` (`RRULE:...`) plus `recoveryPolicy` (`skip` or `recover`).
+- Scheduling runs are tracked in `schedulingRuns` with diagnostics (`feasibleOnTime`, late tasks, shortfalls, reason code, objective score).
+- Hard infeasible runs do not partially apply changes; existing scheduler-generated calendar blocks remain unchanged.

@@ -34,7 +34,13 @@ const habitCategoryValidator = v.union(
 	v.literal("other"),
 );
 
-const habitPriorityValidator = v.union(v.literal("low"), v.literal("medium"), v.literal("high"));
+const habitPriorityValidator = v.union(
+	v.literal("low"),
+	v.literal("medium"),
+	v.literal("high"),
+	v.literal("critical"),
+);
+const habitRecoveryPolicyValidator = v.union(v.literal("skip"), v.literal("recover"));
 const habitVisibilityPreferenceValidator = v.union(
 	v.literal("default"),
 	v.literal("public"),
@@ -60,7 +66,9 @@ const habitCreateInputValidator = v.object({
 	description: v.optional(v.string()),
 	priority: v.optional(habitPriorityValidator),
 	category: habitCategoryValidator,
-	frequency: habitFrequencyValidator,
+	recurrenceRule: v.optional(v.string()),
+	recoveryPolicy: v.optional(habitRecoveryPolicyValidator),
+	frequency: v.optional(habitFrequencyValidator),
 	durationMinutes: v.number(),
 	minDurationMinutes: v.optional(v.number()),
 	maxDurationMinutes: v.optional(v.number()),
@@ -91,9 +99,11 @@ const habitCreateInputValidator = v.object({
 type HabitCreateInput = {
 	title: string;
 	description?: string;
-	priority?: "low" | "medium" | "high";
+	priority?: "low" | "medium" | "high" | "critical";
 	category: "health" | "fitness" | "learning" | "mindfulness" | "productivity" | "social" | "other";
-	frequency: "daily" | "weekly" | "biweekly" | "monthly";
+	recurrenceRule?: string;
+	recoveryPolicy?: "skip" | "recover";
+	frequency?: "daily" | "weekly" | "biweekly" | "monthly";
 	durationMinutes: number;
 	minDurationMinutes?: number;
 	maxDurationMinutes?: number;

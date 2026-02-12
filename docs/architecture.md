@@ -4,9 +4,10 @@
 
 - Task and habit planning with explicit priorities and durations
 - Reusable per-user hours sets (`Work`, `Anytime (24/7)`, and custom sets)
-- Task scheduling mode intent (`fastest`, `backfacing`, `parallel`) with global default + per-task override
+- Task scheduling mode intent (`fastest`, `balanced`, `packed`) with global default + per-task override
+- Habit recurrence canonical source (`recurrenceRule` / RRULE) with `recoveryPolicy` (`skip` or `recover`)
 - Tasks and habits dashboard UIs with create/edit/delete/toggle flows
-- Auto-scheduling into available calendar slots
+- Constraint-based auto-scheduling into available calendar slots (15-minute discretization)
 - Scheduling run tracking for observability and debugging
 - Calendar event model with multi-source support (`manual`, `google`, `task`, `habit`)
 - Billing integration via Autumn with create-only metering for `tasks` and `habits`
@@ -59,9 +60,49 @@ Defined in `convex/schema.ts`:
 3. Scheduling pipeline computes available slots from:
    - selected hours sets for tasks/habits
    - existing calendar events
-   - deadlines and priority heuristics
-4. Scheduler writes derived `calendarEvents` and logs run metadata in `schedulingRuns`.
-5. Google Calendar sync keeps external calendar state aligned.
+   - deadlines, priorities, and mode shaping (`fastest|balanced|packed`)
+4. Scheduler executes a two-pass solve:
+   - pass A checks on-time feasibility (`completion <= due`) for all schedulable tasks
+   - pass B optimizes with soft lateness + habit/drop/preference/stability objectives
+5. Scheduler writes derived `calendarEvents` and logs diagnostics in `schedulingRuns`.
+6. Google Calendar sync keeps external calendar state aligned.
+
+## Constraint scheduler pipeline
+
+The Convex scheduling module lives in `convex/scheduling/*` and runs as an internal action.
+
+1. Normalize horizon and slots (`SLOT_MINUTES=15`, horizon clamp `4..12` weeks).
+2. Build allowed-slot masks from selected hours set windows (cross-midnight windows split by day).
+3. Block fixed busy intervals from `calendarEvents` (`busyStatus !== "free"` and non-cancelled).
+4. Expand habit recurrences from RRULE and build occurrence candidates.
+5. Build task chunk plans from required duration and chunk bounds.
+6. Run pass A (strict due-date feasibility) and pass B (full objective).
+7. On hard infeasible (`INFEASIBLE_HARD`), mark run failed and keep existing scheduler-generated blocks unchanged.
+8. On success, replace scheduler-generated task/habit blocks in horizon and patch task `scheduledStart/scheduledEnd`.
+
+## Scheduling run diagnostics
+
+`schedulingRuns` stores run lifecycle and diagnostics:
+
+- lifecycle: `status`, `triggeredBy`, `startedAt`, `completedAt`, `error`
+- horizon and objective: `horizonStart`, `horizonEnd`, `objectiveScore`, `feasibleOnTime`
+- task diagnostics: `lateTasks[]`
+- habit diagnostics: `habitShortfalls[]`, `dropSummary[]`
+- machine-readable reason: `reasonCode`
+
+Lookup indexes are optimized for per-user status/timeline queries:
+
+- `by_userId_status_startedAt`
+- `by_userId_startedAt`
+
+## Compatibility normalization
+
+For existing user data, internal migration normalizes legacy values idempotently:
+
+- task mode: `backfacing -> packed`, `parallel -> balanced`
+- habits: derive `recurrenceRule` from legacy frequency fields when missing
+- habits: default `recoveryPolicy` to `skip` when missing
+- habits: default missing priority to `medium`
 
 ## Billing Architecture (Tasks/Habits)
 

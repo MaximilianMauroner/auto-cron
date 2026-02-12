@@ -4,8 +4,8 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 export const taskSchedulingModeValidator = v.union(
 	v.literal("fastest"),
-	v.literal("backfacing"),
-	v.literal("parallel"),
+	v.literal("balanced"),
+	v.literal("packed"),
 );
 
 export const hourWindowDayValidator = v.union(

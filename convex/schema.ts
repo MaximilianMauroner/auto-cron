@@ -7,8 +7,8 @@ export default defineSchema({
 		timezone: v.string(),
 		defaultTaskSchedulingMode: v.union(
 			v.literal("fastest"),
-			v.literal("backfacing"),
-			v.literal("parallel"),
+			v.literal("balanced"),
+			v.literal("packed"),
 		),
 		googleRefreshToken: v.optional(v.string()),
 		googleSyncToken: v.optional(v.string()),
@@ -75,7 +75,7 @@ export default defineSchema({
 		sendToUpNext: v.optional(v.boolean()),
 		hoursSetId: v.optional(v.id("hoursSets")),
 		schedulingMode: v.optional(
-			v.union(v.literal("fastest"), v.literal("backfacing"), v.literal("parallel")),
+			v.union(v.literal("fastest"), v.literal("balanced"), v.literal("packed")),
 		),
 		visibilityPreference: v.optional(v.union(v.literal("default"), v.literal("private"))),
 		preferredCalendarId: v.optional(v.string()),
@@ -89,7 +89,15 @@ export default defineSchema({
 		userId: v.string(),
 		title: v.string(),
 		description: v.optional(v.string()),
-		priority: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
+		priority: v.optional(
+			v.union(
+				v.literal("low"),
+				v.literal("medium"),
+				v.literal("high"),
+				v.literal("critical"),
+				v.literal("blocker"),
+			),
+		),
 		category: v.union(
 			v.literal("health"),
 			v.literal("fitness"),
@@ -99,11 +107,10 @@ export default defineSchema({
 			v.literal("social"),
 			v.literal("other"),
 		),
-		frequency: v.union(
-			v.literal("daily"),
-			v.literal("weekly"),
-			v.literal("biweekly"),
-			v.literal("monthly"),
+		recurrenceRule: v.optional(v.string()),
+		recoveryPolicy: v.optional(v.union(v.literal("skip"), v.literal("recover"))),
+		frequency: v.optional(
+			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly")),
 		),
 		durationMinutes: v.number(),
 		minDurationMinutes: v.optional(v.number()),
@@ -266,8 +273,64 @@ export default defineSchema({
 		completedAt: v.optional(v.number()),
 		tasksScheduled: v.number(),
 		habitsScheduled: v.number(),
+		feasibleOnTime: v.optional(v.boolean()),
+		horizonStart: v.optional(v.number()),
+		horizonEnd: v.optional(v.number()),
+		objectiveScore: v.optional(v.number()),
+		lateTasks: v.optional(
+			v.array(
+				v.object({
+					taskId: v.id("tasks"),
+					dueDate: v.optional(v.number()),
+					completionEnd: v.number(),
+					tardinessSlots: v.number(),
+					priority: v.union(
+						v.literal("low"),
+						v.literal("medium"),
+						v.literal("high"),
+						v.literal("critical"),
+						v.literal("blocker"),
+					),
+					blocker: v.boolean(),
+					reason: v.optional(v.string()),
+				}),
+			),
+		),
+		habitShortfalls: v.optional(
+			v.array(
+				v.object({
+					habitId: v.id("habits"),
+					periodStart: v.number(),
+					periodEnd: v.number(),
+					targetCount: v.number(),
+					scheduledCount: v.number(),
+					shortfall: v.number(),
+					recoveryPolicy: v.union(v.literal("skip"), v.literal("recover")),
+				}),
+			),
+		),
+		dropSummary: v.optional(
+			v.array(
+				v.object({
+					habitId: v.id("habits"),
+					recoveryPolicy: v.union(v.literal("skip"), v.literal("recover")),
+					priority: v.union(
+						v.literal("low"),
+						v.literal("medium"),
+						v.literal("high"),
+						v.literal("critical"),
+						v.literal("blocker"),
+					),
+					reason: v.string(),
+				}),
+			),
+		),
+		reasonCode: v.optional(v.string()),
 		error: v.optional(v.string()),
-	}).index("by_userId", ["userId"]),
+	})
+		.index("by_userId", ["userId"])
+		.index("by_userId_status_startedAt", ["userId", "status", "startedAt"])
+		.index("by_userId_startedAt", ["userId", "startedAt"]),
 
 	billingReservations: defineTable({
 		operationKey: v.string(),

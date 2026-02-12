@@ -32,3 +32,11 @@ Copy from `.env.example` and set values:
 - `NEXT_PUBLIC_AUTUMN_BACKEND_URL` avoids Autumn SSR fetch errors caused by relative `/api/autumn/*` URLs.
 - Keep secrets out of client code and logs.
 - For production, mirror required values in your deployment platform + Convex dashboard.
+
+## Scheduler configuration source
+
+Scheduler behavior is configured from Convex user data, not environment variables:
+
+- `userSettings.timezone`
+- `userSettings.schedulingHorizonDays` (clamped to 4-12 weeks)
+- `userSettings.defaultTaskSchedulingMode` (`fastest|balanced|packed`)

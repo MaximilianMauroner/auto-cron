@@ -5,9 +5,20 @@ import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
 import type { RecurrenceEditScope } from "../providers/calendar/types";
+import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
 
 const MINUTE_MS = 60 * 1000;
 const normalizeToMinute = (timestamp: number) => Math.floor(timestamp / MINUTE_MS) * MINUTE_MS;
+const sanitizeTaskSchedulingMode = (
+	mode: string | undefined,
+): "fastest" | "balanced" | "packed" => {
+	if (mode === "fastest" || mode === "balanced" || mode === "packed") {
+		return mode;
+	}
+	if (mode === "backfacing") return "packed";
+	if (mode === "parallel") return "balanced";
+	return "fastest";
+};
 
 const recurrenceScopeValidator = v.union(
 	v.literal("single"),
@@ -348,7 +359,8 @@ const performUpsertSyncedEventsForUser = async (
 			status: event.status,
 			etag: event.etag,
 			lastSyncedAt: event.lastSyncedAt,
-			busyStatus: isRecurringInstance ? undefined : event.busyStatus,
+			// Persist busy status on occurrences so scheduling can evaluate blocking events directly.
+			busyStatus: event.busyStatus,
 			visibility: isRecurringInstance ? undefined : event.visibility,
 			location: isRecurringInstance ? undefined : event.location,
 			color: isRecurringInstance ? undefined : event.color,
@@ -411,12 +423,9 @@ const performUpsertSyncedEventsForUser = async (
 			mergedSyncTokensByCalendarId.get("primary")?.syncToken ??
 			(resetCalendarIds.has("primary") ? undefined : settings.googleSyncToken);
 
-		const currentMode = (settings as { defaultTaskSchedulingMode?: string })
-			.defaultTaskSchedulingMode;
-		const defaultTaskSchedulingMode =
-			currentMode === "fastest" || currentMode === "backfacing" || currentMode === "parallel"
-				? currentMode
-				: "fastest";
+		const defaultTaskSchedulingMode = sanitizeTaskSchedulingMode(
+			(settings as { defaultTaskSchedulingMode?: string }).defaultTaskSchedulingMode,
+		);
 		await ctx.db.replace(settings._id, {
 			userId: settings.userId,
 			timezone: settings.timezone ?? "UTC",
@@ -460,12 +469,9 @@ export const upsertGoogleTokens = mutation({
 						return Array.from(tokensByCalendarId.values());
 					})()
 				: (existing.googleCalendarSyncTokens ?? []);
-			const currentMode = (existing as { defaultTaskSchedulingMode?: string })
-				.defaultTaskSchedulingMode;
-			const defaultTaskSchedulingMode =
-				currentMode === "fastest" || currentMode === "backfacing" || currentMode === "parallel"
-					? currentMode
-					: "fastest";
+			const defaultTaskSchedulingMode = sanitizeTaskSchedulingMode(
+				(existing as { defaultTaskSchedulingMode?: string }).defaultTaskSchedulingMode,
+			);
 			await ctx.db.replace(existing._id, {
 				userId: existing.userId,
 				timezone: existing.timezone ?? "UTC",
@@ -547,7 +553,7 @@ export const createEvent = mutation({
 			isRecurring: Boolean(args.input.recurrenceRule),
 		});
 
-		return ctx.db.insert("calendarEvents", {
+		const eventId = await ctx.db.insert("calendarEvents", {
 			userId,
 			title: undefined,
 			description: undefined,
@@ -567,11 +573,16 @@ export const createEvent = mutation({
 			status: "confirmed",
 			etag: undefined,
 			lastSyncedAt: undefined,
-			busyStatus: undefined,
+			busyStatus,
 			visibility: undefined,
 			location: undefined,
 			color: undefined,
 		});
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
+		return eventId;
 	}),
 });
 
@@ -679,6 +690,10 @@ export const updateEvent = mutation({
 				});
 			}
 		}
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
 		return { id: args.id, scope };
 	}),
 });
@@ -702,6 +717,10 @@ export const deleteEvent = mutation({
 		}
 
 		await ctx.db.delete(args.id);
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
 		return { scope: (args.scope ?? "single") as RecurrenceEditScope };
 	}),
 });
@@ -735,6 +754,10 @@ export const moveResizeEvent = mutation({
 				end: args.end,
 				updatedAt: now,
 				occurrenceStart: normalizeToMinute(args.start),
+			});
+			await enqueueSchedulingRunFromMutation(ctx, {
+				userId,
+				triggeredBy: "calendar_change",
 			});
 			return { id: args.id, scope };
 		}
@@ -771,6 +794,10 @@ export const moveResizeEvent = mutation({
 				updatedAt: now,
 			});
 		}
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
 
 		return { id: args.id, scope };
 	}),
@@ -785,6 +812,11 @@ export const upsertSyncedEventsForUser = internalMutation({
 		upserted: v.number(),
 	}),
 	handler: async (ctx, args) => {
-		return performUpsertSyncedEventsForUser(ctx, args.userId, args);
+		const result = await performUpsertSyncedEventsForUser(ctx, args.userId, args);
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: args.userId,
+			triggeredBy: "calendar_change",
+		});
+		return result;
 	},
 });

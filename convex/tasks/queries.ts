@@ -61,6 +61,17 @@ const statusOrder: Record<TaskStatus, number> = {
 	done: 4,
 };
 
+const sanitizeTaskSchedulingMode = (
+	mode: string | undefined,
+): "fastest" | "balanced" | "packed" => {
+	if (mode === "fastest" || mode === "balanced" || mode === "packed") {
+		return mode;
+	}
+	if (mode === "backfacing") return "packed";
+	if (mode === "parallel") return "balanced";
+	return "fastest";
+};
+
 export const listTasks = query({
 	args: {
 		statusFilter: v.optional(v.array(taskStatusValidator)),
@@ -72,7 +83,9 @@ export const listTasks = query({
 			.query("userSettings")
 			.withIndex("by_userId", (q) => q.eq("userId", userId))
 			.unique();
-		const defaultTaskSchedulingMode = settings?.defaultTaskSchedulingMode ?? "fastest";
+		const defaultTaskSchedulingMode = sanitizeTaskSchedulingMode(
+			settings?.defaultTaskSchedulingMode,
+		);
 		const statuses = args.statusFilter;
 		const byStatus = statuses?.length
 			? await Promise.all(
@@ -102,7 +115,12 @@ export const listTasks = query({
 			})
 			.map((task) => ({
 				...task,
-				effectiveSchedulingMode: task.schedulingMode ?? defaultTaskSchedulingMode,
+				schedulingMode: task.schedulingMode
+					? sanitizeTaskSchedulingMode(task.schedulingMode)
+					: undefined,
+				effectiveSchedulingMode: task.schedulingMode
+					? sanitizeTaskSchedulingMode(task.schedulingMode)
+					: defaultTaskSchedulingMode,
 			}));
 	}),
 });
