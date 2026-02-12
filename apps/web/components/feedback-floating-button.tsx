@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useMutationWithStatus } from "@/hooks/use-convex-status";
 import type { FunctionReference } from "convex/server";
 import { Check, MessageSquare, Send } from "lucide-react";
+import { usePathname } from "next/navigation";
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
@@ -62,6 +63,7 @@ const getClampedPosition = (position: Position): Position => {
 };
 
 export function FeedbackFloatingButton() {
+	const pathname = usePathname();
 	const [isMounted, setIsMounted] = useState(false);
 	const [isDialogOpen, setIsDialogOpen] = useState(false);
 	const [position, setPosition] = useState<Position | null>(null);
@@ -192,7 +194,7 @@ export function FeedbackFloatingButton() {
 		].join("\n");
 	}, [category, message, subject]);
 
-	if (!isMounted || !position) return null;
+	if (!isMounted || !position || !pathname.startsWith("/app")) return null;
 
 	const canSubmit = message.trim().length > 0;
 

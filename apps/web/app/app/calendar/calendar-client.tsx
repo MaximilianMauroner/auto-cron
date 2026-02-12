@@ -79,6 +79,7 @@ import {
 import { useTheme } from "next-themes";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
+import { CalendarEditorProvider } from "./calendar-editor-context";
 import { SchedulingDiagnostics } from "./scheduling-diagnostics";
 
 type EditorState = {
@@ -2869,1193 +2870,1173 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		setEditorRecurrence(next);
 		setIsCustomRepeatDialogOpen(false);
 	}, [customRecurrenceDraft, recurrenceStartTimestamp, setEditorRecurrence]);
-
-	return (
-		<div className="h-full min-h-0 overflow-hidden bg-background text-foreground flex flex-col gap-0">
-			<header className="shrink-0 sticky top-0 z-20 border-b border-border bg-card px-4 py-2.5 flex flex-col gap-2">
-				<div className="flex items-center justify-between gap-3 flex-wrap">
-					<div className="flex items-center gap-3">
-						<h1 className="text-[1.05rem] font-semibold uppercase tracking-[0.04em] text-foreground">
-							{monthLabel}
-						</h1>
-						<div className="flex items-center gap-1">
-							<Button
-								variant="outline"
-								size="icon-sm"
-								className="size-8 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
-								onClick={() => shiftDate(-1)}
-								aria-label="Previous period"
-							>
-								<ChevronLeft className="size-3.5" />
-							</Button>
-							<Button
-								variant="outline"
-								size="sm"
-								className="h-7 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] hover:border-border hover:bg-accent hover:text-foreground"
-								onClick={() => setDateValue(formatDateInput(new Date()))}
-							>
-								Today
-							</Button>
-							<Button
-								variant="outline"
-								size="icon-sm"
-								className="size-7 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
-								onClick={() => shiftDate(1)}
-								aria-label="Next period"
-							>
-								<ChevronRight className="size-3.5" />
-							</Button>
-						</div>
-					</div>
-
-					<div className="flex items-center gap-2 flex-wrap" suppressHydrationWarning>
-						<ToggleGroup
-							type="single"
-							value={activeView}
-							onValueChange={(value) => {
-								if (value) changeView(value as "week" | "day" | "month-grid");
-							}}
-							className="gap-0 rounded-lg border border-border bg-secondary p-0.5"
-						>
-							{[
-								{ key: "week", label: "Week" },
-								{ key: "day", label: "Day" },
-								{ key: "month-grid", label: "Month" },
-							].map((tab) => (
-								<ToggleGroupItem
-									key={tab.key}
-									value={tab.key}
-									variant="outline"
-									size="sm"
-									className="h-6 px-2.5 border-0 bg-transparent text-muted-foreground text-[0.7rem] font-medium hover:text-foreground hover:bg-transparent data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:shadow-sm rounded-md"
-								>
-									{tab.label}
-								</ToggleGroupItem>
-							))}
-						</ToggleGroup>
-
-						<div className="w-px h-4 bg-border" />
-
-						<DropdownMenu>
-							<DropdownMenuTrigger asChild>
-								<Button
-									size="sm"
-									className="h-7 px-2.5 bg-accent text-accent-foreground text-[0.72rem] font-semibold gap-1.5 border-accent hover:bg-accent/90 shadow-[0_2px_8px_-2px_rgba(252,163,17,0.3)]"
-								>
-									<Sparkles className="size-3" />
-									Create new
-									<ChevronDown className="size-3 opacity-60" />
-								</Button>
-							</DropdownMenuTrigger>
-							<DropdownMenuContent align="end" className="w-44">
-								<DropdownMenuItem onSelect={() => setQuickCreateTaskOpen(true)} className="gap-2">
-									<Rocket className="size-3.5" />
-									New task
-								</DropdownMenuItem>
-								<DropdownMenuItem
-									onSelect={() => {
-										const start = snapToStep(Date.now(), schedulingStepMs);
-										const end = snapToStep(start + schedulingStepMs, schedulingStepMs);
-										setEditor({
-											mode: "create",
-											panelMode: "edit",
-											title: "",
-											description: "",
-											start: toInputDateTime(start, scheduleXTimeZone),
-											end: toInputDateTime(end, scheduleXTimeZone),
-											allDay: false,
-											calendarId: defaultCreateCalendarId,
-											busyStatus: "busy",
-											visibility: "default",
-											location: "",
-											recurrenceRule: "",
-											scope: "single",
-										});
-									}}
-									className="gap-2"
-								>
-									<Sparkles className="size-3.5" />
-									New event
-								</DropdownMenuItem>
-								<DropdownMenuItem onSelect={() => setQuickCreateHabitOpen(true)} className="gap-2">
-									<Repeat2 className="size-3.5" />
-									New habit
-								</DropdownMenuItem>
-							</DropdownMenuContent>
-						</DropdownMenu>
-
-						<Button
-							variant="outline"
-							size="icon-sm"
-							className="size-7 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
-							onClick={() => {
-								void syncNow("manual");
-							}}
-							disabled={syncStatus === "syncing"}
-							aria-label="Sync"
-						>
-							<RefreshCw className={`size-3.5 ${syncStatus === "syncing" ? "animate-spin" : ""}`} />
-						</Button>
-
-						<Popover>
-							<PopoverTrigger asChild>
-								<Button
-									variant="outline"
-									size="sm"
-									aria-label="Choose date"
-									className="h-8 px-2.5 border-border bg-secondary text-foreground/70 text-[0.72rem] gap-1.5 hover:border-border hover:bg-accent hover:text-foreground"
-								>
-									<CalendarDays className="size-3.5" />
-									{selectedDate}
-								</Button>
-							</PopoverTrigger>
-							<PopoverContent
-								align="end"
-								className="w-auto border-border bg-popover p-0 text-popover-foreground"
-							>
-								<DatePickerCalendar
-									mode="single"
-									selected={selectedDateValue}
-									onSelect={(date) => {
-										if (!date) return;
-										setDateValue(formatDateInput(date));
-									}}
-									initialFocus
-									className="rounded-md border-0 bg-transparent"
-								/>
-							</PopoverContent>
-						</Popover>
-
-						<SchedulingDiagnostics />
+	const renderCalendarAside = () => (
+		<div className="flex h-full flex-col gap-3 overflow-y-auto p-3">
+			<div className="flex items-center justify-between">
+				<div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Event</div>
+				<div className="flex items-center gap-2">
+					<div className="text-[0.68rem] text-muted-foreground">{monthLabel}</div>
+					{isEventSheetMode ? (
 						<Button
 							variant="outline"
 							size="sm"
-							className="xl:hidden h-8 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] hover:border-border hover:bg-accent hover:text-foreground"
-							onClick={() => setIsMobileEventSheetOpen(true)}
+							className="h-7 px-2 border-border bg-secondary text-[0.7rem] text-muted-foreground hover:bg-accent hover:text-foreground"
+							onClick={closeEventSheet}
 						>
-							Event
+							Close
 						</Button>
-					</div>
+					) : null}
 				</div>
+			</div>
 
-				<div className="flex items-center justify-between gap-2 flex-wrap">
-					<ToggleGroup
-						type="multiple"
-						value={sourceFilter}
-						onValueChange={(value) =>
-							setSourceFilter(value.length ? (value as CalendarSource[]) : DEFAULT_SOURCE_FILTER)
-						}
-						className="gap-1"
-					>
-						{sourceButtons.map((source) => (
-							<ToggleGroupItem
-								key={source}
-								value={source}
-								variant="outline"
-								size="sm"
-								className="h-7 rounded-md border border-border bg-secondary px-2 text-[0.68rem] uppercase tracking-[0.06em] text-muted-foreground data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:border-primary/20 gap-1.5"
-							>
-								<span className={`size-1.5 rounded-full ${sourceColorDot[source]}`} />
-								{source}
-							</ToggleGroupItem>
-						))}
-					</ToggleGroup>
-					<div className="flex items-center gap-2 text-[0.66rem] text-muted-foreground/70">
-						<span className="tabular-nums">{visibleEventCount} events</span>
-						<span className="text-border">·</span>
-						<div
-							className={`flex items-center gap-1.5 ${
-								syncStatus === "error"
-									? "text-destructive"
-									: syncStatus === "syncing"
-										? "text-chart-1"
-										: "text-muted-foreground/70"
-							}`}
-						>
-							<span
-								className={`inline-block size-1.5 rounded-full ${
-									syncStatus === "error"
-										? "bg-destructive"
-										: syncStatus === "syncing"
-											? "bg-chart-1 animate-pulse"
-											: "bg-chart-2"
-								}`}
-							/>
-							{syncStatusLabel}
-						</div>
-					</div>
-				</div>
-			</header>
-
-			{error ? (
-				<div className="mx-4 mt-2 border border-destructive/30 bg-destructive/10 rounded-lg px-3 py-2 text-[0.8rem] text-destructive">
-					{error}
-				</div>
-			) : null}
-			{isLoading ? (
-				<div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-[0.78rem] text-muted-foreground">
-					<RefreshCw className="size-3.5 shrink-0 animate-spin opacity-50" />
-					Loading events...
-				</div>
-			) : null}
-			{!isLoading && !error && visibleEventCount === 0 ? (
-				<div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-[0.78rem] text-muted-foreground">
-					<RefreshCw className="size-3.5 shrink-0 opacity-50" />
-					No events loaded. Click sync to fetch from Google.
-				</div>
-			) : null}
-
-			<div className="flex flex-1 min-h-0 overflow-hidden">
-				<div
-					ref={calendarContainerRef}
-					className={`${effectiveTheme === "dark" ? "sx-autocron-dark" : "sx-autocron-light"} flex-1 min-w-0 min-h-0 h-full overflow-hidden`}
-				>
-					<ScheduleXCalendar calendarApp={calendar} customComponents={customComponents} />
-				</div>
-				<aside
-					className={`bg-card p-3 flex-col gap-3 min-h-0 border-border ${
-						isEventSheetMode
-							? `fixed inset-y-0 right-0 z-50 w-[min(100vw,28rem)] border-l shadow-2xl transition-transform duration-300 ease-out flex ${
-									isMobileEventSheetOpen ? "translate-x-0" : "translate-x-full"
-								}`
-							: "hidden xl:flex xl:w-78 2xl:w-84 shrink-0 overflow-y-auto border-l"
-					}`}
-				>
-					<div className="flex items-center justify-between">
-						<div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Event</div>
-						<div className="flex items-center gap-2">
-							<div className="text-[0.68rem] text-muted-foreground">{monthLabel}</div>
-							{isEventSheetMode ? (
-								<Button
-									variant="outline"
-									size="sm"
-									className="h-7 px-2 border-border bg-secondary text-[0.7rem] text-muted-foreground hover:bg-accent hover:text-foreground"
-									onClick={closeEventSheet}
-								>
-									Close
-								</Button>
-							) : null}
-						</div>
-					</div>
-
-					{editor ? (
-						<div className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-							<div className="rounded-xl border border-border bg-card">
-								<div className="px-3 py-3">
-									<div className="flex items-start justify-between gap-3">
-										<div className="min-w-0 flex-1">
-											{isDetailsMode ? (
-												<div className="text-[1.65rem] leading-[1.12] font-semibold tracking-tight text-foreground break-words">
-													{editor.title || "Untitled"}
-												</div>
-											) : (
-												<Input
-													value={editor.title}
-													onChange={(event) =>
-														setEditor((current) =>
-															current ? { ...current, title: event.target.value } : current,
-														)
-													}
-													className="h-10 border-border bg-background text-[1rem] font-semibold text-foreground focus-visible:ring-ring/30"
-												/>
-											)}
+			{editor ? (
+				<div className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+					<div className="rounded-xl border border-border bg-card">
+						<div className="px-3 py-3">
+							<div className="flex items-start justify-between gap-3">
+								<div className="min-w-0 flex-1">
+									{isDetailsMode ? (
+										<div className="text-[1.65rem] leading-[1.12] font-semibold tracking-tight text-foreground break-words">
+											{editor.title || "Untitled"}
 										</div>
-										<span
-											aria-hidden="true"
-											className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground"
-										>
-											<MoreHorizontal className="size-4" />
-										</span>
-									</div>
+									) : (
+										<Input
+											value={editor.title}
+											onChange={(event) =>
+												setEditor((current) =>
+													current ? { ...current, title: event.target.value } : current,
+												)
+											}
+											className="h-10 border-border bg-background text-[1rem] font-semibold text-foreground focus-visible:ring-ring/30"
+										/>
+									)}
 								</div>
+								<span
+									aria-hidden="true"
+									className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground"
+								>
+									<MoreHorizontal className="size-4" />
+								</span>
+							</div>
+						</div>
 
-								<div className="border-t border-border px-3 py-3 space-y-2.5">
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
-										<Clock3 className="size-4 text-muted-foreground" />
-										<div>
-											<div className="flex items-center gap-1.5 flex-wrap text-[0.92rem]">
-												{isDetailsMode ? (
-													<>
-														<span className="text-foreground">
-															{timeOnlyFormatter.format(
-																new Date(parseDateTimeInput(editor.start, scheduleXTimeZone)),
-															)}
-														</span>
-														<ArrowRight className="size-4 text-muted-foreground" />
-														<span className="text-foreground">
-															{timeOnlyFormatter.format(
-																new Date(parseDateTimeInput(editor.end, scheduleXTimeZone)),
-															)}
-														</span>
-														<span className="text-muted-foreground">
-															{formatDuration(
-																parseDateTimeInput(editor.start, scheduleXTimeZone),
-																parseDateTimeInput(editor.end, scheduleXTimeZone),
-															)}
-														</span>
-													</>
-												) : (
-													<>
-														<Input
-															type="time"
-															step={schedulingStepSeconds}
-															value={editorStartTime}
-															onChange={(event) =>
-																setEditor((current) =>
-																	current
-																		? {
-																				...current,
-																				start: setLocalTimePart(current.start, event.target.value),
-																			}
-																		: current,
-																)
-															}
-															className="h-8 w-[92px] border-border bg-background text-sm"
-														/>
-														<ArrowRight className="size-4 text-muted-foreground" />
-														<Input
-															type="time"
-															step={schedulingStepSeconds}
-															value={editorEndTime}
-															onChange={(event) =>
-																setEditor((current) =>
-																	current
-																		? {
-																				...current,
-																				end: setLocalTimePart(current.end, event.target.value),
-																			}
-																		: current,
-																)
-															}
-															className="h-8 w-[92px] border-border bg-background text-sm"
-														/>
-														<span className="text-muted-foreground text-[0.85rem]">
-															{formatDuration(
-																parseDateTimeInput(editor.start, scheduleXTimeZone),
-																parseDateTimeInput(editor.end, scheduleXTimeZone),
-															)}
-														</span>
-													</>
-												)}
-											</div>
-											<div className="mt-0.5 text-[0.8rem] text-muted-foreground">
-												{isDetailsMode
-													? dateOnlyFormatter.format(
-															new Date(parseDateTimeInput(editor.start, scheduleXTimeZone)),
-														)
-													: null}
-											</div>
-										</div>
-									</div>
-
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
-										<CalendarDays className="size-4 text-muted-foreground" />
-										<div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1.5 min-w-0">
-											<Popover>
-												<PopoverTrigger asChild>
-													<Button
-														type="button"
-														variant="outline"
-														disabled={isDetailsMode}
-														className="h-8 w-full min-w-0 border-border bg-background px-2 text-[0.78rem] text-foreground/85 justify-start truncate disabled:opacity-100 disabled:text-foreground/75"
-													>
-														{compactDateFormatter.format(editorStartDate)}
-													</Button>
-												</PopoverTrigger>
-												<PopoverContent
-													align="start"
-													className="w-auto border-border bg-popover p-0 text-popover-foreground"
-												>
-													<DatePickerCalendar
-														mode="single"
-														selected={editorStartDate}
-														onSelect={(date) => {
-															if (!date) return;
-															setEditor((current) =>
-																current
-																	? { ...current, start: setLocalDatePart(current.start, date) }
-																	: current,
-															);
-														}}
-														initialFocus
-														className="rounded-md border-0 bg-transparent"
-													/>
-												</PopoverContent>
-											</Popover>
-											<ArrowRight className="size-4 text-muted-foreground" />
-											<Popover>
-												<PopoverTrigger asChild>
-													<Button
-														type="button"
-														variant="outline"
-														disabled={isDetailsMode}
-														className="h-8 w-full min-w-0 border-border bg-background px-2 text-[0.78rem] text-foreground/85 justify-start truncate disabled:opacity-100 disabled:text-foreground/75"
-													>
-														{compactDateFormatter.format(editorEndDate)}
-													</Button>
-												</PopoverTrigger>
-												<PopoverContent
-													align="start"
-													className="w-auto border-border bg-popover p-0 text-popover-foreground"
-												>
-													<DatePickerCalendar
-														mode="single"
-														selected={editorEndDate}
-														onSelect={(date) => {
-															if (!date) return;
-															setEditor((current) =>
-																current
-																	? { ...current, end: setLocalDatePart(current.end, date) }
-																	: current,
-															);
-														}}
-														initialFocus
-														className="rounded-md border-0 bg-transparent"
-													/>
-												</PopoverContent>
-											</Popover>
-										</div>
-									</div>
-
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
-										<div className="size-4 rounded-full border border-muted-foreground" />
-										<div className="flex items-center justify-between">
-											<span className="text-[0.95rem] text-foreground/90">All-day</span>
-											<Switch
-												checked={editor.allDay}
-												disabled={isDetailsMode}
-												onCheckedChange={(checked) =>
-													setEditor((current) =>
-														current ? { ...current, allDay: checked } : current,
-													)
-												}
-											/>
-										</div>
-									</div>
-
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
-										<Globe2 className="size-4 text-muted-foreground" />
-										<div className="text-[0.95rem] text-foreground/90">{scheduleXTimeZone}</div>
-									</div>
-
-									<div className="grid grid-cols-[20px_1fr] items-start gap-3">
-										<Repeat2 className="size-4 text-muted-foreground" />
+						<div className="border-t border-border px-3 py-3 space-y-2.5">
+							<div className="grid grid-cols-[20px_1fr] items-center gap-3">
+								<Clock3 className="size-4 text-muted-foreground" />
+								<div>
+									<div className="flex items-center gap-1.5 flex-wrap text-[0.92rem]">
 										{isDetailsMode ? (
-											<div className="flex items-center justify-between gap-2">
-												<div className="text-[0.95rem] text-foreground/90">
-													{recurrenceDisplayLabel}
-												</div>
-												<Button
-													type="button"
-													variant="ghost"
-													size="sm"
-													className="h-7 px-2 text-[0.72rem] text-muted-foreground hover:bg-accent hover:text-foreground"
-													onClick={() =>
+											<>
+												<span className="text-foreground">
+													{timeOnlyFormatter.format(
+														new Date(parseDateTimeInput(editor.start, scheduleXTimeZone)),
+													)}
+												</span>
+												<ArrowRight className="size-4 text-muted-foreground" />
+												<span className="text-foreground">
+													{timeOnlyFormatter.format(
+														new Date(parseDateTimeInput(editor.end, scheduleXTimeZone)),
+													)}
+												</span>
+												<span className="text-muted-foreground">
+													{formatDuration(
+														parseDateTimeInput(editor.start, scheduleXTimeZone),
+														parseDateTimeInput(editor.end, scheduleXTimeZone),
+													)}
+												</span>
+											</>
+										) : (
+											<>
+												<Input
+													type="time"
+													step={schedulingStepSeconds}
+													value={editorStartTime}
+													onChange={(event) =>
 														setEditor((current) =>
 															current
 																? {
 																		...current,
-																		panelMode: "edit",
-																		recurrenceRule:
-																			current.recurrenceRule.trim() ||
-																			effectiveRecurrenceRule ||
-																			"",
+																		start: setLocalTimePart(current.start, event.target.value),
+																	}
+																: current,
+														)
+													}
+													className="h-8 w-[92px] border-border bg-background text-sm"
+												/>
+												<ArrowRight className="size-4 text-muted-foreground" />
+												<Input
+													type="time"
+													step={schedulingStepSeconds}
+													value={editorEndTime}
+													onChange={(event) =>
+														setEditor((current) =>
+															current
+																? {
+																		...current,
+																		end: setLocalTimePart(current.end, event.target.value),
+																	}
+																: current,
+														)
+													}
+													className="h-8 w-[92px] border-border bg-background text-sm"
+												/>
+												<span className="text-muted-foreground text-[0.85rem]">
+													{formatDuration(
+														parseDateTimeInput(editor.start, scheduleXTimeZone),
+														parseDateTimeInput(editor.end, scheduleXTimeZone),
+													)}
+												</span>
+											</>
+										)}
+									</div>
+									<div className="mt-0.5 text-[0.8rem] text-muted-foreground">
+										{isDetailsMode
+											? dateOnlyFormatter.format(
+													new Date(parseDateTimeInput(editor.start, scheduleXTimeZone)),
+												)
+											: null}
+									</div>
+								</div>
+							</div>
+
+							<div className="grid grid-cols-[20px_1fr] items-center gap-3">
+								<CalendarDays className="size-4 text-muted-foreground" />
+								<div className="grid grid-cols-[1fr_auto_1fr] items-center gap-1.5 min-w-0">
+									<Popover>
+										<PopoverTrigger asChild>
+											<Button
+												type="button"
+												variant="outline"
+												disabled={isDetailsMode}
+												className="h-8 w-full min-w-0 border-border bg-background px-2 text-[0.78rem] text-foreground/85 justify-start truncate disabled:opacity-100 disabled:text-foreground/75"
+											>
+												{compactDateFormatter.format(editorStartDate)}
+											</Button>
+										</PopoverTrigger>
+										<PopoverContent
+											align="start"
+											className="w-auto border-border bg-popover p-0 text-popover-foreground"
+										>
+											<DatePickerCalendar
+												mode="single"
+												selected={editorStartDate}
+												onSelect={(date) => {
+													if (!date) return;
+													setEditor((current) =>
+														current
+															? { ...current, start: setLocalDatePart(current.start, date) }
+															: current,
+													);
+												}}
+												initialFocus
+												className="rounded-md border-0 bg-transparent"
+											/>
+										</PopoverContent>
+									</Popover>
+									<ArrowRight className="size-4 text-muted-foreground" />
+									<Popover>
+										<PopoverTrigger asChild>
+											<Button
+												type="button"
+												variant="outline"
+												disabled={isDetailsMode}
+												className="h-8 w-full min-w-0 border-border bg-background px-2 text-[0.78rem] text-foreground/85 justify-start truncate disabled:opacity-100 disabled:text-foreground/75"
+											>
+												{compactDateFormatter.format(editorEndDate)}
+											</Button>
+										</PopoverTrigger>
+										<PopoverContent
+											align="start"
+											className="w-auto border-border bg-popover p-0 text-popover-foreground"
+										>
+											<DatePickerCalendar
+												mode="single"
+												selected={editorEndDate}
+												onSelect={(date) => {
+													if (!date) return;
+													setEditor((current) =>
+														current
+															? { ...current, end: setLocalDatePart(current.end, date) }
+															: current,
+													);
+												}}
+												initialFocus
+												className="rounded-md border-0 bg-transparent"
+											/>
+										</PopoverContent>
+									</Popover>
+								</div>
+							</div>
+
+							<div className="grid grid-cols-[20px_1fr] items-center gap-3">
+								<div className="size-4 rounded-full border border-muted-foreground" />
+								<div className="flex items-center justify-between">
+									<span className="text-[0.95rem] text-foreground/90">All-day</span>
+									<Switch
+										checked={editor.allDay}
+										disabled={isDetailsMode}
+										onCheckedChange={(checked) =>
+											setEditor((current) => (current ? { ...current, allDay: checked } : current))
+										}
+									/>
+								</div>
+							</div>
+
+							<div className="grid grid-cols-[20px_1fr] items-center gap-3">
+								<Globe2 className="size-4 text-muted-foreground" />
+								<div className="text-[0.95rem] text-foreground/90">{scheduleXTimeZone}</div>
+							</div>
+
+							<div className="grid grid-cols-[20px_1fr] items-start gap-3">
+								<Repeat2 className="size-4 text-muted-foreground" />
+								{isDetailsMode ? (
+									<div className="flex items-center justify-between gap-2">
+										<div className="text-[0.95rem] text-foreground/90">
+											{recurrenceDisplayLabel}
+										</div>
+										<Button
+											type="button"
+											variant="ghost"
+											size="sm"
+											className="h-7 px-2 text-[0.72rem] text-muted-foreground hover:bg-accent hover:text-foreground"
+											onClick={() =>
+												setEditor((current) =>
+													current
+														? {
+																...current,
+																panelMode: "edit",
+																recurrenceRule:
+																	current.recurrenceRule.trim() || effectiveRecurrenceRule || "",
+															}
+														: current,
+												)
+											}
+										>
+											Change
+										</Button>
+									</div>
+								) : (
+									<div className="space-y-2">
+										<DropdownMenu>
+											<DropdownMenuTrigger asChild>
+												<Button
+													type="button"
+													variant="outline"
+													className="h-9 w-full justify-between border-border bg-background px-3 text-[0.86rem] text-foreground/90 hover:bg-accent"
+												>
+													<span>{recurrenceDisplayLabel}</span>
+													<ChevronDown className="size-4 text-muted-foreground" />
+												</Button>
+											</DropdownMenuTrigger>
+											<DropdownMenuContent
+												align="start"
+												className="w-[18rem] border-border bg-popover p-1.5 text-foreground"
+											>
+												<DropdownMenuItem
+													className="rounded-md px-2.5 py-2 text-[0.9rem]"
+													onSelect={() => applyRecurrencePresetFromMenu("NONE")}
+												>
+													Does not repeat
+												</DropdownMenuItem>
+												{recurrencePresetOptions.map((option) => (
+													<DropdownMenuItem
+														key={option.id}
+														className="rounded-md px-2.5 py-2 text-[0.9rem]"
+														onSelect={() => applyRecurrencePresetFromMenu(option.id)}
+													>
+														{option.label}
+													</DropdownMenuItem>
+												))}
+												<DropdownMenuSeparator className="my-1 bg-border" />
+												<DropdownMenuItem
+													className="rounded-md px-2.5 py-2 text-[0.9rem]"
+													onSelect={(event) => {
+														event.preventDefault();
+														openCustomRecurrenceDialog();
+													}}
+												>
+													Custom...
+												</DropdownMenuItem>
+											</DropdownMenuContent>
+										</DropdownMenu>
+
+										<div className="text-[0.72rem] text-muted-foreground">
+											Google-compatible RRULE stored in event metadata.
+										</div>
+									</div>
+								)}
+							</div>
+
+							<Dialog
+								open={isCustomRepeatDialogOpen}
+								onOpenChange={(open) => {
+									setIsCustomRepeatDialogOpen(open);
+									if (!open) setCustomRecurrenceDraft(null);
+								}}
+							>
+								<DialogContent
+									showCloseButton={false}
+									className="max-w-[36rem] border-border bg-popover p-0 text-popover-foreground"
+								>
+									<DialogHeader className="border-b border-border px-6 pt-5 pb-4">
+										<DialogTitle className="text-[1.05rem] font-semibold text-foreground">
+											Repeat
+										</DialogTitle>
+									</DialogHeader>
+
+									{customRecurrenceDraft ? (
+										<div className="space-y-6 px-6 py-5">
+											<div className="flex flex-wrap items-center gap-3">
+												<span className="text-[0.95rem] text-foreground/80">Every</span>
+												<Input
+													type="number"
+													min={1}
+													max={365}
+													value={customRecurrenceDraft.interval}
+													onChange={(event) =>
+														setCustomRecurrenceDraft((current) =>
+															current
+																? {
+																		...current,
+																		interval: Math.max(
+																			1,
+																			Number.parseInt(event.target.value || "1", 10) || 1,
+																		),
+																	}
+																: current,
+														)
+													}
+													className="h-10 w-[92px] border-border bg-secondary text-[1.05rem] text-foreground"
+												/>
+												<Select
+													value={customRecurrenceDraft.frequency}
+													onValueChange={(value) =>
+														setCustomRecurrenceDraft((current) =>
+															current
+																? {
+																		...current,
+																		frequency: value as Exclude<RecurrenceFrequency, "NONE">,
 																	}
 																: current,
 														)
 													}
 												>
-													Change
-												</Button>
-											</div>
-										) : (
-											<div className="space-y-2">
-												<DropdownMenu>
-													<DropdownMenuTrigger asChild>
-														<Button
-															type="button"
-															variant="outline"
-															className="h-9 w-full justify-between border-border bg-background px-3 text-[0.86rem] text-foreground/90 hover:bg-accent"
-														>
-															<span>{recurrenceDisplayLabel}</span>
-															<ChevronDown className="size-4 text-muted-foreground" />
-														</Button>
-													</DropdownMenuTrigger>
-													<DropdownMenuContent
-														align="start"
-														className="w-[18rem] border-border bg-popover p-1.5 text-foreground"
+													<SelectTrigger
+														size="default"
+														className="h-10 min-w-[140px] border-border bg-secondary text-[1.02rem] text-foreground"
 													>
-														<DropdownMenuItem
-															className="rounded-md px-2.5 py-2 text-[0.9rem]"
-															onSelect={() => applyRecurrencePresetFromMenu("NONE")}
-														>
-															Does not repeat
-														</DropdownMenuItem>
-														{recurrencePresetOptions.map((option) => (
-															<DropdownMenuItem
-																key={option.id}
-																className="rounded-md px-2.5 py-2 text-[0.9rem]"
-																onSelect={() => applyRecurrencePresetFromMenu(option.id)}
-															>
-																{option.label}
-															</DropdownMenuItem>
-														))}
-														<DropdownMenuSeparator className="my-1 bg-border" />
-														<DropdownMenuItem
-															className="rounded-md px-2.5 py-2 text-[0.9rem]"
-															onSelect={(event) => {
-																event.preventDefault();
-																openCustomRecurrenceDialog();
-															}}
-														>
-															Custom...
-														</DropdownMenuItem>
-													</DropdownMenuContent>
-												</DropdownMenu>
-
-												<div className="text-[0.72rem] text-muted-foreground">
-													Google-compatible RRULE stored in event metadata.
-												</div>
+														<SelectValue />
+													</SelectTrigger>
+													<SelectContent className="border-border bg-popover text-popover-foreground">
+														<SelectItem value="DAILY">day</SelectItem>
+														<SelectItem value="WEEKLY">week</SelectItem>
+														<SelectItem value="MONTHLY">month</SelectItem>
+														<SelectItem value="YEARLY">year</SelectItem>
+													</SelectContent>
+												</Select>
 											</div>
-										)}
-									</div>
 
-									<Dialog
-										open={isCustomRepeatDialogOpen}
-										onOpenChange={(open) => {
-											setIsCustomRepeatDialogOpen(open);
-											if (!open) setCustomRecurrenceDraft(null);
-										}}
-									>
-										<DialogContent
-											showCloseButton={false}
-											className="max-w-[36rem] border-border bg-popover p-0 text-popover-foreground"
-										>
-											<DialogHeader className="border-b border-border px-6 pt-5 pb-4">
-												<DialogTitle className="text-[1.05rem] font-semibold text-foreground">
-													Repeat
-												</DialogTitle>
-											</DialogHeader>
-
-											{customRecurrenceDraft ? (
-												<div className="space-y-6 px-6 py-5">
-													<div className="flex flex-wrap items-center gap-3">
-														<span className="text-[0.95rem] text-foreground/80">Every</span>
-														<Input
-															type="number"
-															min={1}
-															max={365}
-															value={customRecurrenceDraft.interval}
-															onChange={(event) =>
-																setCustomRecurrenceDraft((current) =>
-																	current
-																		? {
-																				...current,
-																				interval: Math.max(
-																					1,
-																					Number.parseInt(event.target.value || "1", 10) || 1,
+											{customRecurrenceDraft.frequency === "WEEKLY" ? (
+												<div className="space-y-2">
+													<div className="text-[0.95rem] text-foreground/80">On</div>
+													<ToggleGroup
+														type="multiple"
+														value={customRecurrenceDraft.byDay}
+														onValueChange={(values) =>
+															setCustomRecurrenceDraft((current) =>
+																current
+																	? {
+																			...current,
+																			byDay: sortWeekdayTokens(
+																				values.filter((value): value is WeekdayToken =>
+																					weekdayTokens.includes(value as WeekdayToken),
 																				),
-																			}
-																		: current,
-																)
-															}
-															className="h-10 w-[92px] border-border bg-secondary text-[1.05rem] text-foreground"
-														/>
-														<Select
-															value={customRecurrenceDraft.frequency}
-															onValueChange={(value) =>
-																setCustomRecurrenceDraft((current) =>
-																	current
-																		? {
-																				...current,
-																				frequency: value as Exclude<RecurrenceFrequency, "NONE">,
-																			}
-																		: current,
-																)
-															}
-														>
-															<SelectTrigger
-																size="default"
-																className="h-10 min-w-[140px] border-border bg-secondary text-[1.02rem] text-foreground"
+																			),
+																		}
+																	: current,
+															)
+														}
+														className="flex flex-wrap gap-2"
+													>
+														{weekdayTokens.map((token) => (
+															<ToggleGroupItem
+																key={token}
+																value={token}
+																variant="outline"
+																size="sm"
+																className="h-9 min-w-10 rounded-full border border-border bg-secondary px-3 text-[0.92rem] text-foreground/80 data-[state=on]:border-accent data-[state=on]:bg-accent/20 data-[state=on]:text-accent-foreground"
 															>
-																<SelectValue />
-															</SelectTrigger>
-															<SelectContent className="border-border bg-popover text-popover-foreground">
-																<SelectItem value="DAILY">day</SelectItem>
-																<SelectItem value="WEEKLY">week</SelectItem>
-																<SelectItem value="MONTHLY">month</SelectItem>
-																<SelectItem value="YEARLY">year</SelectItem>
-															</SelectContent>
-														</Select>
-													</div>
+																{weekdayTokenToLabel[token].slice(0, 3)}
+															</ToggleGroupItem>
+														))}
+													</ToggleGroup>
+												</div>
+											) : null}
 
-													{customRecurrenceDraft.frequency === "WEEKLY" ? (
-														<div className="space-y-2">
-															<div className="text-[0.95rem] text-foreground/80">On</div>
-															<ToggleGroup
-																type="multiple"
-																value={customRecurrenceDraft.byDay}
-																onValueChange={(values) =>
+											<div className="space-y-3">
+												<div className="text-[0.95rem] text-foreground/80">Ends</div>
+												<RadioGroup
+													value={customRecurrenceDraft.endsMode}
+													onValueChange={(value) =>
+														setCustomRecurrenceDraft((current) =>
+															current
+																? { ...current, endsMode: value as RecurrenceEndsMode }
+																: current,
+														)
+													}
+													className="gap-3"
+												>
+													<div className="grid grid-cols-[20px_1fr] items-center gap-3">
+														<RadioGroupItem
+															value="never"
+															className="size-6 border-border bg-secondary data-[state=checked]:border-accent"
+														/>
+														<div className="text-[0.95rem] text-foreground/85">Never</div>
+													</div>
+													<div className="grid grid-cols-[20px_1fr] items-center gap-3">
+														<RadioGroupItem
+															value="on"
+															className="size-6 border-border bg-secondary data-[state=checked]:border-accent"
+														/>
+														<div className="flex items-center gap-3">
+															<span className="text-[0.95rem] text-foreground/85">On</span>
+															<Popover>
+																<PopoverTrigger asChild>
+																	<Button
+																		type="button"
+																		variant="outline"
+																		disabled={customRecurrenceDraft.endsMode !== "on"}
+																		className="h-9 min-w-[148px] border-border bg-secondary px-3 text-[0.95rem] text-foreground/85 disabled:opacity-60"
+																	>
+																		{compactDateFormatter.format(
+																			toDateFromLocalDatePart(customRecurrenceDraft.untilDate),
+																		)}
+																	</Button>
+																</PopoverTrigger>
+																<PopoverContent
+																	align="start"
+																	className="w-auto border-border bg-popover p-0 text-popover-foreground"
+																>
+																	<DatePickerCalendar
+																		mode="single"
+																		selected={toDateFromLocalDatePart(
+																			customRecurrenceDraft.untilDate,
+																		)}
+																		onSelect={(date) => {
+																			if (!date) return;
+																			setCustomRecurrenceDraft((current) =>
+																				current
+																					? { ...current, untilDate: formatDateInput(date) }
+																					: current,
+																			);
+																		}}
+																		initialFocus
+																		className="rounded-md border-0 bg-transparent"
+																	/>
+																</PopoverContent>
+															</Popover>
+														</div>
+													</div>
+													<div className="grid grid-cols-[20px_1fr] items-center gap-3">
+														<RadioGroupItem
+															value="after"
+															className="size-6 border-border bg-secondary data-[state=checked]:border-accent"
+														/>
+														<div className="flex items-center gap-3">
+															<span className="text-[0.95rem] text-foreground/85">After</span>
+															<Input
+																type="number"
+																min={1}
+																max={500}
+																disabled={customRecurrenceDraft.endsMode !== "after"}
+																value={customRecurrenceDraft.count}
+																onChange={(event) =>
 																	setCustomRecurrenceDraft((current) =>
 																		current
 																			? {
 																					...current,
-																					byDay: sortWeekdayTokens(
-																						values.filter((value): value is WeekdayToken =>
-																							weekdayTokens.includes(value as WeekdayToken),
-																						),
+																					count: Math.max(
+																						1,
+																						Number.parseInt(event.target.value || "1", 10) || 1,
 																					),
 																				}
 																			: current,
 																	)
 																}
-																className="flex flex-wrap gap-2"
-															>
-																{weekdayTokens.map((token) => (
-																	<ToggleGroupItem
-																		key={token}
-																		value={token}
-																		variant="outline"
-																		size="sm"
-																		className="h-9 min-w-10 rounded-full border border-border bg-secondary px-3 text-[0.92rem] text-foreground/80 data-[state=on]:border-accent data-[state=on]:bg-accent/20 data-[state=on]:text-accent-foreground"
-																	>
-																		{weekdayTokenToLabel[token].slice(0, 3)}
-																	</ToggleGroupItem>
-																))}
-															</ToggleGroup>
+																className="h-9 w-[90px] border-border bg-secondary text-[0.95rem] disabled:opacity-60"
+															/>
+															<span className="text-[0.95rem] text-muted-foreground">times</span>
 														</div>
-													) : null}
-
-													<div className="space-y-3">
-														<div className="text-[0.95rem] text-foreground/80">Ends</div>
-														<RadioGroup
-															value={customRecurrenceDraft.endsMode}
-															onValueChange={(value) =>
-																setCustomRecurrenceDraft((current) =>
-																	current
-																		? { ...current, endsMode: value as RecurrenceEndsMode }
-																		: current,
-																)
-															}
-															className="gap-3"
-														>
-															<div className="grid grid-cols-[20px_1fr] items-center gap-3">
-																<RadioGroupItem
-																	value="never"
-																	className="size-6 border-border bg-secondary data-[state=checked]:border-accent"
-																/>
-																<div className="text-[0.95rem] text-foreground/85">Never</div>
-															</div>
-															<div className="grid grid-cols-[20px_1fr] items-center gap-3">
-																<RadioGroupItem
-																	value="on"
-																	className="size-6 border-border bg-secondary data-[state=checked]:border-accent"
-																/>
-																<div className="flex items-center gap-3">
-																	<span className="text-[0.95rem] text-foreground/85">On</span>
-																	<Popover>
-																		<PopoverTrigger asChild>
-																			<Button
-																				type="button"
-																				variant="outline"
-																				disabled={customRecurrenceDraft.endsMode !== "on"}
-																				className="h-9 min-w-[148px] border-border bg-secondary px-3 text-[0.95rem] text-foreground/85 disabled:opacity-60"
-																			>
-																				{compactDateFormatter.format(
-																					toDateFromLocalDatePart(customRecurrenceDraft.untilDate),
-																				)}
-																			</Button>
-																		</PopoverTrigger>
-																		<PopoverContent
-																			align="start"
-																			className="w-auto border-border bg-popover p-0 text-popover-foreground"
-																		>
-																			<DatePickerCalendar
-																				mode="single"
-																				selected={toDateFromLocalDatePart(
-																					customRecurrenceDraft.untilDate,
-																				)}
-																				onSelect={(date) => {
-																					if (!date) return;
-																					setCustomRecurrenceDraft((current) =>
-																						current
-																							? { ...current, untilDate: formatDateInput(date) }
-																							: current,
-																					);
-																				}}
-																				initialFocus
-																				className="rounded-md border-0 bg-transparent"
-																			/>
-																		</PopoverContent>
-																	</Popover>
-																</div>
-															</div>
-															<div className="grid grid-cols-[20px_1fr] items-center gap-3">
-																<RadioGroupItem
-																	value="after"
-																	className="size-6 border-border bg-secondary data-[state=checked]:border-accent"
-																/>
-																<div className="flex items-center gap-3">
-																	<span className="text-[0.95rem] text-foreground/85">After</span>
-																	<Input
-																		type="number"
-																		min={1}
-																		max={500}
-																		disabled={customRecurrenceDraft.endsMode !== "after"}
-																		value={customRecurrenceDraft.count}
-																		onChange={(event) =>
-																			setCustomRecurrenceDraft((current) =>
-																				current
-																					? {
-																							...current,
-																							count: Math.max(
-																								1,
-																								Number.parseInt(event.target.value || "1", 10) || 1,
-																							),
-																						}
-																					: current,
-																			)
-																		}
-																		className="h-9 w-[90px] border-border bg-secondary text-[0.95rem] disabled:opacity-60"
-																	/>
-																	<span className="text-[0.95rem] text-muted-foreground">
-																		times
-																	</span>
-																</div>
-															</div>
-														</RadioGroup>
 													</div>
-												</div>
-											) : null}
-
-											<DialogFooter className="border-t border-border px-6 py-4 sm:justify-end">
-												<Button
-													variant="outline"
-													className="h-10 border-border bg-secondary px-5 text-foreground hover:bg-secondary/80"
-													onClick={() => {
-														setIsCustomRepeatDialogOpen(false);
-														setCustomRecurrenceDraft(null);
-													}}
-												>
-													Cancel
-												</Button>
-												<Button
-													className="h-10 bg-accent px-5 text-accent-foreground hover:bg-accent/85"
-													onClick={applyCustomRecurrence}
-												>
-													Done
-												</Button>
-											</DialogFooter>
-										</DialogContent>
-									</Dialog>
-								</div>
-
-								<div className="border-t border-border px-3 py-3 space-y-2.5">
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
-										<User className="size-4 text-muted-foreground" />
-										<div className="text-[0.95rem] text-foreground/90 truncate">
-											Created by connected account
-										</div>
-									</div>
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3 opacity-60">
-										<Video className="size-4 text-muted-foreground" />
-										<div className="text-[0.95rem] text-muted-foreground">Conferencing</div>
-									</div>
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3 opacity-60">
-										<FileText className="size-4 text-muted-foreground" />
-										<div className="text-[0.95rem] text-muted-foreground">
-											AI Meeting Notes and Docs
-										</div>
-									</div>
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
-										<MapPin className="size-4 text-muted-foreground" />
-										{isDetailsMode ? (
-											<div className="text-[0.95rem] text-foreground/85">
-												{editor.location.trim() || "No location"}
+												</RadioGroup>
 											</div>
-										) : (
-											<Input
-												value={editor.location}
-												onChange={(event) =>
-													setEditor((current) =>
-														current ? { ...current, location: event.target.value } : current,
-													)
-												}
-												placeholder="Add location"
-												className="h-8 border-border bg-background text-sm"
-											/>
-										)}
-									</div>
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
-										<Route className="size-4 text-muted-foreground" />
-										<div
-											className={`text-[0.95rem] ${
-												travelBufferAppliesToEvent ? "text-foreground/85" : "text-muted-foreground"
-											}`}
-										>
-											{`Travel buffer: ${travelBufferDescription}`}
 										</div>
-									</div>
-								</div>
+									) : null}
 
-								<div className="border-t border-border px-3 py-3">
-									<div className="mb-2 text-xs uppercase tracking-[0.14em] text-muted-foreground">
-										Description
+									<DialogFooter className="border-t border-border px-6 py-4 sm:justify-end">
+										<Button
+											variant="outline"
+											className="h-10 border-border bg-secondary px-5 text-foreground hover:bg-secondary/80"
+											onClick={() => {
+												setIsCustomRepeatDialogOpen(false);
+												setCustomRecurrenceDraft(null);
+											}}
+										>
+											Cancel
+										</Button>
+										<Button
+											className="h-10 bg-accent px-5 text-accent-foreground hover:bg-accent/85"
+											onClick={applyCustomRecurrence}
+										>
+											Done
+										</Button>
+									</DialogFooter>
+								</DialogContent>
+							</Dialog>
+						</div>
+
+						<div className="border-t border-border px-3 py-3 space-y-2.5">
+							<div className="grid grid-cols-[20px_1fr] items-center gap-3">
+								<User className="size-4 text-muted-foreground" />
+								<div className="text-[0.95rem] text-foreground/90 truncate">
+									Created by connected account
+								</div>
+							</div>
+							<div className="grid grid-cols-[20px_1fr] items-center gap-3 opacity-60">
+								<Video className="size-4 text-muted-foreground" />
+								<div className="text-[0.95rem] text-muted-foreground">Conferencing</div>
+							</div>
+							<div className="grid grid-cols-[20px_1fr] items-center gap-3 opacity-60">
+								<FileText className="size-4 text-muted-foreground" />
+								<div className="text-[0.95rem] text-muted-foreground">
+									AI Meeting Notes and Docs
+								</div>
+							</div>
+							<div className="grid grid-cols-[20px_1fr] items-center gap-3">
+								<MapPin className="size-4 text-muted-foreground" />
+								{isDetailsMode ? (
+									<div className="text-[0.95rem] text-foreground/85">
+										{editor.location.trim() || "No location"}
 									</div>
-									{isDetailsMode ? (
-										<div className="text-[0.92rem] text-foreground/80 whitespace-pre-wrap">
-											{normalizeDescription(editor.description) || "No description"}
-										</div>
-									) : (
-										<Textarea
-											value={editor.description}
-											onChange={(event) =>
+								) : (
+									<Input
+										value={editor.location}
+										onChange={(event) =>
+											setEditor((current) =>
+												current ? { ...current, location: event.target.value } : current,
+											)
+										}
+										placeholder="Add location"
+										className="h-8 border-border bg-background text-sm"
+									/>
+								)}
+							</div>
+							<div className="grid grid-cols-[20px_1fr] items-center gap-3">
+								<Route className="size-4 text-muted-foreground" />
+								<div
+									className={`text-[0.95rem] ${
+										travelBufferAppliesToEvent ? "text-foreground/85" : "text-muted-foreground"
+									}`}
+								>
+									{`Travel buffer: ${travelBufferDescription}`}
+								</div>
+							</div>
+						</div>
+
+						<div className="border-t border-border px-3 py-3">
+							<div className="mb-2 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+								Description
+							</div>
+							{isDetailsMode ? (
+								<div className="text-[0.92rem] text-foreground/80 whitespace-pre-wrap">
+									{normalizeDescription(editor.description) || "No description"}
+								</div>
+							) : (
+								<Textarea
+									value={editor.description}
+									onChange={(event) =>
+										setEditor((current) =>
+											current ? { ...current, description: event.target.value } : current,
+										)
+									}
+									className="min-h-[120px] border-border bg-background text-sm leading-relaxed"
+								/>
+							)}
+						</div>
+
+						<div className="border-t border-border px-3 py-3 space-y-2.5">
+							<div className="flex items-center gap-2 text-[0.95rem] text-foreground/90">
+								<span
+									className="size-3 rounded-[5px]"
+									style={{
+										backgroundColor: resolveGoogleColor(selectedCalendarColor).main,
+									}}
+								/>
+								{isDetailsMode ? (
+									<span>{selectedEventCalendarLabel}</span>
+								) : (
+									<Select
+										value={editor.calendarId}
+										onValueChange={(value) =>
+											setEditor((current) =>
+												current ? { ...current, calendarId: value } : current,
+											)
+										}
+									>
+										<SelectTrigger
+											size="sm"
+											className="h-8 min-w-[200px] border-border bg-background text-[0.84rem] text-foreground/90"
+										>
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent className="border-border bg-popover text-popover-foreground">
+											{editableGoogleCalendars.map((calendar) => (
+												<SelectItem key={calendar.id} value={calendar.id}>
+													{googleCalendarNamesById.get(calendar.id) ??
+														prettifyCalendarName(calendar.id)}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								)}
+							</div>
+							<div className="grid grid-cols-1 gap-2 text-[0.84rem] sm:grid-cols-2">
+								{isDetailsMode ? (
+									<>
+										<div className="text-foreground/80">{busyStatusLabel(editor.busyStatus)}</div>
+										<div className="text-foreground/80">{visibilityLabel(editor.visibility)}</div>
+									</>
+								) : (
+									<>
+										<Select
+											value={editor.busyStatus}
+											onValueChange={(value) =>
 												setEditor((current) =>
-													current ? { ...current, description: event.target.value } : current,
+													current
+														? {
+																...current,
+																busyStatus: value as "free" | "busy" | "tentative",
+															}
+														: current,
 												)
 											}
-											className="min-h-[120px] border-border bg-background text-sm leading-relaxed"
-										/>
-									)}
-								</div>
-
-								<div className="border-t border-border px-3 py-3 space-y-2.5">
-									<div className="flex items-center gap-2 text-[0.95rem] text-foreground/90">
-										<span
-											className="size-3 rounded-[5px]"
-											style={{
-												backgroundColor: resolveGoogleColor(selectedCalendarColor).main,
-											}}
-										/>
-										{isDetailsMode ? (
-											<span>{selectedEventCalendarLabel}</span>
-										) : (
-											<Select
-												value={editor.calendarId}
-												onValueChange={(value) =>
-													setEditor((current) =>
-														current ? { ...current, calendarId: value } : current,
-													)
-												}
+										>
+											<SelectTrigger
+												size="sm"
+												className="h-8 min-w-0 border-border bg-background text-[0.82rem] text-foreground/85"
 											>
-												<SelectTrigger
-													size="sm"
-													className="h-8 min-w-[200px] border-border bg-background text-[0.84rem] text-foreground/90"
-												>
-													<SelectValue />
-												</SelectTrigger>
-												<SelectContent className="border-border bg-popover text-popover-foreground">
-													{editableGoogleCalendars.map((calendar) => (
-														<SelectItem key={calendar.id} value={calendar.id}>
-															{googleCalendarNamesById.get(calendar.id) ??
-																prettifyCalendarName(calendar.id)}
-														</SelectItem>
-													))}
-												</SelectContent>
-											</Select>
-										)}
-									</div>
-									<div className="grid grid-cols-1 gap-2 text-[0.84rem] sm:grid-cols-2">
-										{isDetailsMode ? (
-											<>
-												<div className="text-foreground/80">
-													{busyStatusLabel(editor.busyStatus)}
-												</div>
-												<div className="text-foreground/80">
-													{visibilityLabel(editor.visibility)}
-												</div>
-											</>
-										) : (
-											<>
-												<Select
-													value={editor.busyStatus}
-													onValueChange={(value) =>
-														setEditor((current) =>
-															current
-																? {
-																		...current,
-																		busyStatus: value as "free" | "busy" | "tentative",
-																	}
-																: current,
-														)
-													}
-												>
-													<SelectTrigger
-														size="sm"
-														className="h-8 min-w-0 border-border bg-background text-[0.82rem] text-foreground/85"
-													>
-														<SelectValue />
-													</SelectTrigger>
-													<SelectContent className="border-border bg-popover text-popover-foreground">
-														{busyStatusOptions.map((option) => (
-															<SelectItem key={option.value} value={option.value}>
-																{option.label}
-															</SelectItem>
-														))}
-													</SelectContent>
-												</Select>
-												<Select
-													value={editor.visibility}
-													onValueChange={(value) =>
-														setEditor((current) =>
-															current
-																? {
-																		...current,
-																		visibility: value as
-																			| "default"
-																			| "public"
-																			| "private"
-																			| "confidential",
-																	}
-																: current,
-														)
-													}
-												>
-													<SelectTrigger
-														size="sm"
-														className="h-8 min-w-0 border-border bg-background text-[0.82rem] text-foreground/85"
-													>
-														<SelectValue />
-													</SelectTrigger>
-													<SelectContent className="border-border bg-popover text-popover-foreground">
-														{visibilityOptions.map((option) => (
-															<SelectItem key={option.value} value={option.value}>
-																{option.label}
-															</SelectItem>
-														))}
-													</SelectContent>
-												</Select>
-											</>
-										)}
-									</div>
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3 opacity-60">
-										<Bell className="size-4 text-muted-foreground" />
-										<div className="text-[0.95rem] text-muted-foreground">Reminders</div>
-									</div>
-								</div>
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent className="border-border bg-popover text-popover-foreground">
+												{busyStatusOptions.map((option) => (
+													<SelectItem key={option.value} value={option.value}>
+														{option.label}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+										<Select
+											value={editor.visibility}
+											onValueChange={(value) =>
+												setEditor((current) =>
+													current
+														? {
+																...current,
+																visibility: value as
+																	| "default"
+																	| "public"
+																	| "private"
+																	| "confidential",
+															}
+														: current,
+												)
+											}
+										>
+											<SelectTrigger
+												size="sm"
+												className="h-8 min-w-0 border-border bg-background text-[0.82rem] text-foreground/85"
+											>
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent className="border-border bg-popover text-popover-foreground">
+												{visibilityOptions.map((option) => (
+													<SelectItem key={option.value} value={option.value}>
+														{option.label}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+									</>
+								)}
+							</div>
+							<div className="grid grid-cols-[20px_1fr] items-center gap-3 opacity-60">
+								<Bell className="size-4 text-muted-foreground" />
+								<div className="text-[0.95rem] text-muted-foreground">Reminders</div>
+							</div>
+						</div>
 
-								<div className="border-t border-border px-3 py-3 space-y-2">
-									<div className="grid grid-cols-[20px_1fr] items-start gap-3">
-										<Clock3 className="size-4 text-muted-foreground" />
-										<div className="space-y-1.5">
-											<div className="text-[0.9rem] text-foreground/85">Duration</div>
-											{isDetailsMode ? (
-												<div className="text-[0.92rem] text-foreground/80">
-													{formatDuration(
-														parseDateTimeInput(editor.start, scheduleXTimeZone),
-														parseDateTimeInput(editor.end, scheduleXTimeZone),
-													)}
-												</div>
-											) : (
-												<>
-													<div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-														<Select
-															value={editorDurationSelectValue}
-															onValueChange={(value) => {
-																if (value === "custom") return;
-																const parsed = Number.parseInt(value, 10);
-																if (!Number.isFinite(parsed)) return;
-																applyEditorDurationMinutes(parsed);
-															}}
-														>
-															<SelectTrigger
-																size="sm"
-																className="h-8 w-full min-w-0 border-border bg-background text-[0.82rem] text-foreground/85 sm:w-[130px]"
-															>
-																<SelectValue />
-															</SelectTrigger>
-															<SelectContent className="border-border bg-popover text-popover-foreground">
-																{durationPresetMinutes.map((minutes) => (
-																	<SelectItem key={minutes} value={String(minutes)}>
-																		{minutes} min
-																	</SelectItem>
-																))}
-																<SelectItem value="custom">Custom</SelectItem>
-															</SelectContent>
-														</Select>
-														<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5 sm:w-auto">
-															<Input
-																type="number"
-																min={schedulingStepMinutes}
-																step={schedulingStepMinutes}
-																value={editorDurationMinutes}
-																onChange={(event) => {
-																	const parsed = Number.parseInt(event.target.value, 10);
-																	if (!Number.isFinite(parsed)) return;
-																	applyEditorDurationMinutes(parsed);
-																}}
-																className="h-8 w-full min-w-0 border-border bg-background text-sm sm:w-[90px]"
-															/>
-															<span className="text-[0.82rem] text-muted-foreground">min</span>
-														</div>
-													</div>
-													<div className="text-[0.72rem] text-muted-foreground">
-														Snaps to {schedulingStepMinutes}-minute increments.
-													</div>
-												</>
+						<div className="border-t border-border px-3 py-3 space-y-2">
+							<div className="grid grid-cols-[20px_1fr] items-start gap-3">
+								<Clock3 className="size-4 text-muted-foreground" />
+								<div className="space-y-1.5">
+									<div className="text-[0.9rem] text-foreground/85">Duration</div>
+									{isDetailsMode ? (
+										<div className="text-[0.92rem] text-foreground/80">
+											{formatDuration(
+												parseDateTimeInput(editor.start, scheduleXTimeZone),
+												parseDateTimeInput(editor.end, scheduleXTimeZone),
 											)}
 										</div>
-									</div>
-								</div>
-							</div>
-
-							<div className="flex items-center justify-between border-t border-border pt-2.5">
-								{editor.mode === "edit" && editor.eventId ? (
-									<Button
-										variant="outline"
-										size="sm"
-										className="border-border text-destructive text-[0.72rem] hover:bg-destructive/10 hover:border-destructive/30"
-										onClick={async () => {
-											const eventId = editor.eventId;
-											if (!eventId) return;
-											try {
-												setError(null);
-												await deleteEvent(eventId, editor.scope);
-												setEditor(null);
-											} catch (deleteError) {
-												setError(
-													deleteError instanceof Error
-														? deleteError.message
-														: "Unable to delete event.",
-												);
-											}
-										}}
-									>
-										Delete
-									</Button>
-								) : (
-									<div />
-								)}
-								<div className="flex items-center gap-2">
-									{isDetailsMode ? (
-										<Button
-											size="sm"
-											variant="outline"
-											className="border-border text-foreground text-[0.72rem] hover:bg-accent"
-											onClick={() =>
-												setEditor((current) =>
-													current ? { ...current, panelMode: "edit" } : current,
-												)
-											}
-										>
-											Edit
-										</Button>
-									) : null}
-									<Button
-										variant="outline"
-										size="sm"
-										className="border-border text-muted-foreground text-[0.72rem] hover:bg-accent hover:text-foreground"
-										onClick={closeEditor}
-									>
-										Close
-									</Button>
-									{!isDetailsMode ? (
-										<Button
-											size="sm"
-											className="bg-accent text-accent-foreground text-[0.72rem] font-medium hover:bg-accent/85"
-											onClick={onSubmitEditor}
-										>
-											Save
-										</Button>
-									) : null}
+									) : (
+										<>
+											<div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+												<Select
+													value={editorDurationSelectValue}
+													onValueChange={(value) => {
+														if (value === "custom") return;
+														const parsed = Number.parseInt(value, 10);
+														if (!Number.isFinite(parsed)) return;
+														applyEditorDurationMinutes(parsed);
+													}}
+												>
+													<SelectTrigger
+														size="sm"
+														className="h-8 w-full min-w-0 border-border bg-background text-[0.82rem] text-foreground/85 sm:w-[130px]"
+													>
+														<SelectValue />
+													</SelectTrigger>
+													<SelectContent className="border-border bg-popover text-popover-foreground">
+														{durationPresetMinutes.map((minutes) => (
+															<SelectItem key={minutes} value={String(minutes)}>
+																{minutes} min
+															</SelectItem>
+														))}
+														<SelectItem value="custom">Custom</SelectItem>
+													</SelectContent>
+												</Select>
+												<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5 sm:w-auto">
+													<Input
+														type="number"
+														min={schedulingStepMinutes}
+														step={schedulingStepMinutes}
+														value={editorDurationMinutes}
+														onChange={(event) => {
+															const parsed = Number.parseInt(event.target.value, 10);
+															if (!Number.isFinite(parsed)) return;
+															applyEditorDurationMinutes(parsed);
+														}}
+														className="h-8 w-full min-w-0 border-border bg-background text-sm sm:w-[90px]"
+													/>
+													<span className="text-[0.82rem] text-muted-foreground">min</span>
+												</div>
+											</div>
+											<div className="text-[0.72rem] text-muted-foreground">
+												Snaps to {schedulingStepMinutes}-minute increments.
+											</div>
+										</>
+									)}
 								</div>
 							</div>
 						</div>
-					) : (
-						<>
-							<div className="rounded-xl border border-border/60 bg-card/60 p-4 text-center">
-								<CalendarDays className="mx-auto mb-2 size-6 text-muted-foreground/40" />
-								<div className="text-[0.78rem] font-medium text-muted-foreground">
-									Select an event to view details
-								</div>
-								<div className="mt-0.5 text-[0.66rem] text-muted-foreground/60">
-									Click any event on the calendar
-								</div>
-							</div>
-							<div className="rounded-xl border border-border/60 bg-card/60 p-4">
-								<div className="text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground/70 font-medium">
-									Shortcuts
-								</div>
-								<ul className="mt-2.5 space-y-2 text-[0.72rem] text-muted-foreground">
-									<li className="flex items-center gap-2">
-										<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.58rem] font-semibold text-muted-foreground/70">
-											1×
-										</span>
-										Open event details
-									</li>
-									<li className="flex items-center gap-2">
-										<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.58rem] font-semibold text-muted-foreground/70">
-											2×
-										</span>
-										Edit event
-									</li>
-									<li className="flex items-center gap-2">
-										<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.55rem] font-semibold text-muted-foreground/70">
-											⇕
-										</span>
-										Drag to create event
-									</li>
-								</ul>
-							</div>
-						</>
-					)}
-				</aside>
-			</div>
-			{isEventSheetMode ? (
-				<button
-					type="button"
-					aria-label="Close event sheet"
-					className={`fixed inset-0 z-40 bg-black/45 transition-opacity duration-300 ${
-						isMobileEventSheetOpen
-							? "opacity-100 pointer-events-auto"
-							: "opacity-0 pointer-events-none"
-					}`}
-					onClick={closeEventSheet}
-				/>
-			) : null}
-			<Dialog
-				open={Boolean(pendingMoveUpdate)}
-				onOpenChange={(open) => !open && setPendingMoveUpdate(null)}
-			>
-				<DialogContent className="max-w-sm border-border bg-popover text-popover-foreground">
-					<DialogHeader>
-						<DialogTitle className="text-[1rem] font-semibold text-foreground">
-							Move recurring event
-						</DialogTitle>
-					</DialogHeader>
-					<div className="space-y-2 text-sm text-foreground/80">
-						<div>
-							You moved{" "}
-							<span className="font-medium text-foreground">{pendingMoveUpdate?.title}</span>.
-						</div>
-						<div>Apply the move to just this event or the full series?</div>
 					</div>
-					<DialogFooter className="gap-2 sm:justify-end">
-						<Button
-							variant="outline"
-							className="border-border bg-secondary text-foreground/85 hover:bg-accent"
-							onClick={() => setPendingMoveUpdate(null)}
-						>
-							Cancel
-						</Button>
-						<Button
-							variant="outline"
-							className="border-border bg-secondary text-foreground/85 hover:bg-accent"
-							onClick={() => void moveRecurringEvent("single")}
-						>
-							Only this event
-						</Button>
-						<Button
-							className="bg-accent text-accent-foreground hover:bg-accent/90"
-							onClick={() => void moveRecurringEvent("series")}
-						>
-							Entire series
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
-			<QuickCreateTaskDialog open={quickCreateTaskOpen} onOpenChange={setQuickCreateTaskOpen} />
-			<QuickCreateHabitDialog open={quickCreateHabitOpen} onOpenChange={setQuickCreateHabitOpen} />
+
+					<div className="flex items-center justify-between border-t border-border pt-2.5">
+						{editor.mode === "edit" && editor.eventId ? (
+							<Button
+								variant="outline"
+								size="sm"
+								className="border-border text-destructive text-[0.72rem] hover:bg-destructive/10 hover:border-destructive/30"
+								onClick={async () => {
+									const eventId = editor.eventId;
+									if (!eventId) return;
+									try {
+										setError(null);
+										await deleteEvent(eventId, editor.scope);
+										setEditor(null);
+									} catch (deleteError) {
+										setError(
+											deleteError instanceof Error
+												? deleteError.message
+												: "Unable to delete event.",
+										);
+									}
+								}}
+							>
+								Delete
+							</Button>
+						) : (
+							<div />
+						)}
+						<div className="flex items-center gap-2">
+							{isDetailsMode ? (
+								<Button
+									size="sm"
+									variant="outline"
+									className="border-border text-foreground text-[0.72rem] hover:bg-accent"
+									onClick={() =>
+										setEditor((current) => (current ? { ...current, panelMode: "edit" } : current))
+									}
+								>
+									Edit
+								</Button>
+							) : null}
+							<Button
+								variant="outline"
+								size="sm"
+								className="border-border text-muted-foreground text-[0.72rem] hover:bg-accent hover:text-foreground"
+								onClick={closeEditor}
+							>
+								Close
+							</Button>
+							{!isDetailsMode ? (
+								<Button
+									size="sm"
+									className="bg-accent text-accent-foreground text-[0.72rem] font-medium hover:bg-accent/85"
+									onClick={onSubmitEditor}
+								>
+									Save
+								</Button>
+							) : null}
+						</div>
+					</div>
+				</div>
+			) : (
+				<>
+					<div className="rounded-xl border border-border/60 bg-card/60 p-4 text-center">
+						<CalendarDays className="mx-auto mb-2 size-6 text-muted-foreground/40" />
+						<div className="text-[0.78rem] font-medium text-muted-foreground">
+							Select an event to view details
+						</div>
+						<div className="mt-0.5 text-[0.66rem] text-muted-foreground/60">
+							Click any event on the calendar
+						</div>
+					</div>
+					<div className="rounded-xl border border-border/60 bg-card/60 p-4">
+						<div className="text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground/70 font-medium">
+							Shortcuts
+						</div>
+						<ul className="mt-2.5 space-y-2 text-[0.72rem] text-muted-foreground">
+							<li className="flex items-center gap-2">
+								<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.58rem] font-semibold text-muted-foreground/70">
+									1×
+								</span>
+								Open event details
+							</li>
+							<li className="flex items-center gap-2">
+								<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.58rem] font-semibold text-muted-foreground/70">
+									2×
+								</span>
+								Edit event
+							</li>
+							<li className="flex items-center gap-2">
+								<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.55rem] font-semibold text-muted-foreground/70">
+									⇕
+								</span>
+								Drag to create event
+							</li>
+						</ul>
+					</div>
+				</>
+			)}
 		</div>
+	);
+
+	return (
+		<CalendarEditorProvider editor={Boolean(editor)} renderAside={renderCalendarAside}>
+			<div className="h-full min-h-0 overflow-hidden bg-background text-foreground flex flex-col gap-0">
+				<header className="shrink-0 sticky top-0 z-20 border-b border-border bg-card px-4 py-2.5 flex flex-col gap-2">
+					<div className="flex items-center justify-between gap-3 flex-wrap">
+						<div className="flex items-center gap-3">
+							<h1 className="text-[1.05rem] font-semibold uppercase tracking-[0.04em] text-foreground">
+								{monthLabel}
+							</h1>
+							<div className="flex items-center gap-1">
+								<Button
+									variant="outline"
+									size="icon-sm"
+									className="size-8 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
+									onClick={() => shiftDate(-1)}
+									aria-label="Previous period"
+								>
+									<ChevronLeft className="size-3.5" />
+								</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									className="h-7 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] hover:border-border hover:bg-accent hover:text-foreground"
+									onClick={() => setDateValue(formatDateInput(new Date()))}
+								>
+									Today
+								</Button>
+								<Button
+									variant="outline"
+									size="icon-sm"
+									className="size-7 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
+									onClick={() => shiftDate(1)}
+									aria-label="Next period"
+								>
+									<ChevronRight className="size-3.5" />
+								</Button>
+							</div>
+						</div>
+
+						<div className="flex items-center gap-2 flex-wrap" suppressHydrationWarning>
+							<ToggleGroup
+								type="single"
+								value={activeView}
+								onValueChange={(value) => {
+									if (value) changeView(value as "week" | "day" | "month-grid");
+								}}
+								className="gap-0 rounded-lg border border-border bg-secondary p-0.5"
+							>
+								{[
+									{ key: "week", label: "Week" },
+									{ key: "day", label: "Day" },
+									{ key: "month-grid", label: "Month" },
+								].map((tab) => (
+									<ToggleGroupItem
+										key={tab.key}
+										value={tab.key}
+										variant="outline"
+										size="sm"
+										className="h-6 px-2.5 border-0 bg-transparent text-muted-foreground text-[0.7rem] font-medium hover:text-foreground hover:bg-transparent data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:shadow-sm rounded-md"
+									>
+										{tab.label}
+									</ToggleGroupItem>
+								))}
+							</ToggleGroup>
+
+							<div className="w-px h-4 bg-border" />
+
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<Button
+										size="sm"
+										className="h-7 px-2.5 bg-accent text-accent-foreground text-[0.72rem] font-semibold gap-1.5 border-accent hover:bg-accent/90 shadow-[0_2px_8px_-2px_rgba(252,163,17,0.3)]"
+									>
+										<Sparkles className="size-3" />
+										Create new
+										<ChevronDown className="size-3 opacity-60" />
+									</Button>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="end" className="w-44">
+									<DropdownMenuItem onSelect={() => setQuickCreateTaskOpen(true)} className="gap-2">
+										<Rocket className="size-3.5" />
+										New task
+									</DropdownMenuItem>
+									<DropdownMenuItem
+										onSelect={() => {
+											const start = snapToStep(Date.now(), schedulingStepMs);
+											const end = snapToStep(start + schedulingStepMs, schedulingStepMs);
+											setEditor({
+												mode: "create",
+												panelMode: "edit",
+												title: "",
+												description: "",
+												start: toInputDateTime(start, scheduleXTimeZone),
+												end: toInputDateTime(end, scheduleXTimeZone),
+												allDay: false,
+												calendarId: defaultCreateCalendarId,
+												busyStatus: "busy",
+												visibility: "default",
+												location: "",
+												recurrenceRule: "",
+												scope: "single",
+											});
+										}}
+										className="gap-2"
+									>
+										<Sparkles className="size-3.5" />
+										New event
+									</DropdownMenuItem>
+									<DropdownMenuItem
+										onSelect={() => setQuickCreateHabitOpen(true)}
+										className="gap-2"
+									>
+										<Repeat2 className="size-3.5" />
+										New habit
+									</DropdownMenuItem>
+								</DropdownMenuContent>
+							</DropdownMenu>
+
+							<Button
+								variant="outline"
+								size="icon-sm"
+								className="size-7 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
+								onClick={() => {
+									void syncNow("manual");
+								}}
+								disabled={syncStatus === "syncing"}
+								aria-label="Sync"
+							>
+								<RefreshCw
+									className={`size-3.5 ${syncStatus === "syncing" ? "animate-spin" : ""}`}
+								/>
+							</Button>
+
+							<Popover>
+								<PopoverTrigger asChild>
+									<Button
+										variant="outline"
+										size="sm"
+										aria-label="Choose date"
+										className="h-8 px-2.5 border-border bg-secondary text-foreground/70 text-[0.72rem] gap-1.5 hover:border-border hover:bg-accent hover:text-foreground"
+									>
+										<CalendarDays className="size-3.5" />
+										{selectedDate}
+									</Button>
+								</PopoverTrigger>
+								<PopoverContent
+									align="end"
+									className="w-auto border-border bg-popover p-0 text-popover-foreground"
+								>
+									<DatePickerCalendar
+										mode="single"
+										selected={selectedDateValue}
+										onSelect={(date) => {
+											if (!date) return;
+											setDateValue(formatDateInput(date));
+										}}
+										initialFocus
+										className="rounded-md border-0 bg-transparent"
+									/>
+								</PopoverContent>
+							</Popover>
+
+							<SchedulingDiagnostics />
+							<Button
+								variant="outline"
+								size="sm"
+								className="xl:hidden h-8 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] hover:border-border hover:bg-accent hover:text-foreground"
+								onClick={() => setIsMobileEventSheetOpen(true)}
+							>
+								Event
+							</Button>
+						</div>
+					</div>
+
+					<div className="flex items-center justify-between gap-2 flex-wrap">
+						<ToggleGroup
+							type="multiple"
+							value={sourceFilter}
+							onValueChange={(value) =>
+								setSourceFilter(value.length ? (value as CalendarSource[]) : DEFAULT_SOURCE_FILTER)
+							}
+							className="gap-1"
+						>
+							{sourceButtons.map((source) => (
+								<ToggleGroupItem
+									key={source}
+									value={source}
+									variant="outline"
+									size="sm"
+									className="h-7 rounded-md border border-border bg-secondary px-2 text-[0.68rem] uppercase tracking-[0.06em] text-muted-foreground data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:border-primary/20 gap-1.5"
+								>
+									<span className={`size-1.5 rounded-full ${sourceColorDot[source]}`} />
+									{source}
+								</ToggleGroupItem>
+							))}
+						</ToggleGroup>
+						<div className="flex items-center gap-2 text-[0.66rem] text-muted-foreground/70">
+							<span className="tabular-nums">{visibleEventCount} events</span>
+							<span className="text-border">·</span>
+							<div
+								className={`flex items-center gap-1.5 ${
+									syncStatus === "error"
+										? "text-destructive"
+										: syncStatus === "syncing"
+											? "text-chart-1"
+											: "text-muted-foreground/70"
+								}`}
+							>
+								<span
+									className={`inline-block size-1.5 rounded-full ${
+										syncStatus === "error"
+											? "bg-destructive"
+											: syncStatus === "syncing"
+												? "bg-chart-1 animate-pulse"
+												: "bg-chart-2"
+									}`}
+								/>
+								{syncStatusLabel}
+							</div>
+						</div>
+					</div>
+				</header>
+
+				{error ? (
+					<div className="mx-4 mt-2 border border-destructive/30 bg-destructive/10 rounded-lg px-3 py-2 text-[0.8rem] text-destructive">
+						{error}
+					</div>
+				) : null}
+				{isLoading ? (
+					<div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-[0.78rem] text-muted-foreground">
+						<RefreshCw className="size-3.5 shrink-0 animate-spin opacity-50" />
+						Loading events...
+					</div>
+				) : null}
+				{!isLoading && !error && visibleEventCount === 0 ? (
+					<div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-[0.78rem] text-muted-foreground">
+						<RefreshCw className="size-3.5 shrink-0 opacity-50" />
+						No events loaded. Click sync to fetch from Google.
+					</div>
+				) : null}
+
+				<div className="flex flex-1 min-h-0 overflow-hidden">
+					<div
+						ref={calendarContainerRef}
+						className={`${effectiveTheme === "dark" ? "sx-autocron-dark" : "sx-autocron-light"} flex-1 min-w-0 min-h-0 h-full overflow-hidden`}
+					>
+						<ScheduleXCalendar calendarApp={calendar} customComponents={customComponents} />
+					</div>
+				</div>
+				<Dialog
+					open={Boolean(pendingMoveUpdate)}
+					onOpenChange={(open) => !open && setPendingMoveUpdate(null)}
+				>
+					<DialogContent className="max-w-sm border-border bg-popover text-popover-foreground">
+						<DialogHeader>
+							<DialogTitle className="text-[1rem] font-semibold text-foreground">
+								Move recurring event
+							</DialogTitle>
+						</DialogHeader>
+						<div className="space-y-2 text-sm text-foreground/80">
+							<div>
+								You moved{" "}
+								<span className="font-medium text-foreground">{pendingMoveUpdate?.title}</span>.
+							</div>
+							<div>Apply the move to just this event or the full series?</div>
+						</div>
+						<DialogFooter className="gap-2 sm:justify-end">
+							<Button
+								variant="outline"
+								className="border-border bg-secondary text-foreground/85 hover:bg-accent"
+								onClick={() => setPendingMoveUpdate(null)}
+							>
+								Cancel
+							</Button>
+							<Button
+								variant="outline"
+								className="border-border bg-secondary text-foreground/85 hover:bg-accent"
+								onClick={() => void moveRecurringEvent("single")}
+							>
+								Only this event
+							</Button>
+							<Button
+								className="bg-accent text-accent-foreground hover:bg-accent/90"
+								onClick={() => void moveRecurringEvent("series")}
+							>
+								Entire series
+							</Button>
+						</DialogFooter>
+					</DialogContent>
+				</Dialog>
+				<QuickCreateTaskDialog open={quickCreateTaskOpen} onOpenChange={setQuickCreateTaskOpen} />
+				<QuickCreateHabitDialog
+					open={quickCreateHabitOpen}
+					onOpenChange={setQuickCreateHabitOpen}
+				/>
+			</div>
+		</CalendarEditorProvider>
 	);
 }
