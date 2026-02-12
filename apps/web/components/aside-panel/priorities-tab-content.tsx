@@ -12,7 +12,7 @@ import { api } from "../../../../convex/_generated/api";
 import { AsideHabitItem } from "./aside-habit-item";
 import { AsideTaskCard, priorityClass } from "./aside-task-card";
 
-const priorityOrder: Priority[] = ["critical", "high", "medium", "low"];
+const priorityOrder: Priority[] = ["blocker", "critical", "high", "medium", "low"];
 const priorityLabels: Record<Priority, string> = {
 	critical: "Critical",
 	high: "High",

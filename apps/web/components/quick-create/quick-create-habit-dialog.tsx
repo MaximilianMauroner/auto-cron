@@ -2,13 +2,6 @@
 
 import PaywallDialog from "@/components/autumn/paywall-dialog";
 import { Button } from "@/components/ui/button";
-import {
-	Dialog,
-	DialogContent,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
 import { DurationInput } from "@/components/ui/duration-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +12,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { useActionWithStatus } from "@/hooks/use-convex-status";
 import { getConvexErrorPayload } from "@/lib/convex-errors";
 import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duration";
@@ -136,14 +130,14 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 
 	return (
 		<>
-			<Dialog open={open} onOpenChange={onOpenChange}>
-				<DialogContent className="gap-0 border-border/80 bg-card p-0 sm:max-w-md">
-					<DialogHeader className="border-b border-border/70 px-5 py-4">
-						<DialogTitle className="flex items-center gap-2 text-lg">
+			<Sheet open={open} onOpenChange={onOpenChange}>
+				<SheetContent side="right" className="w-80 p-0 sm:max-w-md" showCloseButton={false}>
+					<SheetHeader className="border-b border-border/70 px-5 py-4">
+						<SheetTitle className="flex items-center gap-2 text-lg">
 							<Repeat2 className="size-4 text-primary" />
 							Quick create habit
-						</DialogTitle>
-					</DialogHeader>
+						</SheetTitle>
+					</SheetHeader>
 					<div className="space-y-4 px-5 py-4">
 						<div className="space-y-1.5">
 							<Label htmlFor="qc-habit-title" className="text-xs uppercase tracking-[0.1em]">
@@ -242,7 +236,7 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 							<p className="text-xs text-rose-600 dark:text-rose-400">{errorMessage}</p>
 						) : null}
 					</div>
-					<DialogFooter className="border-t border-border/70 px-5 py-3">
+					<SheetFooter className="border-t border-border/70 px-5 py-3">
 						<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
 							Cancel
 						</Button>
@@ -254,9 +248,9 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 							<Repeat2 className="size-3.5" />
 							{isPending ? "Creating..." : "Create habit"}
 						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+					</SheetFooter>
+				</SheetContent>
+			</Sheet>
 			<PaywallDialog open={paywallOpen} setOpen={setPaywallOpen} featureId="habits" />
 		</>
 	);

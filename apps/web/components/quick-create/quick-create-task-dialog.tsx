@@ -3,13 +3,6 @@
 import PaywallDialog from "@/components/autumn/paywall-dialog";
 import { Button } from "@/components/ui/button";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
-import {
-	Dialog,
-	DialogContent,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
 import { DurationInput } from "@/components/ui/duration-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +13,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { useActionWithStatus, useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import { getConvexErrorPayload } from "@/lib/convex-errors";
@@ -153,14 +147,14 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 
 	return (
 		<>
-			<Dialog open={open} onOpenChange={onOpenChange}>
-				<DialogContent className="gap-0 border-border/80 bg-card p-0 sm:max-w-md">
-					<DialogHeader className="border-b border-border/70 px-5 py-4">
-						<DialogTitle className="flex items-center gap-2 text-lg">
+			<Sheet open={open} onOpenChange={onOpenChange}>
+				<SheetContent side="right" className="w-80 p-0 sm:max-w-md" showCloseButton={false}>
+					<SheetHeader className="border-b border-border/70 px-5 py-4">
+						<SheetTitle className="flex items-center gap-2 text-lg">
 							<Rocket className="size-4 text-primary" />
 							Quick create task
-						</DialogTitle>
-					</DialogHeader>
+						</SheetTitle>
+					</SheetHeader>
 					<div className="space-y-4 px-5 py-4">
 						<div className="space-y-1.5">
 							<Label htmlFor="qc-task-title" className="text-xs uppercase tracking-[0.1em]">
@@ -231,7 +225,7 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 							<p className="text-xs text-rose-600 dark:text-rose-400">{errorMessage}</p>
 						) : null}
 					</div>
-					<DialogFooter className="border-t border-border/70 px-5 py-3">
+					<SheetFooter className="border-t border-border/70 px-5 py-3">
 						<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
 							Cancel
 						</Button>
@@ -243,9 +237,9 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 							<Rocket className="size-3.5" />
 							{isPending ? "Creating..." : "Create task"}
 						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+					</SheetFooter>
+				</SheetContent>
+			</Sheet>
 			<PaywallDialog open={paywallOpen} setOpen={setPaywallOpen} featureId="tasks" />
 		</>
 	);
