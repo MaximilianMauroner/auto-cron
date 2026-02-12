@@ -22,6 +22,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useMutationWithStatus } from "@/hooks/use-convex-status";
 import type { FunctionReference } from "convex/server";
 import { Check, MessageSquare, Send } from "lucide-react";
+import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 

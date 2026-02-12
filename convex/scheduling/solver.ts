@@ -233,6 +233,16 @@ const scheduleTasks = (
 				} as TaskScheduleResult;
 			}
 			occupyRange(occupancyMask, startSlot, durationSlots);
+			if (taskDowntimeSlots > 0) {
+				const bufBefore = Math.max(0, startSlot - taskDowntimeSlots);
+				occupyRange(occupancyMask, bufBefore, startSlot - bufBefore);
+				const bufAfterEnd = Math.min(slotCount, startSlot + durationSlots + taskDowntimeSlots);
+				occupyRange(
+					occupancyMask,
+					startSlot + durationSlots,
+					bufAfterEnd - (startSlot + durationSlots),
+				);
+			}
 			chunkPlacements.push({ startSlot, durationSlots });
 		}
 
@@ -252,28 +262,34 @@ const scheduleTasks = (
 			});
 			if (hasLocation && travelSlots > 0) {
 				const travelDurationMs = travelSlots * SLOT_MS;
-				blocks.push({
-					source: "task",
-					sourceId: buildTravelSourceId(String(task.id), start, end, "before"),
-					title: `Travel: ${task.title}`,
-					start: start - travelDurationMs,
-					end: start,
-					priority: task.priority,
-					calendarId: task.preferredCalendarId,
-					color: task.color,
-					location: task.location,
-				});
-				blocks.push({
-					source: "task",
-					sourceId: buildTravelSourceId(String(task.id), start, end, "after"),
-					title: `Travel: ${task.title}`,
-					start: end,
-					end: end + travelDurationMs,
-					priority: task.priority,
-					calendarId: task.preferredCalendarId,
-					color: task.color,
-					location: task.location,
-				});
+				const beforeStart = Math.max(horizonStart, start - travelDurationMs);
+				if (beforeStart < start) {
+					blocks.push({
+						source: "task",
+						sourceId: buildTravelSourceId(String(task.id), start, end, "before"),
+						title: `Travel: ${task.title}`,
+						start: beforeStart,
+						end: start,
+						priority: task.priority,
+						calendarId: task.preferredCalendarId,
+						color: task.color,
+						location: task.location,
+					});
+				}
+				const afterEnd = Math.min(horizonEnd, end + travelDurationMs);
+				if (end < afterEnd) {
+					blocks.push({
+						source: "task",
+						sourceId: buildTravelSourceId(String(task.id), start, end, "after"),
+						title: `Travel: ${task.title}`,
+						start: end,
+						end: afterEnd,
+						priority: task.priority,
+						calendarId: task.preferredCalendarId,
+						color: task.color,
+						location: task.location,
+					});
+				}
 			}
 		}
 
@@ -412,6 +428,19 @@ const scheduleHabits = (
 					}
 					usedStarts.add(candidate.startSlot);
 					occupyRange(occupancyMask, candidate.startSlot, finalDuration);
+					if (downtimeSlots > 0) {
+						const bufBefore = Math.max(0, candidate.startSlot - downtimeSlots);
+						occupyRange(occupancyMask, bufBefore, candidate.startSlot - bufBefore);
+						const bufAfterEnd = Math.min(
+							occupancyMask.length,
+							candidate.startSlot + finalDuration + downtimeSlots,
+						);
+						occupyRange(
+							occupancyMask,
+							candidate.startSlot + finalDuration,
+							bufAfterEnd - (candidate.startSlot + finalDuration),
+						);
+					}
 					scheduledCount += 1;
 					placed = true;
 					const start = timestampForSlot(horizonStart, candidate.startSlot);
