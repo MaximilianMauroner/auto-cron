@@ -3,7 +3,7 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
-import { internalMutation } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { env } from "./env";
 
 export type BillableFeatureId = "tasks" | "habits";
@@ -252,14 +252,20 @@ export const internalAcquireFeatureLock = internalMutation({
 			throw billingLockedError(args.featureId);
 		}
 
-		const primaryLock = locks[0];
+		const sortedLocks = [...locks].sort((a, b) => {
+			if (a._creationTime !== b._creationTime) {
+				return a._creationTime - b._creationTime;
+			}
+			return String(a._id).localeCompare(String(b._id));
+		});
+		const [primaryLock, ...duplicateLocks] = sortedLocks;
 		if (primaryLock) {
 			await ctx.db.patch(primaryLock._id, {
 				lockToken: args.lockToken,
 				expiresAt: nextExpiresAt,
 				updatedAt: now,
 			});
-			for (const duplicateLock of locks.slice(1)) {
+			for (const duplicateLock of duplicateLocks) {
 				await ctx.db.delete(duplicateLock._id);
 			}
 			return null;
@@ -414,7 +420,7 @@ export const internalRollbackFeatureReservation = internalMutation({
 	},
 });
 
-export const internalGetReservationByOperationKey = internalMutation({
+export const internalGetReservationByOperationKey = internalQuery({
 	args: {
 		operationKey: v.string(),
 	},

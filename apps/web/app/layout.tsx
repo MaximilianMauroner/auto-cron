@@ -1,3 +1,4 @@
+import { ToastProvider } from "@/components/ui/toast-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { getConvexUrl } from "@/env/server";
 import type { Metadata } from "next";
@@ -45,7 +46,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 				>
 					<ConvexClientProvider convexUrl={convexUrl}>
 						<AutumnProvider>
-							<TooltipProvider>{children}</TooltipProvider>
+							<ToastProvider>
+								<TooltipProvider>{children}</TooltipProvider>
+							</ToastProvider>
 						</AutumnProvider>
 					</ConvexClientProvider>
 				</ThemeProvider>

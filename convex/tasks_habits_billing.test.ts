@@ -130,7 +130,7 @@ describe("tasks/habits billing checks", () => {
 		expect(tasks).toHaveLength(1);
 		expect(tasks[0]?._id).toBe(firstTaskId);
 
-		const reservation = await user.mutation(internal.billing.internalGetReservationByOperationKey, {
+		const reservation = await user.query(internal.billing.internalGetReservationByOperationKey, {
 			operationKey: `tasks:${userId}:${requestId}`,
 		});
 		expect(reservation?.status).toBe("committed");
@@ -156,7 +156,7 @@ describe("tasks/habits billing checks", () => {
 		);
 
 		expect(await user.query(api.tasks.queries.listTasks, {})).toHaveLength(0);
-		const reservation = await user.mutation(internal.billing.internalGetReservationByOperationKey, {
+		const reservation = await user.query(internal.billing.internalGetReservationByOperationKey, {
 			operationKey: `tasks:${userId}:${requestId}`,
 		});
 		expect(["rolled_back", "rollback_failed"]).toContain(reservation?.status);

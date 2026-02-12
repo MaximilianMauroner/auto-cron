@@ -27,7 +27,7 @@ export const basic = product({
 	name: "Basic",
 	items: [
 		priceItem({
-			price: 4.99,
+			price: 5,
 			interval: "month",
 		}),
 		featureItem({
@@ -48,7 +48,7 @@ export const pro = product({
 	name: "Pro",
 	items: [
 		priceItem({
-			price: 8,
+			price: 7.99,
 			interval: "month",
 		}),
 		featureItem({
@@ -69,7 +69,7 @@ export const premium = product({
 	name: "Premium",
 	items: [
 		priceItem({
-			price: 16,
+			price: 15.99,
 			interval: "month",
 		}),
 		featureItem({

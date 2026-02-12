@@ -72,7 +72,7 @@ bun run test:convex:run
 
 ## Manual auth + middleware checklist
 
-- Unauthenticated navigation to protected routes (`/calendar`, `/tasks`, `/habits`, `/pricing`, `/settings`) redirects to `/sign-in`.
+- Unauthenticated navigation to protected routes (`/calendar`, `/tasks`, `/habits`, `/settings`) redirects to `/sign-in`.
 - Authenticated navigation to protected routes does not loop or bounce.
 - `/callback` auth flow completes and returns to `/calendar`.
 - Sign-out invalidates access to protected routes until re-authenticated.

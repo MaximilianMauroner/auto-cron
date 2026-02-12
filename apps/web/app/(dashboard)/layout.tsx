@@ -10,7 +10,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 	}
 
 	return (
-		<SidebarProvider className="!h-svh !min-h-0">
+		<SidebarProvider className="h-screen! min-h-0!">
 			<AppSidebar />
 			<main className="flex-1 min-h-0 overflow-hidden bg-background">{children}</main>
 		</SidebarProvider>

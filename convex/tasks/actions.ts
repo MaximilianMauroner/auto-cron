@@ -100,7 +100,7 @@ export const createTask = action({
 				userId: ctx.userId,
 			});
 
-			const existingReservation = await ctx.runMutation(
+			const existingReservation = await ctx.runQuery(
 				internal.billing.internalGetReservationByOperationKey,
 				{
 					operationKey,

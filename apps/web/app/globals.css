@@ -629,8 +629,8 @@
 	--sx-rounding-extra-large: 8px;
 	--sx-calendar-week-grid-padding-left: 64px;
 	--sx-calendar-header-popup-z-index: 30;
-	--sx-now-indicator-color: #ef4444;
-	--sx-now-indicator-color-soft: rgba(239, 68, 68, 0.45);
+	--sx-now-indicator-color: var(--primary);
+	--sx-now-indicator-color-soft: color-mix(in oklab, var(--primary) 45%, transparent);
 	--sx-font-small: 0.74rem;
 	--sx-font-extra-small: 0.65rem;
 	background: var(--background);
@@ -779,7 +779,7 @@
 	padding: 5px 8px;
 	border-radius: 8px;
 	background: var(--sx-now-indicator-color);
-	color: #ffffff;
+	color: var(--primary-foreground);
 	font-size: 0.66rem;
 	font-weight: 700;
 	line-height: 1;
@@ -840,8 +840,8 @@
 	--sx-rounding-extra-large: 8px;
 	--sx-calendar-week-grid-padding-left: 64px;
 	--sx-calendar-header-popup-z-index: 30;
-	--sx-now-indicator-color: #f15b5b;
-	--sx-now-indicator-color-soft: rgba(241, 91, 91, 0.45);
+	--sx-now-indicator-color: var(--primary);
+	--sx-now-indicator-color-soft: color-mix(in oklab, var(--primary) 45%, transparent);
 	--sx-font-small: 0.74rem;
 	--sx-font-extra-small: 0.65rem;
 	background: var(--background);
@@ -992,7 +992,7 @@
 	padding: 5px 8px;
 	border-radius: 8px;
 	background: var(--sx-now-indicator-color);
-	color: #ffffff;
+	color: var(--primary-foreground);
 	font-size: 0.66rem;
 	font-weight: 700;
 	line-height: 1;

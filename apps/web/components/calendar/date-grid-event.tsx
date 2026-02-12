@@ -1,5 +1,6 @@
 "use client";
 
+import { toCssSafeColorKey } from "@/components/calendar/color-key";
 import {
 	ContextMenu,
 	ContextMenuContent,
@@ -99,7 +100,7 @@ const deleteFromEvent = (eventId?: string | number) => {
 };
 
 function DateGridEventComponent({ calendarEvent }: { calendarEvent: ScheduleXEventLike }) {
-	const colorKey = calendarEvent.calendarId ?? "google-default";
+	const colorKey = toCssSafeColorKey(calendarEvent.calendarId);
 	const isFree = calendarEvent.busyStatus === "free";
 	const eventStyle = {
 		backgroundColor: isFree ? "transparent" : `var(--sx-color-${colorKey}-container, #1b2640)`,
