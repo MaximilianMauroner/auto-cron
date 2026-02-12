@@ -1202,3 +1202,95 @@ export const upsertSyncedEventsForUser = internalMutation({
 		return result;
 	},
 });
+
+/**
+ * Lightweight batch mutation that only upserts a subset of events.
+ * Called from actions that split large syncs into smaller transactions
+ * to avoid OCC (Optimistic Concurrency Control) failures.
+ */
+export const upsertSyncedEventsBatch = internalMutation({
+	args: {
+		userId: v.string(),
+		events: v.array(syncEventValidator),
+	},
+	returns: v.object({ upserted: v.number() }),
+	handler: async (ctx, args) => {
+		const now = Date.now();
+		const seriesCache = new Map<string, Doc<"calendarEventSeries">>();
+
+		for (const event of args.events) {
+			const series = await upsertSeriesForGoogleEvent(ctx, args.userId, event, now, seriesCache);
+			const occurrenceStart = normalizeToMinute(event.originalStartTime ?? event.start);
+			const isRecurringInstance = Boolean(event.recurringEventId);
+
+			const seriesMatches = await ctx.db
+				.query("calendarEvents")
+				.withIndex("by_userId_seriesId_occurrenceStart", (q) =>
+					q
+						.eq("userId", args.userId)
+						.eq("seriesId", series._id as Id<"calendarEventSeries">)
+						.eq("occurrenceStart", occurrenceStart),
+				)
+				.collect();
+			const legacyMatches = await ctx.db
+				.query("calendarEvents")
+				.withIndex("by_userId_calendarId_googleEventId", (q) =>
+					q
+						.eq("userId", args.userId)
+						.eq("calendarId", event.calendarId)
+						.eq("googleEventId", event.googleEventId),
+				)
+				.collect();
+			const googleLegacyMatches = legacyMatches.filter((match) => match.source === "google");
+
+			const allMatches = [...seriesMatches, ...googleLegacyMatches];
+			const uniqueMatchesById = new Map<string, Doc<"calendarEvents">>();
+			for (const match of allMatches) {
+				uniqueMatchesById.set(String(match._id), match);
+			}
+			const orderedMatches = Array.from(uniqueMatchesById.values()).sort(
+				(a, b) => recencyScore(b) - recencyScore(a),
+			);
+			const primary = orderedMatches[0];
+
+			const occurrencePatch = {
+				title: isRecurringInstance ? undefined : event.title,
+				description: isRecurringInstance ? undefined : event.description,
+				start: event.start,
+				end: event.end,
+				allDay: isRecurringInstance ? undefined : event.allDay,
+				updatedAt: now,
+				source: "google" as const,
+				sourceId: event.googleEventId,
+				calendarId: event.calendarId,
+				googleEventId: event.googleEventId,
+				recurrenceRule: isRecurringInstance ? undefined : event.recurrenceRule,
+				recurringEventId: event.recurringEventId,
+				originalStartTime: event.originalStartTime,
+				seriesId: series._id,
+				occurrenceStart,
+				status: event.status,
+				etag: event.etag,
+				lastSyncedAt: event.lastSyncedAt,
+				busyStatus: event.busyStatus,
+				visibility: isRecurringInstance ? undefined : event.visibility,
+				location: isRecurringInstance ? undefined : event.location,
+				color: isRecurringInstance ? undefined : event.color,
+			};
+
+			if (primary) {
+				await ctx.db.patch(primary._id, occurrencePatch);
+				for (const duplicate of orderedMatches.slice(1)) {
+					await ctx.db.delete(duplicate._id);
+				}
+			} else {
+				await ctx.db.insert("calendarEvents", {
+					userId: args.userId,
+					...occurrencePatch,
+				});
+			}
+		}
+
+		return { upserted: args.events.length };
+	},
+});

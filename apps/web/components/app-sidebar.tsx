@@ -49,9 +49,9 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 
 const navItems = [
-	{ title: "Calendar", href: "/calendar", icon: Calendar },
-	{ title: "Tasks", href: "/tasks", icon: CheckSquare },
-	{ title: "Habits", href: "/habits", icon: Repeat },
+	{ title: "Calendar", href: "/app/calendar", icon: Calendar },
+	{ title: "Tasks", href: "/app/tasks", icon: CheckSquare },
+	{ title: "Habits", href: "/app/habits", icon: Repeat },
 ];
 
 type GoogleCalendarListItem = {
@@ -95,7 +95,7 @@ const resolveCalendarColor = (value?: string) => {
 
 export function AppSidebar() {
 	const pathname = usePathname();
-	const isCalendarRoute = pathname.startsWith("/calendar");
+	const isCalendarRoute = pathname.startsWith("/app/calendar");
 	const { user, signOut } = useAuth();
 	const { isAuthenticated, isLoading: isConvexAuthLoading } = useConvexAuth();
 	const [isSigningOut, setIsSigningOut] = useState(false);
@@ -193,7 +193,7 @@ export function AppSidebar() {
 							<SidebarMenuItem>
 								<SidebarMenuButton asChild isActive={false}>
 									<Link
-										href="/settings/hours"
+										href="/app/settings/hours"
 										className="relative flex w-full items-center gap-2.5"
 									>
 										<Clock3 className="size-3.5 shrink-0" />
@@ -301,25 +301,25 @@ export function AppSidebar() {
 								<DropdownMenuSeparator />
 								<DropdownMenuGroup>
 									<DropdownMenuItem asChild>
-										<Link href="/settings">
+										<Link href="/app/settings">
 											<Settings />
 											Settings
 										</Link>
 									</DropdownMenuItem>
 									<DropdownMenuItem asChild>
-										<Link href="/settings/account">
+										<Link href="/app/settings/account">
 											<UserCircle />
 											Account
 										</Link>
 									</DropdownMenuItem>
 									<DropdownMenuItem asChild>
-										<Link href="/pricing">
+										<Link href="/app/pricing">
 											<CreditCard />
 											Billing
 										</Link>
 									</DropdownMenuItem>
 									<DropdownMenuItem asChild>
-										<Link href="/settings/notifications">
+										<Link href="/app/settings/notifications">
 											<Bell />
 											Notifications
 										</Link>

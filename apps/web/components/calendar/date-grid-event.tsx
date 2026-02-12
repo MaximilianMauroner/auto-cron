@@ -130,7 +130,7 @@ function DateGridEventComponent({ calendarEvent, timeZone, hour12 }: DateGridEve
 			<ContextMenuTrigger asChild>
 				<div
 					className={cn(
-						"group relative inline-flex items-center gap-1 max-w-full rounded-[4px] h-full w-full pl-2 pr-1.5 py-0.5 overflow-hidden cursor-grab active:cursor-grabbing",
+						"group relative inline-flex items-center gap-1 max-w-full rounded-[5px] h-full w-full pl-2 pr-1.5 py-0.5 overflow-hidden cursor-grab active:cursor-grabbing transition-[filter] duration-200 hover:brightness-[1.12]",
 						isFree && "outline outline-1 outline-dashed -outline-offset-1",
 					)}
 					style={{

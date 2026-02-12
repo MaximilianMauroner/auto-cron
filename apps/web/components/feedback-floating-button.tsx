@@ -33,7 +33,7 @@ type Position = {
 };
 
 const FAB_WIDTH = 136;
-const FAB_HEIGHT = 48;
+const FAB_HEIGHT = 44;
 const FAB_MARGIN = 16;
 const DRAG_DISTANCE_THRESHOLD = 6;
 const STORAGE_KEY = "autocron.feedback.fab.position.v2";
@@ -259,12 +259,11 @@ export function FeedbackFloatingButton() {
 					type="button"
 					onPointerDown={onPointerDown}
 					onClick={onOpenDialog}
-					className="group h-12 w-[136px] cursor-grab rounded-full border border-primary/35 bg-gradient-to-r from-primary via-primary to-sky-500 px-3 text-primary-foreground shadow-[0_14px_38px_-16px_hsl(var(--primary))] transition-all hover:scale-[1.02] hover:shadow-[0_22px_50px_-20px_hsl(var(--primary))] active:cursor-grabbing active:scale-[0.98]"
+					className="group relative h-11 w-[136px] cursor-grab overflow-hidden border-none bg-accent px-6 text-accent-foreground shadow-[0_8px_24px_-8px_rgba(252,163,17,0.35)] transition-[color,shadow] duration-400 ease-[cubic-bezier(0.22,1,0.36,1)] before:pointer-events-none before:absolute before:inset-0 before:-translate-x-full before:bg-primary before:transition-transform before:duration-500 before:ease-[cubic-bezier(0.19,1,0.22,1)] hover:text-primary-foreground hover:shadow-[0_14px_36px_-10px_rgba(252,163,17,0.4)] hover:before:translate-x-0 active:cursor-grabbing active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-accent focus-visible:outline-offset-[3px]"
 					aria-label="Open feedback"
 				>
-					<span className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_20%_20%,rgba(255,255,255,0.35),transparent_45%)]" />
-					<span className="relative inline-flex items-center gap-2 text-sm font-semibold tracking-[0.01em]">
-						<MessageSquare className="size-4" />
+					<span className="relative z-[1] inline-flex items-center gap-2 text-[13px] font-bold uppercase tracking-[0.14em]">
+						<MessageSquare className="size-3.5" />
 						Issue
 					</span>
 				</Button>

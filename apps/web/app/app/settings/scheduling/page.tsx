@@ -556,7 +556,10 @@ export default function SchedulingSettingsPage() {
 
 			<Card className="border-border/70 bg-card/70">
 				<CardHeader className="pb-2">
-					<CardTitle className="text-base">How it works</CardTitle>
+					<CardDescription className="text-xs uppercase tracking-[0.14em]">
+						Reference
+					</CardDescription>
+					<CardTitle className="text-lg">How it works</CardTitle>
 				</CardHeader>
 				<CardContent className="space-y-2 text-sm text-muted-foreground">
 					<p>Scheduling mode is global and applies when a task uses "default" mode.</p>

@@ -2,6 +2,8 @@
 
 import { DateGridEvent } from "@/components/calendar/date-grid-event";
 import { TimeGridEvent } from "@/components/calendar/time-grid-event";
+import { QuickCreateHabitDialog } from "@/components/quick-create/quick-create-habit-dialog";
+import { QuickCreateTaskDialog } from "@/components/quick-create/quick-create-task-dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
 import {
@@ -31,6 +33,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useUserPreferences } from "@/components/user-preferences-context";
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
 import type {
 	CalendarEventCreateInput,
@@ -67,6 +70,7 @@ import {
 	MoreHorizontal,
 	RefreshCw,
 	Repeat2,
+	Rocket,
 	Route,
 	Sparkles,
 	User,
@@ -75,6 +79,7 @@ import {
 import { useTheme } from "next-themes";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
+import { SchedulingDiagnostics } from "./scheduling-diagnostics";
 
 type EditorState = {
 	mode: "create" | "edit";
@@ -1175,23 +1180,6 @@ const getCurrentFocusScrollTime = () => {
 };
 
 const isTodayDate = (dateString: string) => dateString === formatDateInput(new Date());
-const detectLocalTimeZone = () => {
-	try {
-		return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-	} catch {
-		return "UTC";
-	}
-};
-const detectLocalTimeFormatPreference = (): TimeFormatPreference => {
-	try {
-		return new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 ===
-			false
-			? "24h"
-			: "12h";
-	} catch {
-		return "24h";
-	}
-};
 
 const useResettableCalendarApp = <TCalendarApp,>(factory: () => TCalendarApp, resetKey: string) => {
 	const factoryRef = useRef(factory);
@@ -1221,9 +1209,10 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "error">("idle");
 	const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
 	const [error, setError] = useState<string | null>(initialErrorMessage);
-	const [searchQuery, setSearchQuery] = useState("");
 	const [sourceFilter, setSourceFilter] = useState<CalendarSource[]>(DEFAULT_SOURCE_FILTER);
 	const [editor, setEditor] = useState<EditorState | null>(null);
+	const [quickCreateTaskOpen, setQuickCreateTaskOpen] = useState(false);
+	const [quickCreateHabitOpen, setQuickCreateHabitOpen] = useState(false);
 	const [isCustomRepeatDialogOpen, setIsCustomRepeatDialogOpen] = useState(false);
 	const [customRecurrenceDraft, setCustomRecurrenceDraft] = useState<CustomRecurrenceDraft | null>(
 		null,
@@ -1255,8 +1244,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const syncedGoogleRangeRef = useRef<SyncRange | null>(null);
 	const autoSyncAttemptedRangeKeyRef = useRef<string | null>(null);
 	const autoWatchRegistrationAttemptedRef = useRef(false);
-	const localTimeZone = useMemo(() => detectLocalTimeZone(), []);
-	const localTimeFormatPreference = useMemo(() => detectLocalTimeFormatPreference(), []);
+	const userPreferences = useUserPreferences();
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
@@ -1270,17 +1258,12 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	}, []);
 
 	const calendarControlsPlugin = useMemo(() => createCalendarControlsPlugin(), []);
-	const displayPreferencesQuery = useAuthenticatedQueryWithStatus(
-		api.hours.queries.getCalendarDisplayPreferences,
-		{},
-	);
 	const schedulingDefaultsQuery = useAuthenticatedQueryWithStatus(
 		api.hours.queries.getTaskSchedulingDefaults,
 		{},
 	);
-	const scheduleXTimeZone = displayPreferencesQuery.data?.timezone ?? localTimeZone;
-	const calendarTimeFormatPreference =
-		displayPreferencesQuery.data?.timeFormatPreference ?? localTimeFormatPreference;
+	const scheduleXTimeZone = userPreferences.timezone;
+	const calendarTimeFormatPreference = userPreferences.timeFormatPreference;
 	const schedulingStepMinutes = schedulingDefaultsQuery.data?.schedulingStepMinutes ?? 15;
 	const schedulingStepMs = schedulingStepMinutes * 60 * 1000;
 	const schedulingStepSeconds = schedulingStepMinutes * 60;
@@ -1385,21 +1368,12 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	}, [normalizedEvents]);
 
 	const scheduleEvents = useMemo(() => {
-		const query = searchQuery.trim().toLowerCase();
-		const filteredEvents = query
-			? normalizedEvents.filter((event) => {
-					const haystack =
-						`${event.title} ${event.description ?? ""} ${event.calendarId ?? ""}`.toLowerCase();
-					return haystack.includes(query);
-				})
-			: normalizedEvents;
-
-		return filteredEvents.map((event) => ({
+		return normalizedEvents.map((event) => ({
 			dedupeKey: buildDedupeKey(event),
 			calendarKey: getCalendarKey(event),
 			event,
 		}));
-	}, [normalizedEvents, searchQuery]);
+	}, [normalizedEvents]);
 	const scheduleXEvents = useMemo(() => {
 		const baseEvents = scheduleEvents
 			.map((event) => {
@@ -2192,6 +2166,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				.toLocaleTimeString([], {
 					hour: "numeric",
 					minute: "2-digit",
+					hour12: isTwelveHourClock,
 				})
 				.replace(/\s/g, "");
 		};
@@ -2220,7 +2195,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				badge.remove();
 			}
 		};
-	}, [activeView]);
+	}, [activeView, isTwelveHourClock]);
 
 	useEffect(() => {
 		if (!calendar) return;
@@ -2733,6 +2708,12 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	);
 
 	const sourceButtons: CalendarSource[] = ["google", "task", "habit", "manual"];
+	const sourceColorDot: Record<CalendarSource, string> = {
+		google: "bg-chart-1",
+		task: "bg-chart-3",
+		habit: "bg-chart-2",
+		manual: "bg-chart-5",
+	};
 	const isLoading = isAuthLoading || (isAuthenticated && eventsQuery.isPending);
 	const isDetailsMode = editor?.mode === "edit" && editor.panelMode === "details";
 	const selectedEvent =
@@ -2894,7 +2875,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			<header className="shrink-0 sticky top-0 z-20 border-b border-border bg-card px-4 py-2.5 flex flex-col gap-2">
 				<div className="flex items-center justify-between gap-3 flex-wrap">
 					<div className="flex items-center gap-3">
-						<h1 className="text-[1.05rem] font-semibold tracking-tight text-foreground">
+						<h1 className="text-[1.05rem] font-semibold uppercase tracking-[0.04em] text-foreground">
 							{monthLabel}
 						</h1>
 						<div className="flex items-center gap-1">
@@ -2946,7 +2927,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 									value={tab.key}
 									variant="outline"
 									size="sm"
-									className="h-6 px-2.5 border-0 bg-transparent text-muted-foreground text-[0.7rem] font-medium hover:text-foreground hover:bg-transparent data-[state=on]:bg-accent data-[state=on]:text-foreground data-[state=on]:shadow-sm rounded-md"
+									className="h-6 px-2.5 border-0 bg-transparent text-muted-foreground text-[0.7rem] font-medium hover:text-foreground hover:bg-transparent data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:shadow-sm rounded-md"
 								>
 									{tab.label}
 								</ToggleGroupItem>
@@ -2955,33 +2936,53 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 
 						<div className="w-px h-4 bg-border" />
 
-						<Button
-							variant="outline"
-							size="sm"
-							className="h-7 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] gap-1.5 hover:border-border hover:bg-accent hover:text-foreground"
-							onClick={() => {
-								const start = snapToStep(Date.now(), schedulingStepMs);
-								const end = snapToStep(start + schedulingStepMs, schedulingStepMs);
-								setEditor({
-									mode: "create",
-									panelMode: "edit",
-									title: "",
-									description: "",
-									start: toInputDateTime(start, scheduleXTimeZone),
-									end: toInputDateTime(end, scheduleXTimeZone),
-									allDay: false,
-									calendarId: defaultCreateCalendarId,
-									busyStatus: "busy",
-									visibility: "default",
-									location: "",
-									recurrenceRule: "",
-									scope: "single",
-								});
-							}}
-						>
-							<Sparkles className="size-3" />
-							New event
-						</Button>
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
+								<Button
+									size="sm"
+									className="h-7 px-2.5 bg-accent text-accent-foreground text-[0.72rem] font-semibold gap-1.5 border-accent hover:bg-accent/90 shadow-[0_2px_8px_-2px_rgba(252,163,17,0.3)]"
+								>
+									<Sparkles className="size-3" />
+									Create new
+									<ChevronDown className="size-3 opacity-60" />
+								</Button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="end" className="w-44">
+								<DropdownMenuItem onSelect={() => setQuickCreateTaskOpen(true)} className="gap-2">
+									<Rocket className="size-3.5" />
+									New task
+								</DropdownMenuItem>
+								<DropdownMenuItem
+									onSelect={() => {
+										const start = snapToStep(Date.now(), schedulingStepMs);
+										const end = snapToStep(start + schedulingStepMs, schedulingStepMs);
+										setEditor({
+											mode: "create",
+											panelMode: "edit",
+											title: "",
+											description: "",
+											start: toInputDateTime(start, scheduleXTimeZone),
+											end: toInputDateTime(end, scheduleXTimeZone),
+											allDay: false,
+											calendarId: defaultCreateCalendarId,
+											busyStatus: "busy",
+											visibility: "default",
+											location: "",
+											recurrenceRule: "",
+											scope: "single",
+										});
+									}}
+									className="gap-2"
+								>
+									<Sparkles className="size-3.5" />
+									New event
+								</DropdownMenuItem>
+								<DropdownMenuItem onSelect={() => setQuickCreateHabitOpen(true)} className="gap-2">
+									<Repeat2 className="size-3.5" />
+									New habit
+								</DropdownMenuItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
 
 						<Button
 							variant="outline"
@@ -3025,15 +3026,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 							</PopoverContent>
 						</Popover>
 
-						<Input
-							type="search"
-							aria-label="Search events"
-							autoComplete="off"
-							placeholder="Search events..."
-							value={searchQuery}
-							onChange={(event) => setSearchQuery(event.target.value)}
-							className="h-8 w-40 border-border bg-secondary text-foreground/70 text-[0.72rem] px-2 placeholder:text-muted-foreground"
-						/>
+						<SchedulingDiagnostics />
 						<Button
 							variant="outline"
 							size="sm"
@@ -3060,21 +3053,23 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 								value={source}
 								variant="outline"
 								size="sm"
-								className="h-7 rounded-md border border-border bg-secondary px-2 text-[0.68rem] uppercase tracking-[0.06em] text-muted-foreground data-[state=on]:bg-accent data-[state=on]:text-foreground"
+								className="h-7 rounded-md border border-border bg-secondary px-2 text-[0.68rem] uppercase tracking-[0.06em] text-muted-foreground data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:border-primary/20 gap-1.5"
 							>
+								<span className={`size-1.5 rounded-full ${sourceColorDot[source]}`} />
 								{source}
 							</ToggleGroupItem>
 						))}
 					</ToggleGroup>
-					<div className="flex items-center gap-3 text-[0.68rem]">
-						<div className="text-muted-foreground">{visibleEventCount} events loaded</div>
+					<div className="flex items-center gap-2 text-[0.66rem] text-muted-foreground/70">
+						<span className="tabular-nums">{visibleEventCount} events</span>
+						<span className="text-border">·</span>
 						<div
 							className={`flex items-center gap-1.5 ${
 								syncStatus === "error"
 									? "text-destructive"
 									: syncStatus === "syncing"
 										? "text-chart-1"
-										: "text-muted-foreground"
+										: "text-muted-foreground/70"
 							}`}
 						>
 							<span
@@ -3098,10 +3093,14 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				</div>
 			) : null}
 			{isLoading ? (
-				<div className="mx-4 mt-2 text-[0.8rem] text-muted-foreground">Loading events...</div>
+				<div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-[0.78rem] text-muted-foreground">
+					<RefreshCw className="size-3.5 shrink-0 animate-spin opacity-50" />
+					Loading events...
+				</div>
 			) : null}
 			{!isLoading && !error && visibleEventCount === 0 ? (
-				<div className="mx-4 mt-2 text-[0.8rem] text-muted-foreground">
+				<div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-[0.78rem] text-muted-foreground">
+					<RefreshCw className="size-3.5 shrink-0 opacity-50" />
 					No events loaded. Click sync to fetch from Google.
 				</div>
 			) : null}
@@ -3123,7 +3122,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 					}`}
 				>
 					<div className="flex items-center justify-between">
-						<div className="text-[0.8rem] font-semibold text-foreground">Event</div>
+						<div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Event</div>
 						<div className="flex items-center gap-2">
 							<div className="text-[0.68rem] text-muted-foreground">{monthLabel}</div>
 							{isEventSheetMode ? (
@@ -3141,7 +3140,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 
 					{editor ? (
 						<div className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-							<div className="rounded-2xl border border-border bg-card">
+							<div className="rounded-xl border border-border bg-card">
 								<div className="px-3 py-3">
 									<div className="flex items-start justify-between gap-3">
 										<div className="min-w-0 flex-1">
@@ -3700,7 +3699,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 								</div>
 
 								<div className="border-t border-border px-3 py-3">
-									<div className="mb-2 text-[0.76rem] uppercase tracking-[0.08em] text-muted-foreground">
+									<div className="mb-2 text-xs uppercase tracking-[0.14em] text-muted-foreground">
 										Description
 									</div>
 									{isDetailsMode ? (
@@ -3964,17 +3963,38 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 						</div>
 					) : (
 						<>
-							<div className="rounded-xl border border-border bg-card p-3 text-[0.76rem] text-muted-foreground">
-								Select an event to view details here.
-							</div>
-							<div className="rounded-xl border border-border bg-card p-3">
-								<div className="text-[0.66rem] uppercase tracking-[0.08em] text-muted-foreground">
-									Tips
+							<div className="rounded-xl border border-border/60 bg-card/60 p-4 text-center">
+								<CalendarDays className="mx-auto mb-2 size-6 text-muted-foreground/40" />
+								<div className="text-[0.78rem] font-medium text-muted-foreground">
+									Select an event to view details
 								</div>
-								<ul className="mt-2 space-y-1.5 text-[0.72rem] text-muted-foreground">
-									<li>Single click opens details</li>
-									<li>Double click opens edit mode</li>
-									<li>Drag on grid to create events</li>
+								<div className="mt-0.5 text-[0.66rem] text-muted-foreground/60">
+									Click any event on the calendar
+								</div>
+							</div>
+							<div className="rounded-xl border border-border/60 bg-card/60 p-4">
+								<div className="text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground/70 font-medium">
+									Shortcuts
+								</div>
+								<ul className="mt-2.5 space-y-2 text-[0.72rem] text-muted-foreground">
+									<li className="flex items-center gap-2">
+										<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.58rem] font-semibold text-muted-foreground/70">
+											1×
+										</span>
+										Open event details
+									</li>
+									<li className="flex items-center gap-2">
+										<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.58rem] font-semibold text-muted-foreground/70">
+											2×
+										</span>
+										Edit event
+									</li>
+									<li className="flex items-center gap-2">
+										<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.55rem] font-semibold text-muted-foreground/70">
+											⇕
+										</span>
+										Drag to create event
+									</li>
 								</ul>
 							</div>
 						</>
@@ -4034,6 +4054,8 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
+			<QuickCreateTaskDialog open={quickCreateTaskOpen} onOpenChange={setQuickCreateTaskOpen} />
+			<QuickCreateHabitDialog open={quickCreateHabitOpen} onOpenChange={setQuickCreateHabitOpen} />
 		</div>
 	);
 }

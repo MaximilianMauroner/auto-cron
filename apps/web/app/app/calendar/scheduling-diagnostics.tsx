@@ -9,21 +9,24 @@ import {
 	SheetTitle,
 	SheetTrigger,
 } from "@/components/ui/sheet";
+import { useUserPreferences } from "@/components/user-preferences-context";
 import { useActionWithStatus, useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import { AlertTriangle, Gauge, PlayCircle } from "lucide-react";
 import { api } from "../../../../../convex/_generated/api";
 
-const formatDateTime = (value: number | undefined) => {
+const formatDateTime = (value: number | undefined, hour12: boolean) => {
 	if (!value) return "-";
 	return new Intl.DateTimeFormat(undefined, {
 		month: "short",
 		day: "numeric",
 		hour: "numeric",
 		minute: "2-digit",
+		hour12,
 	}).format(new Date(value));
 };
 
 export function SchedulingDiagnostics() {
+	const { hour12 } = useUserPreferences();
 	const latestRunQuery = useAuthenticatedQueryWithStatus(api.scheduling.queries.getLatestRun, {});
 	const googleSyncHealthQuery = useAuthenticatedQueryWithStatus(
 		api.calendar.queries.getGoogleSyncHealth,
@@ -96,7 +99,7 @@ export function SchedulingDiagnostics() {
 								Last Started
 							</span>
 							<span className="font-semibold text-foreground">
-								{formatDateTime(latestRun?.startedAt)}
+								{formatDateTime(latestRun?.startedAt, hour12)}
 							</span>
 						</div>
 						<div className="grid grid-cols-2 gap-3">
@@ -125,7 +128,7 @@ export function SchedulingDiagnostics() {
 									: "Not connected"}
 							</p>
 							<p className="text-xs text-muted-foreground">
-								Last webhook: {formatDateTime(googleSyncHealth?.lastWebhookAt)}
+								Last webhook: {formatDateTime(googleSyncHealth?.lastWebhookAt, hour12)}
 							</p>
 							<p className="text-xs text-muted-foreground">
 								Last sync: {googleSyncHealth?.latestRunStatus ?? "-"}

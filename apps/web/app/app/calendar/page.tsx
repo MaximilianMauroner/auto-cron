@@ -3,7 +3,6 @@ import { withAuth } from "@workos-inc/authkit-nextjs";
 import dynamic from "next/dynamic";
 import { cookies } from "next/headers";
 import { api } from "../../../../../convex/_generated/api";
-import { SchedulingDiagnostics } from "./scheduling-diagnostics";
 
 const CalendarClient = dynamic(
 	() => import("./calendar-client").then((module) => module.CalendarClient),
@@ -36,13 +35,8 @@ export default async function CalendarPage() {
 	}
 
 	return (
-		<div className="relative h-full min-h-0">
+		<div className="h-full min-h-0">
 			<CalendarClient initialErrorMessage={backfillFailureMessage} />
-			<div className="pointer-events-none absolute right-3 bottom-3 z-20 sm:right-4 sm:bottom-4">
-				<div className="pointer-events-auto">
-					<SchedulingDiagnostics />
-				</div>
-			</div>
 		</div>
 	);
 }
