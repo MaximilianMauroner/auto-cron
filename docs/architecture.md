@@ -118,11 +118,11 @@ Lookup indexes are optimized for per-user status/timeline queries:
 - `by_userId_status_startedAt`
 - `by_userId_startedAt`
 
-## Compatibility normalization
+## Scheduling data normalization
 
-For existing user data, internal migration normalizes legacy values idempotently:
+Scheduling migrations are idempotent and focus on canonical values:
 
-- task mode: `backfacing -> packed`, `parallel -> balanced`
+- task mode is canonical (`fastest | balanced | packed`)
 - habits: derive `recurrenceRule` from legacy frequency fields when missing
 - habits: default `recoveryPolicy` to `skip` when missing
 - habits: default missing priority to `medium`

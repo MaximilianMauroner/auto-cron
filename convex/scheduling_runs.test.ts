@@ -198,7 +198,7 @@ describe("scheduling run queueing", () => {
 			expect(forced.runId).not.toBe(first.runId);
 		});
 
-		test("debounce window expiry allows a new pending run", async () => {
+		test("pending dedupe still applies after debounce window expiry", async () => {
 			const testConvex = createTestConvex();
 			const userId = "user-pending-singleton";
 			const base = Date.UTC(2026, 0, 1, 0, 0, 0, 0);
@@ -290,7 +290,40 @@ describe("scheduling run queueing", () => {
 			expect(userA.runId).not.toBe(userB.runId);
 		});
 
-		test("enqueues a follow-up run when a previous run is running", async () => {
+		test("getLatestRun deterministically returns newest run when startedAt ties", async () => {
+			const testConvex = createTestConvex();
+			const userId = "user-latest-run-tie";
+			const user = testConvex.withIdentity({ subject: userId });
+			const base = Date.UTC(2026, 0, 1, 0, 0, 0, 0);
+
+			vi.useFakeTimers();
+			try {
+				vi.setSystemTime(base);
+				const first = await testConvex.mutation(
+					internal.scheduling.mutations.enqueueSchedulingRun,
+					{
+						userId,
+						triggeredBy: "task_change",
+					},
+				);
+				const second = await testConvex.mutation(
+					internal.scheduling.mutations.enqueueSchedulingRun,
+					{
+						userId,
+						triggeredBy: "manual",
+						force: true,
+					},
+				);
+
+				const latest = await user.query(api.scheduling.queries.getLatestRun, {});
+				expect(latest?._id).toBe(second.runId);
+				expect(latest?._id).not.toBe(first.runId);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		test("dedupes repeated trigger while previous run is running inside debounce window", async () => {
 			const testConvex = createTestConvex();
 			const userId = "user-running-followup";
 
@@ -304,11 +337,83 @@ describe("scheduling run queueing", () => {
 
 			const second = await testConvex.mutation(internal.scheduling.mutations.enqueueSchedulingRun, {
 				userId,
-				triggeredBy: "calendar_change",
+				triggeredBy: "task_change",
 			});
 
-			expect(second.enqueued).toBe(true);
-			expect(second.runId).not.toBe(first.runId);
+			expect(second.enqueued).toBe(false);
+			expect(second.runId).toBe(first.runId);
+		});
+
+		test("enqueues repeated trigger after debounce window when previous run is running", async () => {
+			const testConvex = createTestConvex();
+			const userId = "user-running-followup-after-window";
+			const base = Date.UTC(2026, 0, 1, 0, 0, 0, 0);
+
+			vi.useFakeTimers();
+			try {
+				vi.setSystemTime(base);
+				const first = await testConvex.mutation(
+					internal.scheduling.mutations.enqueueSchedulingRun,
+					{
+						userId,
+						triggeredBy: "task_change",
+					},
+				);
+				await testConvex.mutation(internal.scheduling.mutations.markRunRunning, {
+					runId: first.runId,
+				});
+				vi.setSystemTime(base + DEBOUNCE_WINDOW_MS + 1);
+
+				const second = await testConvex.mutation(
+					internal.scheduling.mutations.enqueueSchedulingRun,
+					{
+						userId,
+						triggeredBy: "task_change",
+					},
+				);
+
+				expect(second.enqueued).toBe(true);
+				expect(second.runId).not.toBe(first.runId);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		test("failed runs do not debounce follow-up enqueue", async () => {
+			const testConvex = createTestConvex();
+			const userId = "user-failed-followup-window";
+			const base = Date.UTC(2026, 0, 1, 0, 0, 0, 0);
+
+			vi.useFakeTimers();
+			try {
+				vi.setSystemTime(base);
+				const first = await testConvex.mutation(
+					internal.scheduling.mutations.enqueueSchedulingRun,
+					{
+						userId,
+						triggeredBy: "task_change",
+					},
+				);
+				await testConvex.mutation(internal.scheduling.mutations.failRun, {
+					runId: first.runId,
+					error: "test-fail",
+					reasonCode: "TEST_FAILED",
+				});
+				vi.setSystemTime(base + DEBOUNCE_WINDOW_MS - 1);
+
+				const second = await testConvex.mutation(
+					internal.scheduling.mutations.enqueueSchedulingRun,
+					{
+						userId,
+						triggeredBy: "task_change",
+					},
+				);
+
+				expect(second.enqueued).toBe(true);
+				expect(second.runId).not.toBe(first.runId);
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 	});
 
@@ -666,7 +771,7 @@ describe("scheduling run queueing", () => {
 			const user = testConvex.withIdentity({ subject: userId });
 
 			const now = Date.now();
-			const taskId = await seedScheduledTaskBlock(testConvex, user, userId, {
+			await seedScheduledTaskBlock(testConvex, user, userId, {
 				taskRequestId: "overlap-task-create",
 				taskTitle: "Overlap task",
 				start: now + 15 * 60 * 1000,

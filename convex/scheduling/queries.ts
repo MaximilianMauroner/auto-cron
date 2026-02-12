@@ -89,8 +89,6 @@ const runSummaryValidator = v.union(
 
 const sanitizeTaskMode = (mode: string | undefined): "fastest" | "balanced" | "packed" => {
 	if (mode === "fastest" || mode === "balanced" || mode === "packed") return mode;
-	if (mode === "backfacing") return "packed";
-	if (mode === "parallel") return "balanced";
 	return "fastest";
 };
 
@@ -370,12 +368,24 @@ export const getLatestRun = query({
 	args: {},
 	returns: runSummaryValidator,
 	handler: withQueryAuth(async (ctx) => {
-		const runs = await ctx.db
+		const latestByStartedAt = (
+			await ctx.db
+				.query("schedulingRuns")
+				.withIndex("by_userId_startedAt", (q) => q.eq("userId", ctx.userId))
+				.order("desc")
+				.take(1)
+		)[0];
+		if (!latestByStartedAt) return null;
+		const tiedRuns = await ctx.db
 			.query("schedulingRuns")
-			.withIndex("by_userId_startedAt", (q) => q.eq("userId", ctx.userId))
-			.order("desc")
-			.take(1);
-		const latest = runs[0];
+			.withIndex("by_userId_startedAt", (q) =>
+				q.eq("userId", ctx.userId).eq("startedAt", latestByStartedAt.startedAt),
+			)
+			.collect();
+		const latest = tiedRuns.reduce<(typeof tiedRuns)[number] | undefined>((current, candidate) => {
+			if (!current) return candidate;
+			return isRunNewer(candidate, current) ? candidate : current;
+		}, undefined);
 		if (!latest) return null;
 		return {
 			_id: latest._id,

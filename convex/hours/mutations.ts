@@ -309,8 +309,6 @@ const sanitizeTaskSchedulingMode = (
 	if (mode === "fastest" || mode === "balanced" || mode === "packed") {
 		return mode;
 	}
-	if (mode === "backfacing") return "packed";
-	if (mode === "parallel") return "balanced";
 	return "fastest";
 };
 

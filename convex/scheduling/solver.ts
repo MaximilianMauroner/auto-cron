@@ -3,7 +3,7 @@ import {
 	buildTaskChunkPlan,
 	splitTaskIntoChunkSizes,
 } from "./candidates";
-import { DAY_SLOTS, HORIZON_WEEKS_DEFAULT, SLOT_MS, priorityWeight } from "./constants";
+import { HORIZON_WEEKS_DEFAULT, SLOT_MS, priorityWeight } from "./constants";
 import { estimateCapacitySlots, lateReasonFromCapacity } from "./explain";
 import { findPlacementSlot } from "./model";
 import {
@@ -80,6 +80,7 @@ type TaskScheduleResult = {
 	requiredSlotsByTaskId: Map<string, number>;
 	availabilityByTaskId: Map<string, boolean[]>;
 };
+type AvailabilityMaskCache = Map<string, boolean[]>;
 
 const sortTasksForScheduling = (tasks: SchedulingTaskInput[]) => {
 	return [...tasks].sort((left, right) => {
@@ -94,22 +95,53 @@ const sortTasksForScheduling = (tasks: SchedulingTaskInput[]) => {
 	});
 };
 
-const taskAvailabilityMask = (
+const resolveWindowsForHoursSet = (
 	input: SchedulingInput,
-	task: SchedulingTaskInput,
+	hoursSetId: SchedulingTaskInput["hoursSetId"] | SchedulingHabitInput["hoursSetId"],
+) => {
+	if (hoursSetId) {
+		const hoursSetKey = String(hoursSetId);
+		const windows = input.hoursBySetId[hoursSetKey];
+		if (windows) {
+			return {
+				cacheKey: `set:${hoursSetKey}`,
+				windows,
+			};
+		}
+	}
+	if (input.defaultHoursSetId) {
+		const defaultHoursSetKey = String(input.defaultHoursSetId);
+		const windows = input.hoursBySetId[defaultHoursSetKey];
+		if (windows) {
+			return {
+				cacheKey: `set:${defaultHoursSetKey}`,
+				windows,
+			};
+		}
+	}
+	return {
+		cacheKey: "set:anytime",
+		windows: anytimeWindows,
+	};
+};
+
+const availabilityMaskForHoursSet = (
+	input: SchedulingInput,
+	hoursSetId: SchedulingTaskInput["hoursSetId"] | SchedulingHabitInput["hoursSetId"],
 	horizonStart: number,
 	slotCount: number,
 	busyMask: boolean[],
+	cache: AvailabilityMaskCache,
 ) => {
-	const windows =
-		(task.hoursSetId ? input.hoursBySetId[String(task.hoursSetId)] : undefined) ??
-		(input.defaultHoursSetId ? input.hoursBySetId[String(input.defaultHoursSetId)] : undefined) ??
-		anytimeWindows;
+	const { cacheKey, windows } = resolveWindowsForHoursSet(input, hoursSetId);
+	const cached = cache.get(cacheKey);
+	if (cached) return cached;
 	const allowed = buildAllowedMask(horizonStart, slotCount, input.timezone, windows);
 	const availability = new Array<boolean>(slotCount).fill(false);
 	for (let slot = 0; slot < slotCount; slot += 1) {
 		availability[slot] = (allowed[slot] ?? false) && !(busyMask[slot] ?? false);
 	}
+	cache.set(cacheKey, availability);
 	return availability;
 };
 
@@ -121,6 +153,7 @@ const scheduleTasks = (
 	busyMask: boolean[],
 	downtimeSlots: number,
 	enforceDue: boolean,
+	availabilityCache: AvailabilityMaskCache,
 ) => {
 	const tasks = sortTasksForScheduling(input.tasks);
 	const occupancyMask = [...busyMask];
@@ -148,7 +181,14 @@ const scheduleTasks = (
 				availabilityByTaskId,
 			} as TaskScheduleResult;
 		}
-		const availability = taskAvailabilityMask(input, task, horizonStart, slotCount, busyMask);
+		const availability = availabilityMaskForHoursSet(
+			input,
+			task.hoursSetId,
+			horizonStart,
+			slotCount,
+			busyMask,
+			availabilityCache,
+		);
 		availabilityByTaskId.set(String(task.id), availability);
 		const hasLocation = Boolean(task.location?.trim());
 		const restSlots = toDowntimeSlots(task.restMinutes);
@@ -274,6 +314,7 @@ const scheduleHabits = (
 	busyMask: boolean[],
 	taskOccupancyMask: boolean[],
 	downtimeSlots: number,
+	availabilityCache: AvailabilityMaskCache,
 ) => {
 	const blocks: ScheduledBlock[] = [];
 	const shortfalls: HabitShortfallDiagnostic[] = [];
@@ -293,15 +334,14 @@ const scheduleHabits = (
 	const existingStartBySource = buildExistingStartSlotMap(input, horizonStart);
 
 	for (const habit of habits) {
-		const windows =
-			(habit.hoursSetId ? input.hoursBySetId[String(habit.hoursSetId)] : undefined) ??
-			(input.defaultHoursSetId ? input.hoursBySetId[String(input.defaultHoursSetId)] : undefined) ??
-			anytimeWindows;
-		const allowed = buildAllowedMask(horizonStart, slotCount, input.timezone, windows);
-		const availability = new Array<boolean>(slotCount).fill(false);
-		for (let slot = 0; slot < slotCount; slot += 1) {
-			availability[slot] = (allowed[slot] ?? false) && !(busyMask[slot] ?? false);
-		}
+		const availability = availabilityMaskForHoursSet(
+			input,
+			habit.hoursSetId,
+			horizonStart,
+			slotCount,
+			busyMask,
+			availabilityCache,
+		);
 
 		const recurrenceRule = habit.recurrenceRule || recurrenceFromLegacyFrequency(undefined);
 		let parsedRule: ParsedRRule;
@@ -541,6 +581,7 @@ export const solveSchedule = (input: SchedulingInput): SolverResult => {
 	const slotCount = slotCountBetween(horizonStart, horizonEnd);
 	const busyMask = buildBusyMask(horizonStart, horizonEnd, slotCount, input.busy);
 	const downtimeSlots = toDowntimeSlots(input.downtimeMinutes);
+	const availabilityCache: AvailabilityMaskCache = new Map();
 
 	const onTimeCheck = scheduleTasks(
 		input,
@@ -550,6 +591,7 @@ export const solveSchedule = (input: SchedulingInput): SolverResult => {
 		busyMask,
 		downtimeSlots,
 		true,
+		availabilityCache,
 	);
 	const feasibleOnTime = onTimeCheck.success;
 
@@ -561,6 +603,7 @@ export const solveSchedule = (input: SchedulingInput): SolverResult => {
 		busyMask,
 		downtimeSlots,
 		false,
+		availabilityCache,
 	);
 	if (!taskPass.success) {
 		return {
@@ -585,6 +628,7 @@ export const solveSchedule = (input: SchedulingInput): SolverResult => {
 		busyMask,
 		taskPass.occupancyMask,
 		downtimeSlots,
+		availabilityCache,
 	);
 
 	const existingStartBySource = buildExistingStartSlotMap(input, horizonStart);

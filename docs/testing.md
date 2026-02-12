@@ -82,9 +82,9 @@ Run this checklist when touching `convex/scheduling/*`, trigger wiring, or diagn
 1. `scheduling.actions.runNow` creates exactly one run row and transitions `pending -> running -> completed|failed`.
 2. `scheduling.queries.getLatestRun` returns diagnostics used by Calendar panel.
 3. Hard infeasible runs keep existing scheduler-generated events unchanged.
-4. Legacy mode values (`backfacing`, `parallel`) normalize to canonical enums.
+4. Task scheduling mode persists and reads canonical enum values (`fastest`, `balanced`, `packed`).
 5. Habit records missing `recurrenceRule`/`recoveryPolicy` are backfilled idempotently.
-6. Trigger debounce prevents duplicate pending/running runs inside the debounce window.
+6. Trigger debounce prevents duplicate pending enqueues and repeated same-trigger enqueues while a run is running inside the debounce window.
 7. Completed scheduler runs with Google connected trigger post-run block sync (create/update/delete) only after solve/apply.
 8. Post-run sync preserves `calendarEvents.sourceId` for task/habit blocks while updating `googleEventId`.
 

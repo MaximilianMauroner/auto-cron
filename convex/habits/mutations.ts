@@ -273,7 +273,7 @@ export const updateHabit = mutation({
 		for (const [key, value] of Object.entries(args.patch)) {
 			nextPatch[key] = value === null ? undefined : value;
 		}
-		if (args.patch.recurrenceRule === undefined && args.patch.frequency) {
+		if (nextPatch.recurrenceRule === undefined && args.patch.frequency) {
 			nextPatch.recurrenceRule = recurrenceFromLegacyFrequency(args.patch.frequency);
 		}
 		if (args.patch.hoursSetId !== undefined && args.patch.hoursSetId !== null) {

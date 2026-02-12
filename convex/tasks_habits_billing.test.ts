@@ -311,5 +311,18 @@ describe("tasks/habits billing checks", () => {
 		expect(habit?.endDate).toBeUndefined();
 		expect(habit?.customReminderMinutes).toBeUndefined();
 		expect(habit?.preferredCalendarId).toBeUndefined();
+
+		await user.mutation(api.habits.mutations.updateHabit, {
+			id: habitId,
+			patch: {
+				frequency: "monthly",
+				recurrenceRule: null,
+			},
+		});
+		const habitWithDerivedRecurrence = (await user.query(api.habits.queries.listHabits, {})).find(
+			(item) => item._id === habitId,
+		);
+		expect(habitWithDerivedRecurrence?.frequency).toBe("monthly");
+		expect(habitWithDerivedRecurrence?.recurrenceRule).toBe("RRULE:FREQ=MONTHLY;INTERVAL=1");
 	});
 });
