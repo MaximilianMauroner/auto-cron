@@ -9,6 +9,11 @@ import { ConvexClientProvider } from "./ConvexClientProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
+	metadataBase: new URL(
+		process.env.VERCEL_PROJECT_PRODUCTION_URL
+			? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+			: "http://localhost:3000",
+	),
 	title: "Auto Cron",
 	description: "Intelligent auto-scheduling for tasks, habits, and calendar events",
 	icons: {
