@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { googleCalendarProvider } from "./google";
+import { googleCalendarProvider } from "../../../../convex/providers/calendar/google";
 
 const jsonResponse = (body: unknown, status = 200) =>
 	new Response(JSON.stringify(body), {

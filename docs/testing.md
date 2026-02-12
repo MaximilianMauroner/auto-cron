@@ -63,7 +63,7 @@ bun run test:convex:run
   - hours window validation (overlap/range/granularity)
   - default fallback reassignment when deleting non-default hours sets
   - task scheduling mode default + per-task override behavior (`fastest|balanced|packed`)
-  - scheduler solver invariants in `convex/scheduling/solver.test.ts`:
+  - scheduler solver invariants in `tests/convex/scheduling/solver.test.ts`:
     - task coverage and chunk placement
     - account downtime buffer between adjacent scheduled blocks
     - pass-A on-time infeasibility with pass-B late schedule
@@ -72,8 +72,8 @@ bun run test:convex:run
     - RRULE parsing support
     - cross-midnight slot/window handling
   - Google push sync coverage in:
-    - `convex/providers/calendar/google.test.ts` (`events.watch`, `channels.stop`)
-    - `convex/calendar_watch.test.ts` (webhook validation, queue dedupe, sync-handshake behavior)
+    - `tests/convex/providers/calendar/google.test.ts` (`events.watch`, `channels.stop`)
+    - `tests/convex/calendar_watch.test.ts` (webhook validation, queue dedupe, sync-handshake behavior)
 
 ## Scheduler regression checklist
 

@@ -1,12 +1,8 @@
-import { convexTest } from "convex-test";
 import { makeFunctionReference } from "convex/server";
 import { describe, expect, test } from "vitest";
-import { api } from "./_generated/api";
-import { requireAuth } from "./auth";
-import schema from "./schema";
-
-const modules = import.meta.glob(["./**/*.ts", "./**/*.js", "!./**/*.test.ts", "!./**/*.d.ts"]);
-const createTestConvex = () => convexTest(schema, modules);
+import { api } from "../../convex/_generated/api";
+import { requireAuth } from "../../convex/auth";
+import { createTestConvex } from "./_setup";
 
 const extractErrorCode = (error: unknown): string | undefined => {
 	if (!error || typeof error !== "object") return undefined;

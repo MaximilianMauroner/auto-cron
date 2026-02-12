@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
-import type { Id } from "../_generated/dataModel";
-import { parseSupportedRRule } from "./rrule";
-import { solveSchedule } from "./solver";
-import { buildAllowedMask, zonedPartsForTimestamp } from "./time";
-import type { SchedulingInput } from "./types";
+import type { Id } from "../../../convex/_generated/dataModel";
+import { parseSupportedRRule } from "../../../convex/scheduling/rrule";
+import { solveSchedule } from "../../../convex/scheduling/solver";
+import { buildAllowedMask, zonedPartsForTimestamp } from "../../../convex/scheduling/time";
+import type { SchedulingInput } from "../../../convex/scheduling/types";
 
 const anytimeWindows = [0, 1, 2, 3, 4, 5, 6].map((day) => ({
 	day: day as 0 | 1 | 2 | 3 | 4 | 5 | 6,

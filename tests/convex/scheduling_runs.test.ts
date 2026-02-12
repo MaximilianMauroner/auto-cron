@@ -1,12 +1,8 @@
-import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { api, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-import { DEBOUNCE_WINDOW_MS } from "./scheduling/constants";
-import schema from "./schema";
-
-const modules = import.meta.glob(["./**/*.ts", "./**/*.js", "!./**/*.test.ts", "!./**/*.d.ts"]);
-const createTestConvex = () => convexTest(schema, modules);
+import { api, internal } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
+import { DEBOUNCE_WINDOW_MS } from "../../convex/scheduling/constants";
+import { createTestConvex } from "./_setup";
 
 type ErrorWithData = {
 	data?: unknown;

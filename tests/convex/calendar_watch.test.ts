@@ -1,11 +1,7 @@
 import { createHash } from "node:crypto";
-import { convexTest } from "convex-test";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { api, internal } from "./_generated/api";
-import schema from "./schema";
-
-const modules = import.meta.glob(["./**/*.ts", "./**/*.js", "!./**/*.test.ts", "!./**/*.d.ts"]);
-const createTestConvex = () => convexTest(schema, modules);
+import { api, internal } from "../../convex/_generated/api";
+import { createTestConvex } from "./_setup";
 
 const hashToken = (token: string, secret: string) =>
 	createHash("sha256").update(`${secret}:${token}`).digest("hex");
