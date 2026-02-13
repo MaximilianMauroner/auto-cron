@@ -1,12 +1,18 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { withAuth } from "@workos-inc/authkit-nextjs";
+import { redirect } from "next/navigation";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-	// TODO: Add auth guard — redirect to /sign-in if not authenticated
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+	const { user } = await withAuth();
+	if (!user) {
+		redirect("/sign-in");
+	}
+
 	return (
-		<SidebarProvider>
+		<SidebarProvider className="h-screen! min-h-0!">
 			<AppSidebar />
-			<main className="flex-1 overflow-auto p-6">{children}</main>
+			<main className="flex-1 min-h-0 overflow-hidden bg-background">{children}</main>
 		</SidebarProvider>
 	);
 }

@@ -1,12 +1,7 @@
 import { httpRouter } from "convex/server";
+import { authKit } from "./auth";
 
 const http = httpRouter();
-
-// TODO: Add WorkOS webhook callback route
-// http.route({
-//   path: "/api/webhooks/workos",
-//   method: "POST",
-//   handler: workosWebhookHandler,
-// });
+authKit.registerRoutes(http);
 
 export default http;

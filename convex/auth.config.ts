@@ -1,11 +1,5 @@
-// WorkOS AuthKit JWT validation config for Convex
-// TODO: Configure once WorkOS project is set up
+import { authKit } from "./auth";
+
 export default {
-	providers: [
-		{
-			// WorkOS AuthKit as the identity provider
-			domain: "https://api.workos.com/",
-			applicationID: "convex",
-		},
-	],
+	providers: authKit.getAuthConfigProviders(),
 };

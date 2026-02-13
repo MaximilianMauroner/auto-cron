@@ -1,17 +1,25 @@
+import { serverEnv } from "@/env/server";
+import { authkit } from "@workos-inc/authkit-nextjs";
 import { autumnHandler } from "autumn-js/next";
+import type { NextRequest } from "next/server";
 
-// TODO: Replace with actual auth once WorkOS is configured
-export const { GET, POST } = autumnHandler({
+const handlers = autumnHandler({
+	secretKey: serverEnv.AUTUMN_SECRET_KEY,
 	suppressLogs: true,
-	identify: async (_request) => {
-		// TODO: Get user from WorkOS AuthKit session
-		// const session = await getSession(request.headers);
+	identify: async (request) => {
+		const { session } = await authkit(request as NextRequest);
+		const user = session.user;
+		if (!user) return null;
+
+		const fullName = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
 		return {
-			customerId: "anonymous",
+			customerId: user.id,
 			customerData: {
-				name: "Anonymous User",
-				email: "",
+				name: fullName || user.email,
+				email: user.email,
 			},
 		};
 	},
 });
+
+export const { GET, POST } = handlers;

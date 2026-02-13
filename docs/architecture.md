@@ -3,11 +3,15 @@
 ## Features
 
 - Task and habit planning with explicit priorities and durations
+- Reusable per-user hours sets (`Work`, `Anytime (24/7)`, and custom sets)
+- Task scheduling mode intent (`fastest`, `backfacing`, `parallel`) with global default + per-task override
+- Tasks and habits dashboard UIs with create/edit/delete/toggle flows
 - Auto-scheduling into available calendar slots
 - Scheduling run tracking for observability and debugging
 - Calendar event model with multi-source support (`manual`, `google`, `task`, `habit`)
-- Billing integration via Autumn and plan-based feature control (in progress)
-- WorkOS-based authentication and user identity flow (in progress)
+- Billing integration via Autumn with create-only metering for `tasks` and `habits`
+- Scheduling remains unlimited across all plans (no scheduling metering)
+- WorkOS-based authentication and user identity flow
 
 ## Monorepo Structure
 
@@ -42,19 +46,33 @@ Defined in `convex/schema.ts`:
 - `userSettings`
 - `tasks`
 - `habits`
+- `hoursSets`
 - `calendarEvents`
 - `schedulingRuns`
+- `billingReservations`
+- `billingLocks`
 
 ## Data Flow (target state)
 
 1. User signs in via WorkOS.
 2. User creates/updates tasks and habits.
 3. Scheduling pipeline computes available slots from:
-   - user working hours/settings
+   - selected hours sets for tasks/habits
    - existing calendar events
    - deadlines and priority heuristics
 4. Scheduler writes derived `calendarEvents` and logs run metadata in `schedulingRuns`.
-5. Google Calendar sync keeps external calendar state aligned (planned).
+5. Google Calendar sync keeps external calendar state aligned.
+
+## Billing Architecture (Tasks/Habits)
+
+- Only `createTask` and `createHabit` are billable.
+- The create actions orchestrate a reservation workflow in `convex/billing.ts`:
+  1. Acquire per-user/per-feature lock (`billingLocks`).
+  2. Run Autumn `check(featureId)` for availability.
+  3. Insert entity via internal mutation + persist reservation (`billingReservations`).
+  4. Track usage once with idempotency key.
+  5. Commit reservation; if track fails, compensate by deleting inserted entity and mark rollback state.
+- Update/delete/reorder/toggle paths are intentionally ungated (auth + ownership checks only).
 
 ## Architecture principle
 

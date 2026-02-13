@@ -11,6 +11,15 @@
 - Use explicit, typed return paths for expected failures.
 - Keep external provider failures isolated and observable.
 - Avoid silent fallbacks for auth, billing, and scheduling logic.
+- For auth failures in Convex functions, throw structured `ConvexError` payloads with stable codes (for example `UNAUTHORIZED`) instead of generic `Error` strings.
+
+## Authentication boundaries
+
+- Public Convex functions must enforce auth by default using wrapper helpers from `convex/auth.ts`:
+  - `withQueryAuth`
+  - `withMutationAuth`
+  - `withActionAuth`
+- Prefer internal-only Convex functions for backend sync pipelines and cross-function orchestration. Do not expose sync-upsert internals as public API unless the web/mobile client directly needs them.
 
 ## Schema-first changes
 

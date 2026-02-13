@@ -47,24 +47,14 @@ Use skills when they clearly match the task. Prefer the minimum set needed.
   - Reflect affected shared types in `packages/types`
   - Then update queries/mutations/UI.
 
-## Current implementation snapshot
+## Versioning policy
 
-- Convex schema exists for:
-  - `userSettings`
-  - `tasks`
-  - `habits`
-  - `calendarEvents`
-  - `schedulingRuns`
-- Autumn billing is wired at config level:
-  - `convex/convex.config.ts`
-  - `convex/autumn.ts`
-  - `autumn.config.ts`
-  - `apps/web/app/api/autumn/[...all]/route.ts` (via roadmap context)
-- WorkOS auth integration is scaffolded but still TODO:
-  - `convex/auth.config.ts`
-  - `convex/http.ts` webhook route TODO
+- Until the project version is greater than `1.0.0`, breaking changes are acceptable by default.
+- Agents should not block plans on backward compatibility during this phase unless explicitly requested.
+- Once version exceeds `1.0.0`, default to backward-compatible changes and explicit migration planning.
 
-## Roadmap-aware priorities (from `todo.md`)
+
+## Roadmap-aware priorities (from `docs/todo.md`)
 
 Completed foundations:
 - Monorepo setup, Convex base, shared packages, Biome, Tailwind v4

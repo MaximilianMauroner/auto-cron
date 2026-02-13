@@ -19,6 +19,40 @@ Key principles:
 
 ---
 
+## Product UI: shadcn-first, dataset-driven
+
+The application UI (dashboard, calendar, tasks, habits, settings) must have a unified design language that is **based on the dataset** (tasks/habits/calendar events) and implemented primarily through **shadcn/ui** primitives.
+
+### shadcn/ui usage rules
+
+- Prefer components from `apps/web/components/ui/*` for all UI primitives (buttons, dialogs, sheets, forms, popovers, badges, tables, toasts).
+- Prefer semantic Tailwind tokens (`bg-background`, `text-foreground`, `border-border`, `text-muted-foreground`) over hard-coded colors.
+- Do not introduce new ad-hoc hex colors, shadows, or spacing scales for the product UI. If a new visual token is necessary, add it at the theme/token level instead.
+
+### Dataset-driven visual language
+
+Consistency comes from a single mapping layer from domain values to presentation:
+
+- **Calendar event `source`**: `google` | `manual` | `task` | `habit`
+- **Task `priority`**: `low` | `medium` | `high` | `critical` | `blocker`
+- **Task `status`**: `backlog` | `queued` | `scheduled` | `in_progress` | `done`
+- **Habit `category`** and `frequency`
+
+Guidelines:
+
+- Represent categorical fields with `Badge` (and, when space is tight, icon + tooltip).
+- Use the same labels, ordering, and badge variants anywhere the value appears (calendar event chips, lists, details panels, filters, and analytics).
+- Keep these mappings centralized (single source of truth) so UI stays consistent across pages and components.
+
+Recommended default presentation (keep it consistent across the app):
+
+- `source` (calendar): show as a small badge/chip in event details and filters; optionally add a subtle left border or dot indicator.
+- `priority` (tasks): show as a badge; ensure ordering matches severity from low → blocker.
+- `status` (tasks): show as a badge/chip with short labels; avoid long sentences in dense lists.
+- `frequency` (habits): show as a concise badge (e.g. “Daily”, “Weekly”).
+
+---
+
 ## Color Palette
 
 | Token | Hex | Usage |

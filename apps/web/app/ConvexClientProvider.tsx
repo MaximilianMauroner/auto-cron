@@ -1,20 +1,51 @@
 "use client";
 
-import { ConvexProvider, ConvexReactClient } from "convex/react";
-import { type ReactNode, useMemo } from "react";
+import { AuthKitProvider, useAccessToken, useAuth } from "@workos-inc/authkit-nextjs/components";
+import { ConvexQueryCacheProvider } from "convex-helpers/react/cache/provider";
+import { ConvexProviderWithAuth, ConvexReactClient } from "convex/react";
+import { type ReactNode, useCallback, useMemo } from "react";
 
-export function ConvexClientProvider({ children }: { children: ReactNode }) {
+const useWorkOSAuthForConvex = () => {
+	const { user, loading } = useAuth();
+	const { getAccessToken, refresh } = useAccessToken();
+
+	const fetchAccessToken = useCallback(
+		async ({ forceRefreshToken }: { forceRefreshToken: boolean }) => {
+			const token = forceRefreshToken ? await refresh() : await getAccessToken();
+			return token ?? null;
+		},
+		[getAccessToken, refresh],
+	);
+
+	return {
+		isLoading: loading,
+		isAuthenticated: Boolean(user),
+		fetchAccessToken,
+	};
+};
+
+export function ConvexClientProvider({
+	children,
+	convexUrl,
+}: {
+	children: ReactNode;
+	convexUrl?: string;
+}) {
 	const convex = useMemo(() => {
-		const url = process.env.NEXT_PUBLIC_CONVEX_URL;
+		const url = convexUrl;
 		if (!url) return null;
 		return new ConvexReactClient(url);
-	}, []);
+	}, [convexUrl]);
 
 	if (!convex) {
-		// Render without Convex during build or when env var is missing
-		return <>{children}</>;
+		return <AuthKitProvider>{children}</AuthKitProvider>;
 	}
 
-	// TODO: Replace with ConvexProviderWithAuthKit once WorkOS is configured
-	return <ConvexProvider client={convex}>{children}</ConvexProvider>;
+	return (
+		<AuthKitProvider>
+			<ConvexProviderWithAuth client={convex} useAuth={useWorkOSAuthForConvex}>
+				<ConvexQueryCacheProvider>{children}</ConvexQueryCacheProvider>
+			</ConvexProviderWithAuth>
+		</AuthKitProvider>
+	);
 }

@@ -1,4 +1,4 @@
-import { feature, featureItem, priceItem, product } from "autumn-js/config";
+import { feature, featureItem, priceItem, product } from "atmn";
 
 // --- Features ---
 
@@ -11,12 +11,6 @@ export const tasks = feature({
 export const habits = feature({
 	id: "habits",
 	name: "Habits",
-	type: "single_use",
-});
-
-export const schedulingRuns = feature({
-	id: "scheduling_runs",
-	name: "Auto-scheduling runs",
 	type: "single_use",
 });
 
@@ -46,11 +40,6 @@ export const basic = product({
 			included_usage: 5,
 			interval: "month",
 		}),
-		featureItem({
-			feature_id: schedulingRuns.id,
-			included_usage: 100,
-			interval: "month",
-		}),
 	],
 });
 
@@ -59,7 +48,7 @@ export const pro = product({
 	name: "Pro",
 	items: [
 		priceItem({
-			price: 8,
+			price: 7.99,
 			interval: "month",
 		}),
 		featureItem({
@@ -72,11 +61,6 @@ export const pro = product({
 			included_usage: 20,
 			interval: "month",
 		}),
-		featureItem({
-			feature_id: schedulingRuns.id,
-			included_usage: 500,
-			interval: "month",
-		}),
 	],
 });
 
@@ -85,22 +69,17 @@ export const premium = product({
 	name: "Premium",
 	items: [
 		priceItem({
-			price: 16,
+			price: 15.99,
 			interval: "month",
 		}),
 		featureItem({
 			feature_id: tasks.id,
-			included_usage: -1, // unlimited
+			included_usage: "inf",
 			interval: "month",
 		}),
 		featureItem({
 			feature_id: habits.id,
-			included_usage: -1, // unlimited
-			interval: "month",
-		}),
-		featureItem({
-			feature_id: schedulingRuns.id,
-			included_usage: -1, // unlimited
+			included_usage: "inf",
 			interval: "month",
 		}),
 		featureItem({

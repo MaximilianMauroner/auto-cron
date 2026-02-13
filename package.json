@@ -4,16 +4,41 @@
 	"workspaces": ["apps/*", "packages/*"],
 	"scripts": {
 		"dev": "turbo dev",
-		"build": "turbo build",
+		"build": "bun run env:check && turbo build",
+		"env:check": "bun run scripts/validate-env.ts",
 		"lint": "biome check .",
 		"format": "biome check --write .",
-		"typecheck": "turbo typecheck"
+		"format:staged": "lint-staged",
+		"precommit": "bun run format:staged && bun run lint && bun run typecheck && bun run test:convex:run",
+		"prepare": "husky",
+		"typecheck": "turbo typecheck",
+		"test:convex": "vitest --config vitest.config.ts",
+		"test:convex:run": "vitest run --config vitest.config.ts"
+	},
+	"lint-staged": {
+		"*.{js,jsx,ts,tsx,cjs,mjs,json,css,md}": "biome check --write"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^1.9.4",
+		"@edge-runtime/vm": "^5.0.0",
+		"@types/node": "^25.2.2",
 		"@useautumn/convex": "^0.0.23",
+		"babel-plugin-react-compiler": "^1.0.0",
+		"convex-test": "^0.0.41",
+		"husky": "^9.1.7",
+		"lint-staged": "^16.2.7",
 		"turbo": "^2.4.4",
-		"typescript": "^5.7.3"
+		"typescript": "^5.7.3",
+		"vitest": "^4.0.18"
 	},
-	"packageManager": "bun@1.2.4"
+	"packageManager": "bun@1.2.4",
+	"dependencies": {
+		"@convex-dev/crons": "^0.2.0",
+		"@convex-dev/workos-authkit": "^0.1.6",
+		"@t3-oss/env-core": "^0.13.10",
+		"@workos-inc/authkit-nextjs": "^2.13.0",
+		"atmn": "^0.0.36",
+		"convex": "^1.21.0",
+		"zod": "^4.3.6"
+	}
 }
