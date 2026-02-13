@@ -834,7 +834,7 @@ export function LandingPage({ logoHref = "/" }: LandingPageProps) {
 									{ label: "Features", href: "#features" },
 									{ label: "Process", href: "#process" },
 									{ label: "Pricing", href: "#pricing" },
-									{ label: "Dashboard", href: "/calendar" },
+									{ label: "Dashboard", href: "/app/calendar" },
 								].map((link) => (
 									<a key={link.label} href={link.href} className="lp-footer-link">
 										{link.label}

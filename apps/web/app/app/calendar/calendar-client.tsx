@@ -2,6 +2,8 @@
 
 import { DateGridEvent } from "@/components/calendar/date-grid-event";
 import { TimeGridEvent } from "@/components/calendar/time-grid-event";
+import { QuickCreateHabitDialog } from "@/components/quick-create/quick-create-habit-dialog";
+import { QuickCreateTaskDialog } from "@/components/quick-create/quick-create-task-dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
 import {
@@ -28,9 +30,11 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useUserPreferences } from "@/components/user-preferences-context";
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
 import type {
 	CalendarEventCreateInput,
@@ -67,6 +71,7 @@ import {
 	MoreHorizontal,
 	RefreshCw,
 	Repeat2,
+	Rocket,
 	Route,
 	Sparkles,
 	User,
@@ -75,6 +80,7 @@ import {
 import { useTheme } from "next-themes";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
+import { SchedulingDiagnostics } from "./scheduling-diagnostics";
 
 type EditorState = {
 	mode: "create" | "edit";
@@ -367,6 +373,9 @@ const MINUTE_MS = 60 * 1000;
 const normalizeToMinute = (timestamp: number) => Math.floor(timestamp / MINUTE_MS) * MINUTE_MS;
 
 const buildDedupeKey = (event: CalendarEventDTO) => {
+	if (event.seriesId && event.occurrenceStart !== undefined) {
+		return `series:${event.seriesId}:${event.occurrenceStart}`;
+	}
 	if (event.googleEventId) {
 		const occurrenceTs = normalizeToMinute(event.originalStartTime ?? event.start);
 		return `google:${event.calendarId ?? "primary"}:${event.googleEventId}:${occurrenceTs}`;
@@ -1139,7 +1148,14 @@ const runWhenScrollControllerReady = (plugin: unknown, fn: () => void) => {
 	};
 };
 
-const toTimestampFromDayAndMinutes = (day: string, minutes: number) => {
+const toTimestampFromDayAndMinutes = (day: string, minutes: number, timeZone?: string) => {
+	if (timeZone) {
+		const hours = Math.floor(minutes / 60);
+		const mins = minutes % 60;
+		const dateTimeStr = `${day}T${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}:00`;
+		const parsed = parseLocalDateTimeInTimeZone(dateTimeStr, timeZone);
+		if (parsed !== undefined) return parsed;
+	}
 	const dayStart = new Date(`${day}T00:00:00`);
 	dayStart.setMinutes(minutes);
 	return dayStart.getTime();
@@ -1157,7 +1173,6 @@ const snapToStep = (timestamp: number, stepMs: number) => Math.round(timestamp /
 const DAY_MS = 1000 * 60 * 60 * 24;
 const DRAG_CREATE_THRESHOLD_PX = 6;
 const DEFAULT_SCROLL_TIME = "08:00";
-const EVENT_SHEET_BREAKPOINT_QUERY = "(max-width: 1279px)";
 const DEFAULT_SOURCE_FILTER: CalendarSource[] = ["google", "task", "habit", "manual"];
 const QUERY_RANGE_PAST_DAYS = 7;
 const QUERY_RANGE_FUTURE_DAYS = 70;
@@ -1175,23 +1190,6 @@ const getCurrentFocusScrollTime = () => {
 };
 
 const isTodayDate = (dateString: string) => dateString === formatDateInput(new Date());
-const detectLocalTimeZone = () => {
-	try {
-		return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-	} catch {
-		return "UTC";
-	}
-};
-const detectLocalTimeFormatPreference = (): TimeFormatPreference => {
-	try {
-		return new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 ===
-			false
-			? "24h"
-			: "12h";
-	} catch {
-		return "24h";
-	}
-};
 
 const useResettableCalendarApp = <TCalendarApp,>(factory: () => TCalendarApp, resetKey: string) => {
 	const factoryRef = useRef(factory);
@@ -1221,9 +1219,10 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "error">("idle");
 	const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
 	const [error, setError] = useState<string | null>(initialErrorMessage);
-	const [searchQuery, setSearchQuery] = useState("");
 	const [sourceFilter, setSourceFilter] = useState<CalendarSource[]>(DEFAULT_SOURCE_FILTER);
 	const [editor, setEditor] = useState<EditorState | null>(null);
+	const [quickCreateTaskOpen, setQuickCreateTaskOpen] = useState(false);
+	const [quickCreateHabitOpen, setQuickCreateHabitOpen] = useState(false);
 	const [isCustomRepeatDialogOpen, setIsCustomRepeatDialogOpen] = useState(false);
 	const [customRecurrenceDraft, setCustomRecurrenceDraft] = useState<CustomRecurrenceDraft | null>(
 		null,
@@ -1241,46 +1240,26 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const [queryRangeAnchor, setQueryRangeAnchor] = useState(() =>
 		toDateAnchorTimestamp(formatDateInput(new Date())),
 	);
-	const [isMobileEventSheetOpen, setIsMobileEventSheetOpen] = useState(false);
-	const [isEventSheetMode, setIsEventSheetMode] = useState(false);
+	const [eventSheetOpen, setEventSheetOpen] = useState(false);
 	const dragCreateRef = useRef<DragCreateState | null>(null);
 	const syncInFlightRef = useRef(false);
 	const suppressClickCreateUntilRef = useRef(0);
 	const preferEditEventUntilRef = useRef<{ eventId: string; until: number } | null>(null);
 	const resizeEventRef = useRef<ResizeEventState | null>(null);
-	const hadEditorRef = useRef(false);
-	const wasEventSheetModeRef = useRef(false);
 	const calendarContainerRef = useRef<HTMLDivElement>(null);
 	const scheduleEventsByIdRef = useRef<Map<string, CalendarEventDTO>>(new Map());
 	const syncedGoogleRangeRef = useRef<SyncRange | null>(null);
 	const autoSyncAttemptedRangeKeyRef = useRef<string | null>(null);
 	const autoWatchRegistrationAttemptedRef = useRef(false);
-	const localTimeZone = useMemo(() => detectLocalTimeZone(), []);
-	const localTimeFormatPreference = useMemo(() => detectLocalTimeFormatPreference(), []);
-
-	useEffect(() => {
-		if (typeof window === "undefined") return;
-		const mediaQuery = window.matchMedia(EVENT_SHEET_BREAKPOINT_QUERY);
-		const syncSheetMode = () => setIsEventSheetMode(mediaQuery.matches);
-		syncSheetMode();
-		mediaQuery.addEventListener("change", syncSheetMode);
-		return () => {
-			mediaQuery.removeEventListener("change", syncSheetMode);
-		};
-	}, []);
+	const userPreferences = useUserPreferences();
 
 	const calendarControlsPlugin = useMemo(() => createCalendarControlsPlugin(), []);
-	const displayPreferencesQuery = useAuthenticatedQueryWithStatus(
-		api.hours.queries.getCalendarDisplayPreferences,
-		{},
-	);
 	const schedulingDefaultsQuery = useAuthenticatedQueryWithStatus(
 		api.hours.queries.getTaskSchedulingDefaults,
 		{},
 	);
-	const scheduleXTimeZone = displayPreferencesQuery.data?.timezone ?? localTimeZone;
-	const calendarTimeFormatPreference =
-		displayPreferencesQuery.data?.timeFormatPreference ?? localTimeFormatPreference;
+	const scheduleXTimeZone = userPreferences.timezone;
+	const calendarTimeFormatPreference = userPreferences.timeFormatPreference;
 	const schedulingStepMinutes = schedulingDefaultsQuery.data?.schedulingStepMinutes ?? 15;
 	const schedulingStepMs = schedulingStepMinutes * 60 * 1000;
 	const schedulingStepSeconds = schedulingStepMinutes * 60;
@@ -1385,21 +1364,12 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	}, [normalizedEvents]);
 
 	const scheduleEvents = useMemo(() => {
-		const query = searchQuery.trim().toLowerCase();
-		const filteredEvents = query
-			? normalizedEvents.filter((event) => {
-					const haystack =
-						`${event.title} ${event.description ?? ""} ${event.calendarId ?? ""}`.toLowerCase();
-					return haystack.includes(query);
-				})
-			: normalizedEvents;
-
-		return filteredEvents.map((event) => ({
+		return normalizedEvents.map((event) => ({
 			dedupeKey: buildDedupeKey(event),
 			calendarKey: getCalendarKey(event),
 			event,
 		}));
-	}, [normalizedEvents, searchQuery]);
+	}, [normalizedEvents]);
 	const scheduleXEvents = useMemo(() => {
 		const baseEvents = scheduleEvents
 			.map((event) => {
@@ -1689,6 +1659,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 					isDark: isDarkTheme,
 					views: calendarViews,
 					defaultView: "week",
+					timezone: scheduleXTimeZone,
 					dayBoundaries,
 					calendars: calendarTypes,
 					weekOptions,
@@ -1892,7 +1863,10 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				schedulingStepMinutes;
 			const maxStartMinute = Math.max(dayStart, dayEnd - schedulingStepMinutes);
 			const minutes = Math.max(dayStart, Math.min(maxStartMinute, snappedMinutes));
-			const nextCurrent = snapToStep(toTimestampFromDayAndMinutes(day, minutes), schedulingStepMs);
+			const nextCurrent = snapToStep(
+				toTimestampFromDayAndMinutes(day, minutes, scheduleXTimeZone),
+				schedulingStepMs,
+			);
 			dragCreateRef.current = {
 				...dragState,
 				current: nextCurrent,
@@ -2024,7 +1998,11 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			const deltaY = pointerY - resizeState.startPointerY;
 			const candidateEnd = resizeState.originalEnd + deltaY * minutesPerPixel * 60_000;
 			const minEnd = resizeState.start + schedulingStepMs;
-			const dayMaxEnd = toTimestampFromDayAndMinutes(resizeState.day, dayBoundaryMinutes.end);
+			const dayMaxEnd = toTimestampFromDayAndMinutes(
+				resizeState.day,
+				dayBoundaryMinutes.end,
+				scheduleXTimeZone,
+			);
 			const boundedEnd = Math.max(minEnd, Math.min(dayMaxEnd, candidateEnd));
 			const steppedEnd = Math.max(
 				minEnd,
@@ -2123,7 +2101,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			window.removeEventListener("mousemove", onMouseMove);
 			window.removeEventListener("mouseup", onMouseUp);
 		};
-	}, [dayBoundaryMinutes.end, dayBoundaryMinutes.start, schedulingStepMs]);
+	}, [dayBoundaryMinutes.end, dayBoundaryMinutes.start, schedulingStepMs, scheduleXTimeZone]);
 
 	useEffect(() => {
 		if (!editor || editor.mode !== "create") return;
@@ -2192,6 +2170,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				.toLocaleTimeString([], {
 					hour: "numeric",
 					minute: "2-digit",
+					hour12: isTwelveHourClock,
 				})
 				.replace(/\s/g, "");
 		};
@@ -2220,7 +2199,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				badge.remove();
 			}
 		};
-	}, [activeView]);
+	}, [activeView, isTwelveHourClock]);
 
 	useEffect(() => {
 		if (!calendar) return;
@@ -2502,24 +2481,10 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		setEditor(null);
 	}, []);
 
-	const closeEventSheet = useCallback(() => {
-		setIsMobileEventSheetOpen(false);
-		// Allow the next editor selection/update to re-open the sheet.
-		hadEditorRef.current = false;
-	}, []);
-
+	// Sync sheet open state with editor presence
 	useEffect(() => {
-		const hasEditor = Boolean(editor);
-		const enteredSheetMode = isEventSheetMode && !wasEventSheetModeRef.current;
-		if (isEventSheetMode && hasEditor && (enteredSheetMode || !hadEditorRef.current)) {
-			setIsMobileEventSheetOpen(true);
-		}
-		if (!hasEditor || !isEventSheetMode) {
-			setIsMobileEventSheetOpen(false);
-		}
-		hadEditorRef.current = hasEditor;
-		wasEventSheetModeRef.current = isEventSheetMode;
-	}, [editor, isEventSheetMode]);
+		setEventSheetOpen(Boolean(editor));
+	}, [editor]);
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
@@ -2733,6 +2698,12 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	);
 
 	const sourceButtons: CalendarSource[] = ["google", "task", "habit", "manual"];
+	const sourceColorDot: Record<CalendarSource, string> = {
+		google: "bg-chart-1",
+		task: "bg-chart-3",
+		habit: "bg-chart-2",
+		manual: "bg-chart-5",
+	};
 	const isLoading = isAuthLoading || (isAuthenticated && eventsQuery.isPending);
 	const isDetailsMode = editor?.mode === "edit" && editor.panelMode === "details";
 	const selectedEvent =
@@ -2888,260 +2859,25 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		setEditorRecurrence(next);
 		setIsCustomRepeatDialogOpen(false);
 	}, [customRecurrenceDraft, recurrenceStartTimestamp, setEditorRecurrence]);
-
-	return (
-		<div className="h-full min-h-0 overflow-hidden bg-background text-foreground flex flex-col gap-0">
-			<header className="shrink-0 sticky top-0 z-20 border-b border-border bg-card px-4 py-2.5 flex flex-col gap-2">
-				<div className="flex items-center justify-between gap-3 flex-wrap">
-					<div className="flex items-center gap-3">
-						<h1 className="text-[1.05rem] font-semibold tracking-tight text-foreground">
-							{monthLabel}
-						</h1>
-						<div className="flex items-center gap-1">
-							<Button
-								variant="outline"
-								size="icon-sm"
-								className="size-8 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
-								onClick={() => shiftDate(-1)}
-								aria-label="Previous period"
-							>
-								<ChevronLeft className="size-3.5" />
-							</Button>
-							<Button
-								variant="outline"
-								size="sm"
-								className="h-7 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] hover:border-border hover:bg-accent hover:text-foreground"
-								onClick={() => setDateValue(formatDateInput(new Date()))}
-							>
-								Today
-							</Button>
-							<Button
-								variant="outline"
-								size="icon-sm"
-								className="size-7 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
-								onClick={() => shiftDate(1)}
-								aria-label="Next period"
-							>
-								<ChevronRight className="size-3.5" />
-							</Button>
-						</div>
-					</div>
-
-					<div className="flex items-center gap-2 flex-wrap" suppressHydrationWarning>
-						<ToggleGroup
-							type="single"
-							value={activeView}
-							onValueChange={(value) => {
-								if (value) changeView(value as "week" | "day" | "month-grid");
-							}}
-							className="gap-0 rounded-lg border border-border bg-secondary p-0.5"
-						>
-							{[
-								{ key: "week", label: "Week" },
-								{ key: "day", label: "Day" },
-								{ key: "month-grid", label: "Month" },
-							].map((tab) => (
-								<ToggleGroupItem
-									key={tab.key}
-									value={tab.key}
-									variant="outline"
-									size="sm"
-									className="h-6 px-2.5 border-0 bg-transparent text-muted-foreground text-[0.7rem] font-medium hover:text-foreground hover:bg-transparent data-[state=on]:bg-accent data-[state=on]:text-foreground data-[state=on]:shadow-sm rounded-md"
-								>
-									{tab.label}
-								</ToggleGroupItem>
-							))}
-						</ToggleGroup>
-
-						<div className="w-px h-4 bg-border" />
-
-						<Button
-							variant="outline"
-							size="sm"
-							className="h-7 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] gap-1.5 hover:border-border hover:bg-accent hover:text-foreground"
-							onClick={() => {
-								const start = snapToStep(Date.now(), schedulingStepMs);
-								const end = snapToStep(start + schedulingStepMs, schedulingStepMs);
-								setEditor({
-									mode: "create",
-									panelMode: "edit",
-									title: "",
-									description: "",
-									start: toInputDateTime(start, scheduleXTimeZone),
-									end: toInputDateTime(end, scheduleXTimeZone),
-									allDay: false,
-									calendarId: defaultCreateCalendarId,
-									busyStatus: "busy",
-									visibility: "default",
-									location: "",
-									recurrenceRule: "",
-									scope: "single",
-								});
-							}}
-						>
-							<Sparkles className="size-3" />
-							New event
-						</Button>
-
-						<Button
-							variant="outline"
-							size="icon-sm"
-							className="size-7 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
-							onClick={() => {
-								void syncNow("manual");
-							}}
-							disabled={syncStatus === "syncing"}
-							aria-label="Sync"
-						>
-							<RefreshCw className={`size-3.5 ${syncStatus === "syncing" ? "animate-spin" : ""}`} />
-						</Button>
-
-						<Popover>
-							<PopoverTrigger asChild>
-								<Button
-									variant="outline"
-									size="sm"
-									aria-label="Choose date"
-									className="h-8 px-2.5 border-border bg-secondary text-foreground/70 text-[0.72rem] gap-1.5 hover:border-border hover:bg-accent hover:text-foreground"
-								>
-									<CalendarDays className="size-3.5" />
-									{selectedDate}
-								</Button>
-							</PopoverTrigger>
-							<PopoverContent
-								align="end"
-								className="w-auto border-border bg-popover p-0 text-popover-foreground"
-							>
-								<DatePickerCalendar
-									mode="single"
-									selected={selectedDateValue}
-									onSelect={(date) => {
-										if (!date) return;
-										setDateValue(formatDateInput(date));
-									}}
-									initialFocus
-									className="rounded-md border-0 bg-transparent"
-								/>
-							</PopoverContent>
-						</Popover>
-
-						<Input
-							type="search"
-							aria-label="Search events"
-							autoComplete="off"
-							placeholder="Search events..."
-							value={searchQuery}
-							onChange={(event) => setSearchQuery(event.target.value)}
-							className="h-8 w-40 border-border bg-secondary text-foreground/70 text-[0.72rem] px-2 placeholder:text-muted-foreground"
-						/>
-						<Button
-							variant="outline"
-							size="sm"
-							className="xl:hidden h-8 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] hover:border-border hover:bg-accent hover:text-foreground"
-							onClick={() => setIsMobileEventSheetOpen(true)}
-						>
-							Event
-						</Button>
-					</div>
-				</div>
-
-				<div className="flex items-center justify-between gap-2 flex-wrap">
-					<ToggleGroup
-						type="multiple"
-						value={sourceFilter}
-						onValueChange={(value) =>
-							setSourceFilter(value.length ? (value as CalendarSource[]) : DEFAULT_SOURCE_FILTER)
-						}
-						className="gap-1"
-					>
-						{sourceButtons.map((source) => (
-							<ToggleGroupItem
-								key={source}
-								value={source}
-								variant="outline"
-								size="sm"
-								className="h-7 rounded-md border border-border bg-secondary px-2 text-[0.68rem] uppercase tracking-[0.06em] text-muted-foreground data-[state=on]:bg-accent data-[state=on]:text-foreground"
-							>
-								{source}
-							</ToggleGroupItem>
-						))}
-					</ToggleGroup>
-					<div className="flex items-center gap-3 text-[0.68rem]">
-						<div className="text-muted-foreground">{visibleEventCount} events loaded</div>
-						<div
-							className={`flex items-center gap-1.5 ${
-								syncStatus === "error"
-									? "text-destructive"
-									: syncStatus === "syncing"
-										? "text-chart-1"
-										: "text-muted-foreground"
-							}`}
-						>
-							<span
-								className={`inline-block size-1.5 rounded-full ${
-									syncStatus === "error"
-										? "bg-destructive"
-										: syncStatus === "syncing"
-											? "bg-chart-1 animate-pulse"
-											: "bg-chart-2"
-								}`}
-							/>
-							{syncStatusLabel}
-						</div>
-					</div>
-				</div>
-			</header>
-
-			{error ? (
-				<div className="mx-4 mt-2 border border-destructive/30 bg-destructive/10 rounded-lg px-3 py-2 text-[0.8rem] text-destructive">
-					{error}
-				</div>
-			) : null}
-			{isLoading ? (
-				<div className="mx-4 mt-2 text-[0.8rem] text-muted-foreground">Loading events...</div>
-			) : null}
-			{!isLoading && !error && visibleEventCount === 0 ? (
-				<div className="mx-4 mt-2 text-[0.8rem] text-muted-foreground">
-					No events loaded. Click sync to fetch from Google.
-				</div>
-			) : null}
-
-			<div className="flex flex-1 min-h-0 overflow-hidden">
-				<div
-					ref={calendarContainerRef}
-					className={`${effectiveTheme === "dark" ? "sx-autocron-dark" : "sx-autocron-light"} flex-1 min-w-0 min-h-0 h-full overflow-hidden`}
-				>
-					<ScheduleXCalendar calendarApp={calendar} customComponents={customComponents} />
-				</div>
-				<aside
-					className={`bg-card p-3 flex-col gap-3 min-h-0 border-border ${
-						isEventSheetMode
-							? `fixed inset-y-0 right-0 z-50 w-[min(100vw,28rem)] border-l shadow-2xl transition-transform duration-300 ease-out flex ${
-									isMobileEventSheetOpen ? "translate-x-0" : "translate-x-full"
-								}`
-							: "hidden xl:flex xl:w-78 2xl:w-84 shrink-0 overflow-y-auto border-l"
-					}`}
-				>
+	const eventEditorSheet = (
+		<Sheet
+			open={eventSheetOpen}
+			onOpenChange={(open) => {
+				setEventSheetOpen(open);
+				if (!open) closeEditor();
+			}}
+		>
+			<SheetContent side="right" className="w-96 p-0 sm:max-w-md" showCloseButton={false}>
+				<SheetTitle className="sr-only">Event editor</SheetTitle>
+				<div className="flex h-full flex-col gap-3 overflow-y-auto p-3">
 					<div className="flex items-center justify-between">
-						<div className="text-[0.8rem] font-semibold text-foreground">Event</div>
-						<div className="flex items-center gap-2">
-							<div className="text-[0.68rem] text-muted-foreground">{monthLabel}</div>
-							{isEventSheetMode ? (
-								<Button
-									variant="outline"
-									size="sm"
-									className="h-7 px-2 border-border bg-secondary text-[0.7rem] text-muted-foreground hover:bg-accent hover:text-foreground"
-									onClick={closeEventSheet}
-								>
-									Close
-								</Button>
-							) : null}
-						</div>
+						<div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Event</div>
+						<div className="text-[0.68rem] text-muted-foreground">{monthLabel}</div>
 					</div>
 
 					{editor ? (
 						<div className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-							<div className="rounded-2xl border border-border bg-card">
+							<div className="rounded-xl border border-border bg-card">
 								<div className="px-3 py-3">
 									<div className="flex items-start justify-between gap-3">
 										<div className="min-w-0 flex-1">
@@ -3700,7 +3436,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 								</div>
 
 								<div className="border-t border-border px-3 py-3">
-									<div className="mb-2 text-[0.76rem] uppercase tracking-[0.08em] text-muted-foreground">
+									<div className="mb-2 text-xs uppercase tracking-[0.14em] text-muted-foreground">
 										Description
 									</div>
 									{isDetailsMode ? (
@@ -3964,76 +3700,336 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 						</div>
 					) : (
 						<>
-							<div className="rounded-xl border border-border bg-card p-3 text-[0.76rem] text-muted-foreground">
-								Select an event to view details here.
-							</div>
-							<div className="rounded-xl border border-border bg-card p-3">
-								<div className="text-[0.66rem] uppercase tracking-[0.08em] text-muted-foreground">
-									Tips
+							<div className="rounded-xl border border-border/60 bg-card/60 p-4 text-center">
+								<CalendarDays className="mx-auto mb-2 size-6 text-muted-foreground/40" />
+								<div className="text-[0.78rem] font-medium text-muted-foreground">
+									Select an event to view details
 								</div>
-								<ul className="mt-2 space-y-1.5 text-[0.72rem] text-muted-foreground">
-									<li>Single click opens details</li>
-									<li>Double click opens edit mode</li>
-									<li>Drag on grid to create events</li>
+								<div className="mt-0.5 text-[0.66rem] text-muted-foreground/60">
+									Click any event on the calendar
+								</div>
+							</div>
+							<div className="rounded-xl border border-border/60 bg-card/60 p-4">
+								<div className="text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground/70 font-medium">
+									Shortcuts
+								</div>
+								<ul className="mt-2.5 space-y-2 text-[0.72rem] text-muted-foreground">
+									<li className="flex items-center gap-2">
+										<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.58rem] font-semibold text-muted-foreground/70">
+											1×
+										</span>
+										Open event details
+									</li>
+									<li className="flex items-center gap-2">
+										<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.58rem] font-semibold text-muted-foreground/70">
+											2×
+										</span>
+										Edit event
+									</li>
+									<li className="flex items-center gap-2">
+										<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.55rem] font-semibold text-muted-foreground/70">
+											⇕
+										</span>
+										Drag to create event
+									</li>
 								</ul>
 							</div>
 						</>
 					)}
-				</aside>
-			</div>
-			{isEventSheetMode ? (
-				<button
-					type="button"
-					aria-label="Close event sheet"
-					className={`fixed inset-0 z-40 bg-black/45 transition-opacity duration-300 ${
-						isMobileEventSheetOpen
-							? "opacity-100 pointer-events-auto"
-							: "opacity-0 pointer-events-none"
-					}`}
-					onClick={closeEventSheet}
-				/>
-			) : null}
-			<Dialog
-				open={Boolean(pendingMoveUpdate)}
-				onOpenChange={(open) => !open && setPendingMoveUpdate(null)}
-			>
-				<DialogContent className="max-w-sm border-border bg-popover text-popover-foreground">
-					<DialogHeader>
-						<DialogTitle className="text-[1rem] font-semibold text-foreground">
-							Move recurring event
-						</DialogTitle>
-					</DialogHeader>
-					<div className="space-y-2 text-sm text-foreground/80">
-						<div>
-							You moved{" "}
-							<span className="font-medium text-foreground">{pendingMoveUpdate?.title}</span>.
+				</div>
+			</SheetContent>
+		</Sheet>
+	);
+
+	return (
+		<>
+			<div className="h-full min-h-0 overflow-hidden bg-background text-foreground flex flex-col gap-0">
+				<header className="shrink-0 sticky top-0 z-20 border-b border-border bg-card px-4 py-2.5 flex flex-col gap-2">
+					<div className="flex items-center justify-between gap-3 flex-wrap">
+						<div className="flex items-center gap-3">
+							<h1 className="text-[1.05rem] font-semibold uppercase tracking-[0.04em] text-foreground">
+								{monthLabel}
+							</h1>
+							<div className="flex items-center gap-1">
+								<Button
+									variant="outline"
+									size="icon-sm"
+									className="size-8 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
+									onClick={() => shiftDate(-1)}
+									aria-label="Previous period"
+								>
+									<ChevronLeft className="size-3.5" />
+								</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									className="h-7 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] hover:border-border hover:bg-accent hover:text-foreground"
+									onClick={() => setDateValue(formatDateInput(new Date()))}
+								>
+									Today
+								</Button>
+								<Button
+									variant="outline"
+									size="icon-sm"
+									className="size-7 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
+									onClick={() => shiftDate(1)}
+									aria-label="Next period"
+								>
+									<ChevronRight className="size-3.5" />
+								</Button>
+							</div>
 						</div>
-						<div>Apply the move to just this event or the full series?</div>
+
+						<div className="flex items-center gap-2 flex-wrap" suppressHydrationWarning>
+							<ToggleGroup
+								type="single"
+								value={activeView}
+								onValueChange={(value) => {
+									if (value) changeView(value as "week" | "day" | "month-grid");
+								}}
+								className="gap-0 rounded-lg border border-border bg-secondary p-0.5"
+							>
+								{[
+									{ key: "week", label: "Week" },
+									{ key: "day", label: "Day" },
+									{ key: "month-grid", label: "Month" },
+								].map((tab) => (
+									<ToggleGroupItem
+										key={tab.key}
+										value={tab.key}
+										variant="outline"
+										size="sm"
+										className="h-6 px-2.5 border-0 bg-transparent text-muted-foreground text-[0.7rem] font-medium hover:text-foreground hover:bg-transparent data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:shadow-sm rounded-md"
+									>
+										{tab.label}
+									</ToggleGroupItem>
+								))}
+							</ToggleGroup>
+
+							<div className="w-px h-4 bg-border" />
+
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<Button
+										size="sm"
+										className="h-7 px-2.5 bg-accent text-accent-foreground text-[0.72rem] font-semibold gap-1.5 border-accent hover:bg-accent/90 shadow-[0_2px_8px_-2px_rgba(252,163,17,0.3)]"
+									>
+										<Sparkles className="size-3" />
+										Create new
+										<ChevronDown className="size-3 opacity-60" />
+									</Button>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="end" className="w-44">
+									<DropdownMenuItem onSelect={() => setQuickCreateTaskOpen(true)} className="gap-2">
+										<Rocket className="size-3.5" />
+										New task
+									</DropdownMenuItem>
+									<DropdownMenuItem
+										onSelect={() => {
+											const start = snapToStep(Date.now(), schedulingStepMs);
+											const end = snapToStep(start + schedulingStepMs, schedulingStepMs);
+											setEditor({
+												mode: "create",
+												panelMode: "edit",
+												title: "",
+												description: "",
+												start: toInputDateTime(start, scheduleXTimeZone),
+												end: toInputDateTime(end, scheduleXTimeZone),
+												allDay: false,
+												calendarId: defaultCreateCalendarId,
+												busyStatus: "busy",
+												visibility: "default",
+												location: "",
+												recurrenceRule: "",
+												scope: "single",
+											});
+										}}
+										className="gap-2"
+									>
+										<Sparkles className="size-3.5" />
+										New event
+									</DropdownMenuItem>
+									<DropdownMenuItem
+										onSelect={() => setQuickCreateHabitOpen(true)}
+										className="gap-2"
+									>
+										<Repeat2 className="size-3.5" />
+										New habit
+									</DropdownMenuItem>
+								</DropdownMenuContent>
+							</DropdownMenu>
+
+							<Button
+								variant="outline"
+								size="icon-sm"
+								className="size-7 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
+								onClick={() => {
+									void syncNow("manual");
+								}}
+								disabled={syncStatus === "syncing"}
+								aria-label="Sync"
+							>
+								<RefreshCw
+									className={`size-3.5 ${syncStatus === "syncing" ? "animate-spin" : ""}`}
+								/>
+							</Button>
+
+							<Popover>
+								<PopoverTrigger asChild>
+									<Button
+										variant="outline"
+										size="sm"
+										aria-label="Choose date"
+										className="h-8 px-2.5 border-border bg-secondary text-foreground/70 text-[0.72rem] gap-1.5 hover:border-border hover:bg-accent hover:text-foreground"
+									>
+										<CalendarDays className="size-3.5" />
+										{selectedDate}
+									</Button>
+								</PopoverTrigger>
+								<PopoverContent
+									align="end"
+									className="w-auto border-border bg-popover p-0 text-popover-foreground"
+								>
+									<DatePickerCalendar
+										mode="single"
+										selected={selectedDateValue}
+										onSelect={(date) => {
+											if (!date) return;
+											setDateValue(formatDateInput(date));
+										}}
+										initialFocus
+										className="rounded-md border-0 bg-transparent"
+									/>
+								</PopoverContent>
+							</Popover>
+
+							<SchedulingDiagnostics />
+						</div>
 					</div>
-					<DialogFooter className="gap-2 sm:justify-end">
-						<Button
-							variant="outline"
-							className="border-border bg-secondary text-foreground/85 hover:bg-accent"
-							onClick={() => setPendingMoveUpdate(null)}
+
+					<div className="flex items-center justify-between gap-2 flex-wrap">
+						<ToggleGroup
+							type="multiple"
+							value={sourceFilter}
+							onValueChange={(value) =>
+								setSourceFilter(value.length ? (value as CalendarSource[]) : DEFAULT_SOURCE_FILTER)
+							}
+							className="gap-1"
 						>
-							Cancel
-						</Button>
-						<Button
-							variant="outline"
-							className="border-border bg-secondary text-foreground/85 hover:bg-accent"
-							onClick={() => void moveRecurringEvent("single")}
-						>
-							Only this event
-						</Button>
-						<Button
-							className="bg-accent text-accent-foreground hover:bg-accent/90"
-							onClick={() => void moveRecurringEvent("series")}
-						>
-							Entire series
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
-		</div>
+							{sourceButtons.map((source) => (
+								<ToggleGroupItem
+									key={source}
+									value={source}
+									variant="outline"
+									size="sm"
+									className="h-7 rounded-md border border-border bg-secondary px-2 text-[0.68rem] uppercase tracking-[0.06em] text-muted-foreground data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:border-primary/20 gap-1.5"
+								>
+									<span className={`size-1.5 rounded-full ${sourceColorDot[source]}`} />
+									{source}
+								</ToggleGroupItem>
+							))}
+						</ToggleGroup>
+						<div className="flex items-center gap-2 text-[0.66rem] text-muted-foreground/70">
+							<span className="tabular-nums">{visibleEventCount} events</span>
+							<span className="text-border">·</span>
+							<div
+								className={`flex items-center gap-1.5 ${
+									syncStatus === "error"
+										? "text-destructive"
+										: syncStatus === "syncing"
+											? "text-chart-1"
+											: "text-muted-foreground/70"
+								}`}
+							>
+								<span
+									className={`inline-block size-1.5 rounded-full ${
+										syncStatus === "error"
+											? "bg-destructive"
+											: syncStatus === "syncing"
+												? "bg-chart-1 animate-pulse"
+												: "bg-chart-2"
+									}`}
+								/>
+								{syncStatusLabel}
+							</div>
+						</div>
+					</div>
+				</header>
+
+				{error ? (
+					<div className="mx-4 mt-2 border border-destructive/30 bg-destructive/10 rounded-lg px-3 py-2 text-[0.8rem] text-destructive">
+						{error}
+					</div>
+				) : null}
+				{isLoading ? (
+					<div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-[0.78rem] text-muted-foreground">
+						<RefreshCw className="size-3.5 shrink-0 animate-spin opacity-50" />
+						Loading events...
+					</div>
+				) : null}
+				{!isLoading && !error && visibleEventCount === 0 ? (
+					<div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-[0.78rem] text-muted-foreground">
+						<RefreshCw className="size-3.5 shrink-0 opacity-50" />
+						No events loaded. Click sync to fetch from Google.
+					</div>
+				) : null}
+
+				<div className="flex flex-1 min-h-0 overflow-hidden">
+					<div
+						ref={calendarContainerRef}
+						className={`${effectiveTheme === "dark" ? "sx-autocron-dark" : "sx-autocron-light"} flex-1 min-w-0 min-h-0 h-full overflow-hidden`}
+					>
+						<ScheduleXCalendar calendarApp={calendar} customComponents={customComponents} />
+					</div>
+				</div>
+				<Dialog
+					open={Boolean(pendingMoveUpdate)}
+					onOpenChange={(open) => !open && setPendingMoveUpdate(null)}
+				>
+					<DialogContent className="max-w-sm border-border bg-popover text-popover-foreground">
+						<DialogHeader>
+							<DialogTitle className="text-[1rem] font-semibold text-foreground">
+								Move recurring event
+							</DialogTitle>
+						</DialogHeader>
+						<div className="space-y-2 text-sm text-foreground/80">
+							<div>
+								You moved{" "}
+								<span className="font-medium text-foreground">{pendingMoveUpdate?.title}</span>.
+							</div>
+							<div>Apply the move to just this event or the full series?</div>
+						</div>
+						<DialogFooter className="gap-2 sm:justify-end">
+							<Button
+								variant="outline"
+								className="border-border bg-secondary text-foreground/85 hover:bg-accent"
+								onClick={() => setPendingMoveUpdate(null)}
+							>
+								Cancel
+							</Button>
+							<Button
+								variant="outline"
+								className="border-border bg-secondary text-foreground/85 hover:bg-accent"
+								onClick={() => void moveRecurringEvent("single")}
+							>
+								Only this event
+							</Button>
+							<Button
+								className="bg-accent text-accent-foreground hover:bg-accent/90"
+								onClick={() => void moveRecurringEvent("series")}
+							>
+								Entire series
+							</Button>
+						</DialogFooter>
+					</DialogContent>
+				</Dialog>
+				<QuickCreateTaskDialog open={quickCreateTaskOpen} onOpenChange={setQuickCreateTaskOpen} />
+				<QuickCreateHabitDialog
+					open={quickCreateHabitOpen}
+					onOpenChange={setQuickCreateHabitOpen}
+				/>
+			</div>
+			{eventEditorSheet}
+		</>
 	);
 }

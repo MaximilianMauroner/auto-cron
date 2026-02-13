@@ -768,6 +768,58 @@ describe("scheduling solver", () => {
 			}
 		}
 	});
+
+	test("asymmetric downtime: task with large buffer protects against task with zero buffer", () => {
+		const input = baseInput();
+		input.tasks.push(
+			{
+				...taskDefaults(input),
+				id: asTaskId("task-buffer-a"),
+				estimatedMinutes: 60,
+				restMinutes: 30,
+			},
+			{
+				...taskDefaults(input),
+				id: asTaskId("task-buffer-b"),
+				estimatedMinutes: 60,
+				restMinutes: 0,
+			},
+		);
+
+		const solved = solveSchedule(input);
+		const blocks = solved.blocks
+			.filter(
+				(block) =>
+					block.source === "task" &&
+					(block.sourceId === "task-buffer-a" || block.sourceId === "task-buffer-b"),
+			)
+			.sort((a, b) => a.start - b.start);
+		expect(blocks).toHaveLength(2);
+		const first = ensureDefined(blocks[0], "firstBufferTaskBlock");
+		const second = ensureDefined(blocks[1], "secondBufferTaskBlock");
+		expect(second.start - first.end).toBeGreaterThanOrEqual(30 * 60 * 1000);
+	});
+
+	test("travel blocks are clamped to solver horizon", () => {
+		const input = baseInput();
+		input.tasks.push({
+			...taskDefaults(input),
+			id: asTaskId("task-travel"),
+			estimatedMinutes: 60,
+			travelMinutes: 30,
+			location: "Office",
+		});
+
+		const solved = solveSchedule(input);
+		const travelBlocks = solved.blocks.filter(
+			(block) => block.source === "task" && block.sourceId.includes(":travel:"),
+		);
+		for (const block of travelBlocks) {
+			expect(block.start).toBeGreaterThanOrEqual(solved.horizonStart);
+			expect(block.end).toBeLessThanOrEqual(solved.horizonEnd);
+			expect(block.start).toBeLessThan(block.end);
+		}
+	});
 });
 
 describe("rrule and slot utilities", () => {

@@ -1,6 +1,7 @@
 import { FeedbackFloatingButton } from "@/components/feedback-floating-button";
 import { ToastProvider } from "@/components/ui/toast-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { UserPreferencesProvider } from "@/components/user-preferences-context";
 import { getConvexUrl } from "@/env/server";
 import type { Metadata } from "next";
 import { ThemeProvider } from "next-themes";
@@ -9,6 +10,11 @@ import { ConvexClientProvider } from "./ConvexClientProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
+	metadataBase: new URL(
+		process.env.VERCEL_PROJECT_PRODUCTION_URL
+			? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+			: "http://localhost:3000",
+	),
 	title: "Auto Cron",
 	description: "Intelligent auto-scheduling for tasks, habits, and calendar events",
 	icons: {
@@ -46,14 +52,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 					disableTransitionOnChange
 				>
 					<ConvexClientProvider convexUrl={convexUrl}>
-						<AutumnProvider>
-							<ToastProvider>
-								<TooltipProvider>
-									{children}
-									<FeedbackFloatingButton />
-								</TooltipProvider>
-							</ToastProvider>
-						</AutumnProvider>
+						<UserPreferencesProvider>
+							<AutumnProvider>
+								<ToastProvider>
+									<TooltipProvider>
+										{children}
+										<FeedbackFloatingButton />
+									</TooltipProvider>
+								</ToastProvider>
+							</AutumnProvider>
+						</UserPreferencesProvider>
 					</ConvexClientProvider>
 				</ThemeProvider>
 			</body>

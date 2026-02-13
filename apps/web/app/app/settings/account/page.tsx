@@ -14,6 +14,10 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import {
+	detectLocalTimeFormatPreference,
+	detectLocalTimeZone,
+} from "@/components/user-preferences-context";
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
@@ -47,25 +51,6 @@ type UsageItem = {
 };
 
 type CustomerProductStatus = "active" | "trialing" | "past_due" | "scheduled" | "expired";
-
-const detectLocalTimeZone = () => {
-	try {
-		return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-	} catch {
-		return "UTC";
-	}
-};
-
-const detectLocalTimeFormatPreference = (): TimeFormatPreference => {
-	try {
-		return new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 ===
-			false
-			? "24h"
-			: "12h";
-	} catch {
-		return "24h";
-	}
-};
 
 const isValidTimeZone = (value: string) => {
 	const normalized = value.trim();
@@ -253,9 +238,9 @@ export default function AccountSettingsPage() {
 
 	useEffect(() => {
 		if (!preferencesQuery.data) return;
-		setTimeZoneDraft(preferencesQuery.data.timezone);
+		setTimeZoneDraft(preferencesQuery.data.timezone ?? detectedTimeZone);
 		setTimeFormatDraft(preferencesQuery.data.timeFormatPreference ?? detectedTimeFormatPreference);
-	}, [detectedTimeFormatPreference, preferencesQuery.data]);
+	}, [detectedTimeFormatPreference, detectedTimeZone, preferencesQuery.data]);
 
 	useEffect(() => {
 		if (!schedulingDefaultsQuery.data) return;
@@ -332,7 +317,7 @@ export default function AccountSettingsPage() {
 
 	return (
 		<div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-			<Card className="relative overflow-hidden border-border/70 bg-card/80">
+			<Card className="relative overflow-hidden border-border/70 bg-card/70">
 				<div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-r from-primary/12 via-sky-500/8 to-emerald-500/10" />
 				<CardHeader className="relative">
 					<CardDescription className="text-xs uppercase tracking-[0.14em]">
@@ -386,7 +371,7 @@ export default function AccountSettingsPage() {
 									{isOpeningBillingPortal ? "Opening..." : "Manage billing"}
 								</Button>
 								<Button asChild variant="outline" className="gap-1.5">
-									<Link href="/pricing">
+									<Link href="/app/pricing">
 										<ExternalLink className="size-3.5" />
 										View plans
 									</Link>
@@ -468,7 +453,7 @@ export default function AccountSettingsPage() {
 			</Card>
 
 			<div className="space-y-4">
-				<Card className="border-border/70 bg-card/80">
+				<Card className="border-border/70 bg-card/70">
 					<CardHeader>
 						<CardDescription className="text-xs uppercase tracking-[0.14em]">
 							Calendar locale
@@ -565,7 +550,7 @@ export default function AccountSettingsPage() {
 					</CardContent>
 				</Card>
 
-				<Card className="border-border/70 bg-card/80">
+				<Card className="border-border/70 bg-card/70">
 					<CardHeader>
 						<CardDescription className="text-xs uppercase tracking-[0.14em]">
 							Scheduling defaults
@@ -628,7 +613,7 @@ export default function AccountSettingsPage() {
 					</CardContent>
 				</Card>
 
-				<Card className="border-border/70 bg-card/80">
+				<Card className="border-border/70 bg-card/70">
 					<CardHeader>
 						<CardDescription className="text-xs uppercase tracking-[0.14em]">
 							Connected services
@@ -660,7 +645,7 @@ export default function AccountSettingsPage() {
 						<Separator />
 						<div className="grid gap-2">
 							<Button asChild variant="outline" className="justify-between">
-								<Link href="/settings/hours">
+								<Link href="/app/settings/hours">
 									<span className="inline-flex items-center gap-1.5">
 										<Link2 className="size-3.5" />
 										Working hours
@@ -669,7 +654,7 @@ export default function AccountSettingsPage() {
 								</Link>
 							</Button>
 							<Button asChild variant="outline" className="justify-between">
-								<Link href="/settings/scheduling">
+								<Link href="/app/settings/scheduling">
 									<span className="inline-flex items-center gap-1.5">
 										<Sparkles className="size-3.5" />
 										Advanced scheduling

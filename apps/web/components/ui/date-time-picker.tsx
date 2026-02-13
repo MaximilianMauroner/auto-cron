@@ -4,19 +4,28 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useUserPreferences } from "@/components/user-preferences-context";
 import { cn } from "@/lib/utils";
 import { isValid, parse } from "date-fns";
 import { Calendar as CalendarIcon, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-const DISPLAY_FORMAT = new Intl.DateTimeFormat(undefined, {
-	month: "short",
-	day: "numeric",
-	year: "numeric",
-	hour: "2-digit",
-	minute: "2-digit",
-	hour12: false,
-});
+const displayFormatterCache = new Map<string, Intl.DateTimeFormat>();
+const getDisplayFormatter = (hour12: boolean) => {
+	const key = hour12 ? "h12" : "h24";
+	const existing = displayFormatterCache.get(key);
+	if (existing) return existing;
+	const formatter = new Intl.DateTimeFormat(undefined, {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12,
+	});
+	displayFormatterCache.set(key, formatter);
+	return formatter;
+};
 
 const parseLocalDateTime = (value: string): Date | null => {
 	const match =
@@ -108,6 +117,7 @@ export function DateTimePicker({
 	className,
 	allowClear = true,
 }: DateTimePickerProps) {
+	const { hour12 } = useUserPreferences();
 	const [open, setOpen] = useState(false);
 	const [draftText, setDraftText] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -123,8 +133,8 @@ export function DateTimePicker({
 			setDraftText("");
 			return;
 		}
-		setDraftText(DISPLAY_FORMAT.format(selectedDate));
-	}, [selectedDate]);
+		setDraftText(getDisplayFormatter(hour12).format(selectedDate));
+	}, [selectedDate, hour12]);
 
 	const validateStep = (date: Date) => {
 		if (minuteStep <= 1) return true;

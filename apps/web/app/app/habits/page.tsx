@@ -34,6 +34,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { useUserPreferences } from "@/components/user-preferences-context";
 import {
 	useActionWithStatus,
 	useAuthenticatedQueryWithStatus,
@@ -566,10 +567,22 @@ const parseCsv = (value: string) =>
 		.map((segment) => segment.trim())
 		.filter(Boolean);
 
-const formatWindow = (start?: string, end?: string) => {
+const formatTimeString = (time: string, hour12: boolean) => {
+	if (!hour12) return time;
+	const match = time.match(/^(\d{1,2}):(\d{2})$/);
+	if (!match) return time;
+	const hours = Number.parseInt(match[1] ?? "0", 10);
+	const minutes = match[2] ?? "00";
+	const period = hours >= 12 ? "PM" : "AM";
+	const displayHour = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
+	return `${displayHour}:${minutes} ${period}`;
+};
+
+const formatWindow = (start?: string, end?: string, hour12 = false) => {
 	if (!start && !end) return "Any time";
-	if (start && end) return `${start} - ${end}`;
-	return start ? `After ${start}` : `Before ${end}`;
+	if (start && end) return `${formatTimeString(start, hour12)} - ${formatTimeString(end, hour12)}`;
+	if (start) return `After ${formatTimeString(start, hour12)}`;
+	return end ? `Before ${formatTimeString(end, hour12)}` : "Any time";
 };
 
 const formatDays = (days?: number[]) => {
@@ -584,7 +597,7 @@ const formatDays = (days?: number[]) => {
 		.join(" ");
 };
 
-const formatDate = (value?: number) => {
+const formatDate = (value?: number, hour12?: boolean) => {
 	if (!value) return "";
 	return new Intl.DateTimeFormat(undefined, {
 		month: "short",
@@ -592,6 +605,7 @@ const formatDate = (value?: number) => {
 		year: "numeric",
 		hour: "numeric",
 		minute: "2-digit",
+		hour12,
 	}).format(new Date(value));
 };
 
@@ -949,7 +963,11 @@ export default function HabitsPage() {
 									Templates
 								</button>
 							</div>
-							<Button onClick={() => setIsCreateOpen(true)} disabled={busy} className="gap-1.5">
+							<Button
+								onClick={() => setIsCreateOpen(true)}
+								disabled={busy}
+								className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90 shadow-[0_2px_8px_-2px_rgba(252,163,17,0.2)]"
+							>
 								<Plus className="size-4" />
 								New habit
 							</Button>
@@ -999,18 +1017,23 @@ export default function HabitsPage() {
 
 				{activeTab === "templates" ? (
 					<div className="space-y-5">
-						<Card className="overflow-hidden border-border/70 bg-gradient-to-r from-cyan-500/10 via-sky-500/10 to-indigo-500/10">
+						<Card className="overflow-hidden border-border/70 bg-gradient-to-r from-primary/8 via-accent/6 to-primary/4">
 							<CardContent className="flex flex-col items-center gap-3 px-6 py-12 text-center">
 								<div className="rounded-full border border-primary/30 bg-primary/10 p-3">
 									<Sparkles className="size-6 text-primary" />
 								</div>
 								<div className="space-y-1">
-									<p className="text-2xl font-semibold tracking-tight">Team Habit Templates</p>
+									<p className="text-2xl font-semibold uppercase tracking-[0.04em]">
+										Team Habit Templates
+									</p>
 									<p className="max-w-2xl text-sm text-muted-foreground">
 										Start from proven routines, then customize every detail before saving.
 									</p>
 								</div>
-								<Button variant="outline" onClick={() => setIsCreateOpen(true)} className="gap-1.5">
+								<Button
+									onClick={() => setIsCreateOpen(true)}
+									className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90 shadow-[0_2px_8px_-2px_rgba(252,163,17,0.2)]"
+								>
 									<Plus className="size-4" />
 									Create from scratch
 								</Button>
@@ -1019,7 +1042,9 @@ export default function HabitsPage() {
 
 						<div className="space-y-3">
 							<div className="flex items-center justify-between">
-								<p className="text-lg font-semibold">Template library</p>
+								<p className="text-lg font-semibold uppercase tracking-[0.04em]">
+									Template library
+								</p>
 								<Badge variant="secondary">{filteredTemplates.length} templates</Badge>
 							</div>
 							{filteredTemplates.length === 0 ? (
@@ -1209,9 +1234,9 @@ function MetricTile({
 	icon: ComponentType<{ className?: string }>;
 }) {
 	return (
-		<div className="rounded-lg border border-border/70 bg-background/50 p-3">
+		<div className="rounded-lg border border-border/70 bg-background/50 p-3 transition-colors hover:border-primary/30">
 			<div className="flex items-center justify-between text-muted-foreground">
-				<span>{label}</span>
+				<span className="text-xs uppercase tracking-[0.08em]">{label}</span>
 				<Icon className="size-3.5" />
 			</div>
 			<div className="mt-1.5 text-xl font-semibold">{value}</div>
@@ -1258,7 +1283,11 @@ function TemplateCard({
 						<Badge variant="secondary">{categoryLabels[template.habitCategory]}</Badge>
 						<Badge variant="outline">{defenseModeLabels[template.timeDefenseMode]}</Badge>
 					</div>
-					<Button size="sm" onClick={onUse}>
+					<Button
+						size="sm"
+						onClick={onUse}
+						className="bg-accent text-accent-foreground hover:bg-accent/90 shadow-sm"
+					>
 						Use template
 					</Button>
 				</div>
@@ -1284,6 +1313,7 @@ function HabitCard({
 	onToggle: (isActive: boolean) => void;
 	isBusy: boolean;
 }) {
+	const { hour12 } = useUserPreferences();
 	return (
 		<div className="rounded-lg border border-border/70 bg-background/70 p-3 shadow-sm">
 			<div className="flex items-start justify-between gap-3">
@@ -1312,11 +1342,11 @@ function HabitCard({
 			</div>
 			<div className="mt-2 text-xs text-muted-foreground">
 				{habit.idealTime
-					? `Ideal time ${habit.idealTime}`
-					: formatWindow(habit.preferredWindowStart, habit.preferredWindowEnd)}{" "}
+					? `Ideal time ${formatTimeString(habit.idealTime, hour12)}`
+					: formatWindow(habit.preferredWindowStart, habit.preferredWindowEnd, hour12)}{" "}
 				| {formatDays(habit.preferredDays)}
-				{habit.startDate ? ` | Starts ${formatDate(habit.startDate)}` : ""}
-				{habit.endDate ? ` | Ends ${formatDate(habit.endDate)}` : ""}
+				{habit.startDate ? ` | Starts ${formatDate(habit.startDate, hour12)}` : ""}
+				{habit.endDate ? ` | Ends ${formatDate(habit.endDate, hour12)}` : ""}
 			</div>
 			<div className="mt-2 flex items-center justify-end gap-1">
 				<Button
@@ -1561,7 +1591,7 @@ function HabitDialog({
 										</Select>
 									</div>
 									<Button variant="link" className="justify-start px-0" asChild>
-										<a href="/settings/hours">Edit your Working Hours</a>
+										<a href="/app/settings/hours">Edit your Working Hours</a>
 									</Button>
 								</div>
 

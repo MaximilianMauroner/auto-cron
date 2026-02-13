@@ -63,6 +63,32 @@ export const upsertSyncedEventsForUser = (
 	},
 ) => ctx.runMutation(internal.calendar.mutations.upsertSyncedEventsForUser, args);
 
+export const upsertSyncedEventsBatch = (
+	ctx: ActionCtx,
+	args: {
+		userId: string;
+		events: Array<{
+			googleEventId: string;
+			title: string;
+			description?: string;
+			start: number;
+			end: number;
+			allDay: boolean;
+			calendarId: string;
+			recurrenceRule?: string;
+			recurringEventId?: string;
+			originalStartTime?: number;
+			status?: "confirmed" | "tentative" | "cancelled";
+			etag?: string;
+			busyStatus: "free" | "busy" | "tentative";
+			visibility?: "default" | "public" | "private" | "confidential";
+			location?: string;
+			color?: string;
+			lastSyncedAt: number;
+		}>;
+	},
+) => ctx.runMutation(internal.calendar.mutations.upsertSyncedEventsBatch, args);
+
 export const normalizeGoogleEventsInRange = (
 	ctx: ActionCtx,
 	args: { userId: string; start: number; end: number },

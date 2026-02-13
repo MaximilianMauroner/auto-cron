@@ -396,3 +396,22 @@ export const failRun = internalMutation({
 		return null;
 	},
 });
+
+export const clearExpiredPinnedTasks = internalMutation({
+	args: {
+		taskIds: v.array(v.id("tasks")),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		for (const taskId of args.taskIds) {
+			const task = await ctx.db.get(taskId);
+			if (task && task.pinnedStart !== undefined) {
+				await ctx.db.patch(taskId, {
+					pinnedStart: undefined,
+					pinnedEnd: undefined,
+				});
+			}
+		}
+		return null;
+	},
+});

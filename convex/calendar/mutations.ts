@@ -681,9 +681,7 @@ const performUpsertSyncedEventsForUser = async (
 					.eq("googleEventId", event.googleEventId),
 			)
 			.collect();
-		const googleLegacyMatches = legacyMatches.filter((match) => match.source === "google");
-
-		const allMatches = [...seriesMatches, ...googleLegacyMatches];
+		const allMatches = [...seriesMatches, ...legacyMatches];
 		const uniqueMatchesById = new Map<string, Doc<"calendarEvents">>();
 		for (const match of allMatches) {
 			uniqueMatchesById.set(String(match._id), match);
@@ -693,15 +691,25 @@ const performUpsertSyncedEventsForUser = async (
 		);
 		const primary = orderedMatches[0];
 
+		const isProtectedSource =
+			primary && (primary.source === "task" || primary.source === "habit") && primary.sourceId;
+
 		const occurrencePatch = {
-			title: isRecurringInstance ? undefined : event.title,
-			description: isRecurringInstance ? undefined : event.description,
+			// For task/habit events, preserve identity fields (title, description, color)
+			// so the task/habit remains the source of truth for these values.
+			title: isProtectedSource ? undefined : isRecurringInstance ? undefined : event.title,
+			description: isProtectedSource
+				? undefined
+				: isRecurringInstance
+					? undefined
+					: event.description,
 			start: event.start,
 			end: event.end,
-			allDay: isRecurringInstance ? undefined : event.allDay,
+			allDay: isProtectedSource ? undefined : isRecurringInstance ? undefined : event.allDay,
 			updatedAt: now,
-			source: "google" as const,
-			sourceId: event.googleEventId,
+			// Preserve original source for task/habit events so scheduler continues to manage them.
+			source: isProtectedSource ? (primary.source as "task" | "habit") : ("google" as const),
+			sourceId: isProtectedSource ? primary.sourceId : event.googleEventId,
 			calendarId: event.calendarId,
 			googleEventId: event.googleEventId,
 			recurrenceRule: isRecurringInstance ? undefined : event.recurrenceRule,
@@ -714,13 +722,47 @@ const performUpsertSyncedEventsForUser = async (
 			lastSyncedAt: event.lastSyncedAt,
 			// Persist busy status on occurrences so scheduling can evaluate blocking events directly.
 			busyStatus: event.busyStatus,
-			visibility: isRecurringInstance ? undefined : event.visibility,
-			location: isRecurringInstance ? undefined : event.location,
-			color: isRecurringInstance ? undefined : event.color,
+			visibility: isProtectedSource
+				? undefined
+				: isRecurringInstance
+					? undefined
+					: event.visibility,
+			location: isProtectedSource ? undefined : isRecurringInstance ? undefined : event.location,
+			color: isProtectedSource ? undefined : isRecurringInstance ? undefined : event.color,
 		};
 
 		if (primary) {
-			await ctx.db.patch(primary._id, occurrencePatch);
+			// Detect move/resize for task events → pin to Google's new time
+			if (primary.source === "task" && primary.sourceId) {
+				const startChanged = primary.start !== event.start;
+				const endChanged = primary.end !== event.end;
+				if (startChanged || endChanged) {
+					const taskId = primary.sourceId as Id<"tasks">;
+					const task = await ctx.db.get(taskId);
+					if (task && task.userId === userId) {
+						await ctx.db.patch(taskId, {
+							pinnedStart: event.start,
+							pinnedEnd: event.end,
+							scheduledStart: event.start,
+							scheduledEnd: event.end,
+						});
+					}
+				}
+			}
+			// Last-write-wins: if local was modified more recently than Google's update,
+			// preserve local content and only update sync metadata.
+			const localUpdatedAt = primary.updatedAt ?? primary._creationTime ?? 0;
+			if (!isProtectedSource && localUpdatedAt > event.lastSyncedAt) {
+				await ctx.db.patch(primary._id, {
+					googleEventId: event.googleEventId,
+					etag: event.etag,
+					lastSyncedAt: event.lastSyncedAt,
+					seriesId: series._id,
+					occurrenceStart,
+				});
+			} else {
+				await ctx.db.patch(primary._id, occurrencePatch);
+			}
 			for (const duplicate of orderedMatches.slice(1)) {
 				await ctx.db.delete(duplicate._id);
 			}
@@ -732,6 +774,7 @@ const performUpsertSyncedEventsForUser = async (
 		}
 	}
 
+	let needsReschedule = false;
 	for (const deletedEvent of args.deletedEvents ?? []) {
 		const existingMatches = await ctx.db
 			.query("calendarEvents")
@@ -750,8 +793,33 @@ const performUpsertSyncedEventsForUser = async (
 			) {
 				continue;
 			}
-			await ctx.db.delete(existingEvent._id);
+
+			if (
+				(existingEvent.source === "task" || existingEvent.source === "habit") &&
+				existingEvent.sourceId
+			) {
+				// Task/habit event deleted in Google → unlink from Google, trigger reschedule.
+				// The scheduler will create a new event at the next available time.
+				await ctx.db.patch(existingEvent._id, {
+					googleEventId: undefined,
+					etag: undefined,
+					lastSyncedAt: undefined,
+					status: "cancelled",
+					updatedAt: now,
+				});
+				needsReschedule = true;
+			} else {
+				// Manual or Google-originated event → delete locally
+				await ctx.db.delete(existingEvent._id);
+			}
 		}
+	}
+
+	if (needsReschedule) {
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
 	}
 
 	const settings = await ctx.db
@@ -1200,5 +1268,134 @@ export const upsertSyncedEventsForUser = internalMutation({
 			triggeredBy: "calendar_change",
 		});
 		return result;
+	},
+});
+
+/**
+ * Lightweight batch mutation that only upserts a subset of events.
+ * Called from actions that split large syncs into smaller transactions
+ * to avoid OCC (Optimistic Concurrency Control) failures.
+ */
+export const upsertSyncedEventsBatch = internalMutation({
+	args: {
+		userId: v.string(),
+		events: v.array(syncEventValidator),
+	},
+	returns: v.object({ upserted: v.number() }),
+	handler: async (ctx, args) => {
+		const now = Date.now();
+		const seriesCache = new Map<string, Doc<"calendarEventSeries">>();
+
+		for (const event of args.events) {
+			const series = await upsertSeriesForGoogleEvent(ctx, args.userId, event, now, seriesCache);
+			const occurrenceStart = normalizeToMinute(event.originalStartTime ?? event.start);
+			const isRecurringInstance = Boolean(event.recurringEventId);
+
+			const seriesMatches = await ctx.db
+				.query("calendarEvents")
+				.withIndex("by_userId_seriesId_occurrenceStart", (q) =>
+					q
+						.eq("userId", args.userId)
+						.eq("seriesId", series._id as Id<"calendarEventSeries">)
+						.eq("occurrenceStart", occurrenceStart),
+				)
+				.collect();
+			const legacyMatches = await ctx.db
+				.query("calendarEvents")
+				.withIndex("by_userId_calendarId_googleEventId", (q) =>
+					q
+						.eq("userId", args.userId)
+						.eq("calendarId", event.calendarId)
+						.eq("googleEventId", event.googleEventId),
+				)
+				.collect();
+			const allMatches = [...seriesMatches, ...legacyMatches];
+			const uniqueMatchesById = new Map<string, Doc<"calendarEvents">>();
+			for (const match of allMatches) {
+				uniqueMatchesById.set(String(match._id), match);
+			}
+			const orderedMatches = Array.from(uniqueMatchesById.values()).sort(
+				(a, b) => recencyScore(b) - recencyScore(a),
+			);
+			const primary = orderedMatches[0];
+
+			const isProtectedSource =
+				primary && (primary.source === "task" || primary.source === "habit") && primary.sourceId;
+
+			const occurrencePatch = {
+				title: isProtectedSource ? undefined : isRecurringInstance ? undefined : event.title,
+				description: isProtectedSource
+					? undefined
+					: isRecurringInstance
+						? undefined
+						: event.description,
+				start: event.start,
+				end: event.end,
+				allDay: isProtectedSource ? undefined : isRecurringInstance ? undefined : event.allDay,
+				updatedAt: now,
+				source: isProtectedSource ? (primary.source as "task" | "habit") : ("google" as const),
+				sourceId: isProtectedSource ? primary.sourceId : event.googleEventId,
+				calendarId: event.calendarId,
+				googleEventId: event.googleEventId,
+				recurrenceRule: isRecurringInstance ? undefined : event.recurrenceRule,
+				recurringEventId: event.recurringEventId,
+				originalStartTime: event.originalStartTime,
+				seriesId: series._id,
+				occurrenceStart,
+				status: event.status,
+				etag: event.etag,
+				lastSyncedAt: event.lastSyncedAt,
+				busyStatus: event.busyStatus,
+				visibility: isProtectedSource
+					? undefined
+					: isRecurringInstance
+						? undefined
+						: event.visibility,
+				location: isProtectedSource ? undefined : isRecurringInstance ? undefined : event.location,
+				color: isProtectedSource ? undefined : isRecurringInstance ? undefined : event.color,
+			};
+
+			if (primary) {
+				// Detect move/resize for task events → pin to Google's new time
+				if (primary.source === "task" && primary.sourceId) {
+					const startChanged = primary.start !== event.start;
+					const endChanged = primary.end !== event.end;
+					if (startChanged || endChanged) {
+						const taskId = primary.sourceId as Id<"tasks">;
+						const task = await ctx.db.get(taskId);
+						if (task && task.userId === args.userId) {
+							await ctx.db.patch(taskId, {
+								pinnedStart: event.start,
+								pinnedEnd: event.end,
+								scheduledStart: event.start,
+								scheduledEnd: event.end,
+							});
+						}
+					}
+				}
+				const localUpdatedAt = primary.updatedAt ?? primary._creationTime ?? 0;
+				if (!isProtectedSource && localUpdatedAt > event.lastSyncedAt) {
+					await ctx.db.patch(primary._id, {
+						googleEventId: event.googleEventId,
+						etag: event.etag,
+						lastSyncedAt: event.lastSyncedAt,
+						seriesId: series._id,
+						occurrenceStart,
+					});
+				} else {
+					await ctx.db.patch(primary._id, occurrencePatch);
+				}
+				for (const duplicate of orderedMatches.slice(1)) {
+					await ctx.db.delete(duplicate._id);
+				}
+			} else {
+				await ctx.db.insert("calendarEvents", {
+					userId: args.userId,
+					...occurrencePatch,
+				});
+			}
+		}
+
+		return { upserted: args.events.length };
 	},
 });

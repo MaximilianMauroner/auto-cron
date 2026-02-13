@@ -6,11 +6,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const settingsNavItems = [
-	{ href: "/settings", label: "Overview", icon: Settings2 },
-	{ href: "/settings/hours", label: "Hours", icon: Clock3 },
-	{ href: "/settings/scheduling", label: "Scheduling", icon: SlidersHorizontal },
-	{ href: "/settings/account", label: "Account", icon: UserCircle },
-	{ href: "/settings/notifications", label: "Notifications", icon: Bell },
+	{ href: "/app/settings", label: "Overview", icon: Settings2 },
+	{ href: "/app/settings/hours", label: "Hours", icon: Clock3 },
+	{ href: "/app/settings/scheduling", label: "Scheduling", icon: SlidersHorizontal },
+	{ href: "/app/settings/account", label: "Account", icon: UserCircle },
+	{ href: "/app/settings/notifications", label: "Notifications", icon: Bell },
 ];
 
 export default function SettingsLayout({ children }: { children: React.ReactNode }) {
@@ -29,7 +29,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
 						{settingsNavItems.map((item) => {
 							const isActive =
 								pathname === item.href ||
-								(item.href !== "/settings" && pathname.startsWith(`${item.href}/`));
+								(item.href !== "/app/settings" && pathname.startsWith(`${item.href}/`));
 							return (
 								<Link
 									key={item.href}
