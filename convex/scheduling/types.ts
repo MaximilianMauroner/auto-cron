@@ -38,6 +38,8 @@ export type SchedulingTaskInput = {
 	effectiveSchedulingMode: SchedulingMode;
 	preferredCalendarId?: string;
 	color?: string;
+	pinnedStart?: number;
+	pinnedEnd?: number;
 };
 
 export type SchedulingHabitInput = {
@@ -137,6 +139,7 @@ export type SolverResult = {
 	lateTasks: LateTaskDiagnostic[];
 	habitShortfalls: HabitShortfallDiagnostic[];
 	droppedHabits: HabitDropDiagnostic[];
+	expiredPinnedTaskIds: Id<"tasks">[];
 	reasonCode?: string;
 	error?: string;
 };

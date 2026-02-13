@@ -21,6 +21,7 @@ import {
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
+	SidebarRail,
 } from "@/components/ui/sidebar";
 import { useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
@@ -154,7 +155,7 @@ export function AppSidebar() {
 	};
 
 	return (
-		<Sidebar>
+		<Sidebar collapsible="icon">
 			<SidebarHeader className="px-4 py-4">
 				<div className="flex items-center gap-2">
 					<Image
@@ -165,7 +166,9 @@ export function AppSidebar() {
 						className="size-5 rounded-sm"
 						priority
 					/>
-					<h2 className="text-[0.85rem] font-semibold tracking-tight">Auto Cron</h2>
+					<h2 className="text-[0.85rem] font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+						Auto Cron
+					</h2>
 				</div>
 			</SidebarHeader>
 			<SidebarContent className="flex flex-col overflow-hidden">
@@ -175,7 +178,7 @@ export function AppSidebar() {
 						<SidebarMenu>
 							{navItems.map((item) => (
 								<SidebarMenuItem key={item.href}>
-									<SidebarMenuButton asChild isActive={pathname === item.href}>
+									<SidebarMenuButton asChild isActive={pathname === item.href} tooltip={item.title}>
 										<Link href={item.href} className="relative flex w-full items-center gap-2.5">
 											<item.icon className="size-3.5 shrink-0" />
 											<span className="text-[0.76rem] font-medium">{item.title}</span>
@@ -191,7 +194,7 @@ export function AppSidebar() {
 					<SidebarGroupContent>
 						<SidebarMenu>
 							<SidebarMenuItem>
-								<SidebarMenuButton asChild isActive={false}>
+								<SidebarMenuButton asChild isActive={false} tooltip="Hours settings">
 									<Link
 										href="/app/settings/hours"
 										className="relative flex w-full items-center gap-2.5"
@@ -207,7 +210,7 @@ export function AppSidebar() {
 				{isCalendarRoute ? (
 					<SidebarGroup className="mt-auto gap-2 p-1">
 						<SidebarGroupLabel>Scheduling</SidebarGroupLabel>
-						<div className="rounded-lg border border-sidebar-border bg-sidebar-accent p-2">
+						<div className="rounded-lg border border-sidebar-border bg-sidebar-accent p-2 group-data-[collapsible=icon]:hidden">
 							<div className="px-1 pb-1 text-[0.62rem] uppercase tracking-[0.1em] text-muted-foreground">
 								Google Calendars
 							</div>
@@ -267,6 +270,7 @@ export function AppSidebar() {
 							<DropdownMenuTrigger asChild>
 								<SidebarMenuButton
 									size="lg"
+									tooltip={displayName}
 									className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
 								>
 									<Avatar className="size-8 rounded-lg">
@@ -344,6 +348,7 @@ export function AppSidebar() {
 					</SidebarMenuItem>
 				</SidebarMenu>
 			</SidebarFooter>
+			<SidebarRail />
 		</Sidebar>
 	);
 }

@@ -27,7 +27,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 2. [x] Habit CRUD and scheduling preference flows
 3. [x] Auto-scheduling engine with conflict handling
 4. [x] Calendar views with drag/drop rescheduling
-5. [~] Google Calendar bidirectional sync
+5. [~] Google Calendar bidirectional sync (task/habit event protection, pinning on move/resize)
 6. [x] Scheduling run history and diagnostics UI
 7. [~] Feature gating via Autumn `check()` in Convex functions (task/habit create only)
 
@@ -133,6 +133,8 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Mini-calendar for date navigation
 - [x] "Today" button + view switcher (day/week/month)
 - [x] Responsive layout: sidebar collapses on mobile
+- [x] Collapsible left sidebar with icon mode and SidebarRail
+- [x] Right aside panel with Tasks/Priorities tabs and keyboard shortcut (Cmd+.)
 
 ### Phase 7: Google Calendar sync
 
@@ -145,8 +147,8 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Queue-backed periodic fallback sync via cron (6h) for connected users
 - [x] Push-triggered sync via Google Calendar watch channels (`events.watch`) + Convex webhook
 - [x] Watch-channel renewal cron (6h) with expiring-channel refresh
-- [ ] Conflict resolution: Google events take precedence, reschedule displaced tasks
-- [x] Handle event deletions (both directions)
+- [~] Conflict resolution: task/habit events preserve identity during Google sync; moved task events get pinned
+- [x] Handle event deletions (both directions, task/habit events unlink + reschedule instead of hard-delete)
 - [x] Allow local event deletion when provider-side delete fails
 - [x] Honor recurring move scope (`single`, `following`, `series`) in local mutations
 - [x] Internalize sync-upsert mutation surface (remove unused public `upsertSyncedEvents`)

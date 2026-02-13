@@ -685,7 +685,8 @@
 
 .sx-autocron-light .sx__week-header {
 	border-bottom: 1px solid var(--border);
-	position: relative;
+	position: sticky;
+	top: 0;
 	z-index: 30;
 }
 
@@ -897,7 +898,8 @@
 
 .sx-autocron-dark .sx__week-header {
 	border-bottom: 1px solid var(--border);
-	position: relative;
+	position: sticky;
+	top: 0;
 	z-index: 30;
 }
 

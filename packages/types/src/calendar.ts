@@ -25,6 +25,8 @@ export type CalendarEventDTO = {
 	recurrenceRule?: string;
 	recurringEventId?: string;
 	originalStartTime?: number;
+	seriesId?: string;
+	occurrenceStart?: number;
 	status?: CalendarEventStatus;
 	etag?: string;
 	busyStatus: CalendarBusyStatus;

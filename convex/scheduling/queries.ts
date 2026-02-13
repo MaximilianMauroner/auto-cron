@@ -162,6 +162,8 @@ export const getSchedulingInputForUser = internalQuery({
 				effectiveSchedulingMode: schedulingModeValidator,
 				preferredCalendarId: v.optional(v.string()),
 				color: v.optional(v.string()),
+				pinnedStart: v.optional(v.number()),
+				pinnedEnd: v.optional(v.number()),
 			}),
 		),
 		habits: v.array(
@@ -265,6 +267,8 @@ export const getSchedulingInputForUser = internalQuery({
 					: defaultTaskMode,
 				preferredCalendarId: task.preferredCalendarId,
 				color: task.color,
+				pinnedStart: task.pinnedStart,
+				pinnedEnd: task.pinnedEnd,
 			}));
 
 		const habits = await ctx.db

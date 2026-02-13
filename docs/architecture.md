@@ -68,6 +68,11 @@ Defined in `convex/schema.ts`:
    - pass B optimizes with soft lateness + habit/drop/preference/stability objectives
 5. Scheduler writes derived `calendarEvents` and logs diagnostics in `schedulingRuns`.
 6. Google Calendar sync keeps external calendar state aligned.
+   - Task/habit events synced from Google preserve their original `source` and `sourceId`.
+   - When a task event is moved/resized in Google, `pinnedStart`/`pinnedEnd` are written to the task
+     document so the scheduler respects the user's manual placement.
+   - When a task/habit event is deleted in Google, the calendar event is unlinked and marked cancelled
+     (not hard-deleted), and rescheduling is triggered.
 7. Google push notifications (`events.watch`) hit Convex HTTP webhook; webhook enqueues deduped
    `googleSyncRuns` and the sync runner performs incremental token-based imports.
 
@@ -82,10 +87,12 @@ The Convex scheduling module lives in `convex/scheduling/*` and runs as an inter
    scheduled blocks.
 5. Expand habit recurrences from RRULE and build occurrence candidates.
 6. Build task chunk plans from required duration and chunk bounds.
-7. Run pass A (strict due-date feasibility) and pass B (full objective).
-8. On hard infeasible (`INFEASIBLE_HARD`), mark run failed and keep existing scheduler-generated blocks unchanged.
-9. On success, reconcile scheduler-generated task/habit blocks in horizon (patch existing first to preserve remote IDs, then insert/delete deltas) and patch task `scheduledStart/scheduledEnd`.
-10. After local apply completes, run a post-run Google sync pass for scheduler blocks:
+7. Place pinned tasks at their exact `pinnedStart`/`pinnedEnd` positions (bypassing solver).
+   Tasks with expired pins (entirely in the past) have their pins cleared and fall through to normal scheduling.
+8. Run pass A (strict due-date feasibility) and pass B (full objective).
+9. On hard infeasible (`INFEASIBLE_HARD`), mark run failed and keep existing scheduler-generated blocks unchanged.
+10. On success, reconcile scheduler-generated task/habit blocks in horizon (patch existing first to preserve remote IDs, then insert/delete deltas) and patch task `scheduledStart/scheduledEnd`.
+11. After local apply completes, run a post-run Google sync pass for scheduler blocks:
    - pull current Google events in horizon for comparison
    - delete stale scheduler-owned Google events
    - create/update only changed blocks to reduce write calls
@@ -137,6 +144,19 @@ Scheduling migrations are idempotent and focus on canonical values:
   4. Track usage once with idempotency key.
   5. Commit reservation; if track fails, compensate by deleting inserted entity and mark rollback state.
 - Update/delete/reorder/toggle paths are intentionally ungated (auth + ownership checks only).
+
+## App shell layout
+
+The web app uses a three-panel layout:
+
+- **Left sidebar** (`AppSidebar`): Collapsible with icon mode via `SidebarRail`. Tooltips on hover when collapsed. State persisted by shadcn's `SidebarProvider`.
+- **Main content area**: Renders the active page (calendar, tasks, habits, settings).
+- **Right aside panel** (`AsidePanel`): Collapsible tasks/priorities panel. Desktop uses a width transition; mobile uses a Sheet overlay. Toggled via `Cmd+.` shortcut or `AsidePanelTrigger`. State persisted to cookie (`aside_panel_state`).
+
+Components in `apps/web/components/aside-panel/`:
+- `AsidePanelProvider` / `useAsidePanel`: Context for open/close state and keyboard shortcut.
+- `AsidePanel`: Responsive container (Sheet on mobile, collapsible div on desktop).
+- `AsidePanelContent`: Tabs for Tasks (up next + all) and Priorities (grouped by priority level).
 
 ## Architecture principle
 

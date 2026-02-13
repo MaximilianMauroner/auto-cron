@@ -157,6 +157,54 @@ export const listEvents = query({
 	}),
 });
 
+export const listTaskEvents = query({
+	args: {
+		taskId: v.string(),
+	},
+	returns: v.array(calendarEventDtoValidator),
+	handler: withQueryAuth(async (ctx, args: { taskId: string }) => {
+		const { userId } = ctx;
+		const events = await ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId", (q) => q.eq("userId", userId))
+			.filter((q) => q.and(q.eq(q.field("source"), "task"), q.eq(q.field("sourceId"), args.taskId)))
+			.collect();
+
+		const valid = events.filter((event) => event.status !== "cancelled");
+
+		const seriesIds = Array.from(
+			new Set(
+				valid
+					.map((event) => event.seriesId)
+					.filter((id): id is NonNullable<typeof id> => Boolean(id)),
+			),
+		);
+		const seriesDocs = await Promise.all(seriesIds.map((id) => ctx.db.get(id)));
+		const seriesById = new Map<string, Doc<"calendarEventSeries"> | null>();
+		for (let i = 0; i < seriesIds.length; i += 1) {
+			seriesById.set(String(seriesIds[i]), seriesDocs[i] ?? null);
+		}
+
+		const deduped = new Map<string, Doc<"calendarEvents">>();
+		for (const event of valid) {
+			const key = buildDedupeKey(event);
+			const prev = deduped.get(key);
+			if (!prev || recencyScore(event) > recencyScore(prev)) {
+				deduped.set(key, event);
+			}
+		}
+
+		return Array.from(deduped.values())
+			.map((event) =>
+				hydrateEvent(
+					event,
+					event.seriesId ? (seriesById.get(String(event.seriesId)) ?? null) : null,
+				),
+			)
+			.sort((a, b) => a.start - b.start);
+	}),
+});
+
 export const listGoogleCalendars = query({
 	args: {},
 	returns: v.array(
