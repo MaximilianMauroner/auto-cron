@@ -79,7 +79,6 @@ type TaskScheduleResult = {
 	completionByTaskId: Map<string, number>;
 	requiredSlotsByTaskId: Map<string, number>;
 	availabilityByTaskId: Map<string, boolean[]>;
-	expiredPinnedTaskIds: SchedulingTaskInput["id"][];
 };
 type AvailabilityMaskCache = Map<string, boolean[]>;
 
@@ -162,36 +161,13 @@ const scheduleTasks = (
 	const completionByTaskId = new Map<string, number>();
 	const requiredSlotsByTaskId = new Map<string, number>();
 	const availabilityByTaskId = new Map<string, boolean[]>();
-	const expiredPinnedTaskIds: SchedulingTaskInput["id"][] = [];
-
-	for (const task of tasks) {
-		// Pinned tasks are placed at their exact position, skipping the solver
-		if (task.pinnedStart !== undefined && task.pinnedEnd !== undefined) {
-			const pinStartSlot = Math.max(0, slotForTimestamp(horizonStart, task.pinnedStart));
-			const pinEndSlot = Math.max(pinStartSlot, slotForTimestamp(horizonStart, task.pinnedEnd));
-			const pinDuration = pinEndSlot - pinStartSlot;
-			if (pinDuration > 0) {
-				occupyRange(occupancyMask, pinStartSlot, pinDuration);
-				const start = timestampForSlot(horizonStart, pinStartSlot);
-				const end = timestampForSlot(horizonStart, pinEndSlot);
-				blocks.push({
-					source: "task",
-					sourceId: String(task.id),
-					title: `📌 ${task.title}`,
-					start,
-					end,
-					priority: task.priority,
-					calendarId: task.preferredCalendarId,
-					color: task.color,
-					location: task.location,
-				});
-				completionByTaskId.set(String(task.id), pinEndSlot);
-				requiredSlotsByTaskId.set(String(task.id), pinDuration);
-				continue;
-			}
-			// Pinned range is entirely in the past — mark for cleanup so stale
-			// pinnedStart/pinnedEnd are cleared after the solve.
-			expiredPinnedTaskIds.push(task.id);
+	for (let task of tasks) {
+		// Subtract pinned event duration from the task's required time.
+		// Pinned events are already in the busy mask, so the solver won't double-book.
+		if (task.pinnedEventMinutes && task.pinnedEventMinutes > 0) {
+			const remainingMinutes = Math.max(0, task.estimatedMinutes - task.pinnedEventMinutes);
+			if (remainingMinutes === 0) continue; // fully covered by pinned events
+			task = { ...task, estimatedMinutes: remainingMinutes };
 		}
 
 		const plan = buildTaskChunkPlan(task);
@@ -210,7 +186,6 @@ const scheduleTasks = (
 				completionByTaskId,
 				requiredSlotsByTaskId,
 				availabilityByTaskId,
-				expiredPinnedTaskIds,
 			} as TaskScheduleResult;
 		}
 		const availability = availabilityMaskForHoursSet(
@@ -262,7 +237,6 @@ const scheduleTasks = (
 					completionByTaskId,
 					requiredSlotsByTaskId,
 					availabilityByTaskId,
-					expiredPinnedTaskIds,
 				} as TaskScheduleResult;
 			}
 			occupyRange(occupancyMask, startSlot, durationSlots);
@@ -339,7 +313,6 @@ const scheduleTasks = (
 		completionByTaskId,
 		requiredSlotsByTaskId,
 		availabilityByTaskId,
-		expiredPinnedTaskIds,
 	} as TaskScheduleResult;
 };
 
@@ -679,7 +652,6 @@ export const solveSchedule = (input: SchedulingInput): SolverResult => {
 			lateTasks: [],
 			habitShortfalls: [],
 			droppedHabits: [],
-			expiredPinnedTaskIds: taskPass.expiredPinnedTaskIds,
 			reasonCode: taskPass.reasonCode ?? "INFEASIBLE_HARD",
 		};
 	}
@@ -710,7 +682,6 @@ export const solveSchedule = (input: SchedulingInput): SolverResult => {
 		lateTasks,
 		habitShortfalls: habits.shortfalls,
 		droppedHabits: habits.dropped,
-		expiredPinnedTaskIds: taskPass.expiredPinnedTaskIds,
 		reasonCode: lateTasks.length > 0 ? "TASKS_LATE" : undefined,
 	};
 };

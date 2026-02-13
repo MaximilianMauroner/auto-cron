@@ -100,6 +100,7 @@ const calendarEventDtoValidator = v.object({
 	),
 	location: v.optional(v.string()),
 	color: v.optional(v.string()),
+	pinned: v.optional(v.boolean()),
 });
 
 export const listEvents = query({

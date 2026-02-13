@@ -162,8 +162,7 @@ export const getSchedulingInputForUser = internalQuery({
 				effectiveSchedulingMode: schedulingModeValidator,
 				preferredCalendarId: v.optional(v.string()),
 				color: v.optional(v.string()),
-				pinnedStart: v.optional(v.number()),
-				pinnedEnd: v.optional(v.number()),
+				pinnedEventMinutes: v.optional(v.number()),
 			}),
 		),
 		habits: v.array(
@@ -238,6 +237,30 @@ export const getSchedulingInputForUser = internalQuery({
 			(settings as { defaultTaskSchedulingMode?: string } | undefined)?.defaultTaskSchedulingMode,
 		);
 
+		const horizonEnd = args.now + horizonWeeks * 7 * 24 * 60 * 60 * 1000;
+		const events = await ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_start", (q) => q.eq("userId", args.userId).lte("start", horizonEnd))
+			.filter((q) => q.gte(q.field("end"), args.now))
+			.collect();
+
+		// Compute pinned event minutes per task
+		const pinnedMinutesByTask = new Map<string, number>();
+		for (const event of events) {
+			if (
+				event.source === "task" &&
+				event.pinned === true &&
+				event.sourceId &&
+				!event.sourceId.includes(":travel:")
+			) {
+				const mins = (event.end - event.start) / 60_000;
+				pinnedMinutesByTask.set(
+					event.sourceId,
+					(pinnedMinutesByTask.get(event.sourceId) ?? 0) + mins,
+				);
+			}
+		}
+
 		const tasks = await ctx.db
 			.query("tasks")
 			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
@@ -267,8 +290,7 @@ export const getSchedulingInputForUser = internalQuery({
 					: defaultTaskMode,
 				preferredCalendarId: task.preferredCalendarId,
 				color: task.color,
-				pinnedStart: task.pinnedStart,
-				pinnedEnd: task.pinnedEnd,
+				pinnedEventMinutes: pinnedMinutesByTask.get(String(task._id)) ?? 0,
 			}));
 
 		const habits = await ctx.db
@@ -310,17 +332,11 @@ export const getSchedulingInputForUser = internalQuery({
 		>;
 		const defaultHoursSetId = hoursSets.find((set) => set.isDefault)?._id;
 
-		const horizonEnd = args.now + horizonWeeks * 7 * 24 * 60 * 60 * 1000;
-		const events = await ctx.db
-			.query("calendarEvents")
-			.withIndex("by_userId_start", (q) => q.eq("userId", args.userId).lte("start", horizonEnd))
-			.filter((q) => q.gte(q.field("end"), args.now))
-			.collect();
 		const busy = events
 			.filter(
 				(event) =>
 					event.status !== "cancelled" &&
-					(event.source === "manual" || event.source === "google") &&
+					(event.source === "manual" || event.source === "google" || event.pinned === true) &&
 					isBlockingBusyStatus(event.busyStatus),
 			)
 			.map((event) => ({

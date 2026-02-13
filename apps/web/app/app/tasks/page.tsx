@@ -40,7 +40,11 @@ import {
 	useMutationWithStatus,
 } from "@/hooks/use-convex-status";
 import { getConvexErrorPayload } from "@/lib/convex-errors";
-import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duration";
+import {
+	formatDurationCompact,
+	formatDurationFromMinutes,
+	parseDurationToMinutes,
+} from "@/lib/duration";
 import { cn } from "@/lib/utils";
 import type {
 	HoursSetDTO,
@@ -122,6 +126,14 @@ const priorityClass: Record<Priority, string> = {
 	high: "bg-amber-500/15 text-amber-700 border-amber-500/25",
 	critical: "bg-orange-500/15 text-orange-700 border-orange-500/25",
 	blocker: "bg-rose-500/15 text-rose-700 border-rose-500/25",
+};
+
+const priorityLabels: Record<Priority, string> = {
+	low: "Low",
+	medium: "Medium",
+	high: "High",
+	critical: "Critical",
+	blocker: "Blocker",
 };
 
 const statusOrder: TaskStatus[] = ["backlog", "queued", "scheduled", "in_progress", "done"];
@@ -698,10 +710,10 @@ export default function TasksPage() {
 						<Card className="border-border/70 bg-card/70">
 							<CardHeader className="pb-2">
 								<CardDescription className="text-xs uppercase tracking-[0.14em]">
-									Execution lanes
+									Pipeline
 								</CardDescription>
 								<CardTitle className="flex items-center justify-between text-base">
-									<span>Execution lanes</span>
+									<span>Execution Lanes</span>
 									<Badge variant="secondary">{activeCount + completedCount}</Badge>
 								</CardTitle>
 							</CardHeader>
@@ -833,16 +845,16 @@ function TaskCard({
 						/>
 						{task.title}
 					</p>
-					<p className="line-clamp-2 text-xs text-muted-foreground">
-						{task.description || "No description"}
-					</p>
+					{task.description ? (
+						<p className="line-clamp-2 text-xs text-muted-foreground">{task.description}</p>
+					) : null}
 				</div>
-				<Badge className={priorityClass[task.priority]}>{task.priority}</Badge>
+				<Badge className={priorityClass[task.priority]}>{priorityLabels[task.priority]}</Badge>
 			</div>
 			<div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
 				<span className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-0.5">
 					<Clock3 className="size-3" />
-					{task.estimatedMinutes}m
+					{formatDurationCompact(task.estimatedMinutes)}
 				</span>
 				<span className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-0.5">
 					<CheckCircle2 className="size-3" />
@@ -850,7 +862,8 @@ function TaskCard({
 				</span>
 				{task.splitAllowed ? (
 					<span className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-0.5">
-						Split {task.minChunkMinutes ?? 30}-{task.maxChunkMinutes ?? 180}m
+						Split {formatDurationCompact(task.minChunkMinutes ?? 30)}-
+						{formatDurationCompact(task.maxChunkMinutes ?? 180)}
 					</span>
 				) : null}
 				{task.location ? (
@@ -1036,9 +1049,9 @@ function TaskDialog({
 											<SelectValue placeholder="Priority" />
 										</SelectTrigger>
 										<SelectContent>
-											{Object.keys(priorityClass).map((priority) => (
-												<SelectItem key={priority} value={priority}>
-													{priority}
+											{(Object.keys(priorityLabels) as Priority[]).map((p) => (
+												<SelectItem key={p} value={p}>
+													{priorityLabels[p]}
 												</SelectItem>
 											))}
 										</SelectContent>
@@ -1296,7 +1309,7 @@ function TaskDialog({
 
 									<div className="grid gap-3 md:grid-cols-2">
 										<div className="space-y-2">
-											<Label>Min duration (mins)</Label>
+											<Label>Min chunk</Label>
 											<DurationInput
 												value={value.minChunkMinutes}
 												onChange={(minChunkMinutes) => onChange({ ...value, minChunkMinutes })}
@@ -1304,7 +1317,7 @@ function TaskDialog({
 											/>
 										</div>
 										<div className="space-y-2">
-											<Label>Max duration (mins)</Label>
+											<Label>Max chunk</Label>
 											<DurationInput
 												value={value.maxChunkMinutes}
 												onChange={(maxChunkMinutes) => onChange({ ...value, maxChunkMinutes })}

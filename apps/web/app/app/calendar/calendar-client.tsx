@@ -4,6 +4,8 @@ import { DateGridEvent } from "@/components/calendar/date-grid-event";
 import { TimeGridEvent } from "@/components/calendar/time-grid-event";
 import { QuickCreateHabitDialog } from "@/components/quick-create/quick-create-habit-dialog";
 import { QuickCreateTaskDialog } from "@/components/quick-create/quick-create-task-dialog";
+import { TaskEditSheet } from "@/components/tasks/task-edit-sheet";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
 import {
@@ -69,6 +71,8 @@ import {
 	Globe2,
 	MapPin,
 	MoreHorizontal,
+	Pin,
+	PinOff,
 	RefreshCw,
 	Repeat2,
 	Rocket,
@@ -80,6 +84,7 @@ import {
 import { useTheme } from "next-themes";
 import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
+import type { Id } from "../../../../../convex/_generated/dataModel";
 import { SchedulingDiagnostics } from "./scheduling-diagnostics";
 
 type EditorState = {
@@ -1315,6 +1320,10 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const { mutate: createEventMutation } = useMutationWithStatus(api.calendar.mutations.createEvent);
 	const { mutate: updateEventMutation } = useMutationWithStatus(api.calendar.mutations.updateEvent);
 	const { mutate: deleteEventMutation } = useMutationWithStatus(api.calendar.mutations.deleteEvent);
+	const { mutate: setEventPinnedMutation } = useMutationWithStatus(
+		api.calendar.mutations.setEventPinned,
+	);
+	const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 	const { mutate: moveResizeEventMutation } = useMutationWithStatus(
 		api.calendar.mutations.moveResizeEvent,
 	);
@@ -2714,6 +2723,8 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		selectedEvent?.source ?? (editor?.mode === "create" ? "manual" : undefined);
 	const isTravelBlockEvent =
 		selectedEvent?.source === "task" && Boolean(selectedEvent.sourceId?.includes(":travel:"));
+	const isTaskBoundEvent =
+		selectedEvent?.source === "task" && !isTravelBlockEvent && Boolean(selectedEvent.sourceId);
 	const hasEditorLocation = Boolean(editor?.location.trim());
 	const travelBufferAppliesToEvent =
 		(selectedEventSource === "google" || selectedEventSource === "manual") &&
@@ -2905,6 +2916,53 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 										</span>
 									</div>
 								</div>
+
+								{/* Task indicator: badge + Open Task + pin toggle */}
+								{isTaskBoundEvent && selectedEvent?.sourceId ? (
+									<div className="flex items-center gap-2 border-t border-border px-3 py-2">
+										<Badge className="bg-chart-3/15 text-chart-3 border-chart-3/25 text-[0.6rem] px-1.5 py-0">
+											Task
+										</Badge>
+										<Button
+											variant="ghost"
+											size="sm"
+											className="h-6 text-[0.72rem] text-primary"
+											onClick={() => setEditingTaskId(selectedEvent?.sourceId ?? null)}
+										>
+											Open Task
+										</Button>
+										<div className="ml-auto flex items-center gap-1.5">
+											{selectedEvent.pinned === true ? (
+												<Badge className="bg-amber-500/15 text-amber-700 border-amber-500/25 text-[0.6rem] px-1.5 py-0">
+													Pinned
+												</Badge>
+											) : null}
+											<Button
+												variant="ghost"
+												size="sm"
+												className="h-6 gap-1 text-[0.68rem]"
+												onClick={() => {
+													void setEventPinnedMutation({
+														id: selectedEvent._id as Id<"calendarEvents">,
+														pinned: selectedEvent.pinned !== true,
+													});
+												}}
+											>
+												{selectedEvent.pinned === true ? (
+													<>
+														<PinOff className="size-3" />
+														Unpin
+													</>
+												) : (
+													<>
+														<Pin className="size-3" />
+														Pin
+													</>
+												)}
+											</Button>
+										</div>
+									</div>
+								) : null}
 
 								<div className="border-t border-border px-3 py-3 space-y-2.5">
 									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
@@ -4030,6 +4088,12 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				/>
 			</div>
 			{eventEditorSheet}
+			<TaskEditSheet
+				taskId={editingTaskId}
+				onOpenChange={(open) => {
+					if (!open) setEditingTaskId(null);
+				}}
+			/>
 		</>
 	);
 }

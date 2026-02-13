@@ -1,0 +1,399 @@
+"use client";
+
+import { Button } from "@/components/ui/button";
+import { DateTimePicker } from "@/components/ui/date-time-picker";
+import { DurationInput } from "@/components/ui/duration-input";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Textarea } from "@/components/ui/textarea";
+import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
+import {
+	formatDurationCompact,
+	formatDurationFromMinutes,
+	parseDurationToMinutes,
+} from "@/lib/duration";
+import type { CalendarEventDTO, Priority, TaskStatus } from "@auto-cron/types";
+import { Pin, PinOff, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
+
+const priorityLabels: Record<Priority, string> = {
+	low: "Low",
+	medium: "Medium",
+	high: "High",
+	critical: "Critical",
+	blocker: "Blocker",
+};
+
+const statusLabels: Record<TaskStatus, string> = {
+	backlog: "Backlog",
+	queued: "Up Next",
+	scheduled: "Scheduled",
+	in_progress: "In Progress",
+	done: "Done",
+};
+
+const toTimestamp = (value: string) => {
+	if (!value) return undefined;
+	const timestamp = Date.parse(value);
+	return Number.isFinite(timestamp) ? timestamp : undefined;
+};
+
+const toDateTimeLocal = (timestamp: number | undefined) => {
+	if (!timestamp) return "";
+	const date = new Date(timestamp);
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+};
+
+type TaskEditSheetProps = {
+	taskId: string | null;
+	onOpenChange: (open: boolean) => void;
+};
+
+export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
+	const open = taskId !== null;
+
+	const taskQuery = useAuthenticatedQueryWithStatus(
+		api.tasks.queries.getTask,
+		taskId ? { id: taskId as Id<"tasks"> } : "skip",
+	);
+	const task = taskQuery.data ?? null;
+
+	const eventsQuery = useAuthenticatedQueryWithStatus(
+		api.calendar.queries.listTaskEvents,
+		taskId ? { taskId } : "skip",
+	);
+	const events = (eventsQuery.data ?? []) as CalendarEventDTO[];
+
+	const { mutate: updateTask, status: updateStatus } = useMutationWithStatus(
+		api.tasks.mutations.updateTask,
+	);
+	const { mutate: deleteTask } = useMutationWithStatus(api.tasks.mutations.deleteTask);
+	const { mutate: pinAllTaskEvents } = useMutationWithStatus(
+		api.calendar.mutations.pinAllTaskEvents,
+	);
+
+	const [title, setTitle] = useState("");
+	const [description, setDescription] = useState("");
+	const [priority, setPriority] = useState<Priority>("medium");
+	const [status, setStatus] = useState<TaskStatus>("backlog");
+	const [estimatedMinutes, setEstimatedMinutes] = useState("");
+	const [deadline, setDeadline] = useState("");
+	const [scheduleAfter, setScheduleAfter] = useState("");
+	const [location, setLocation] = useState("");
+	const [color, setColor] = useState("#f59e0b");
+	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (!task) return;
+		setTitle(task.title);
+		setDescription(task.description ?? "");
+		setPriority(task.priority);
+		setStatus(task.status);
+		setEstimatedMinutes(formatDurationFromMinutes(task.estimatedMinutes));
+		setDeadline(toDateTimeLocal(task.deadline));
+		setScheduleAfter(toDateTimeLocal(task.scheduleAfter));
+		setLocation(task.location ?? "");
+		setColor(task.color ?? "#f59e0b");
+		setErrorMessage(null);
+	}, [task]);
+
+	const { pinnedCount, totalEvents, scheduledMinutes } = useMemo(() => {
+		const taskEvents = events.filter(
+			(e) => e.source === "task" && !e.sourceId?.includes(":travel:"),
+		);
+		const pinned = taskEvents.filter((e) => e.pinned === true);
+		const scheduled = Math.round(
+			taskEvents.reduce((sum, e) => sum + (e.end - e.start) / 60_000, 0),
+		);
+		return {
+			pinnedCount: pinned.length,
+			totalEvents: taskEvents.length,
+			scheduledMinutes: scheduled,
+		};
+	}, [events]);
+
+	const onSave = async () => {
+		if (!task) return;
+		const parsed = parseDurationToMinutes(estimatedMinutes);
+		if (!title.trim() || parsed === null || parsed <= 0) {
+			setErrorMessage("Please provide a title and valid estimated duration.");
+			return;
+		}
+		setErrorMessage(null);
+		try {
+			await updateTask({
+				id: task._id as Id<"tasks">,
+				patch: {
+					title: title.trim(),
+					description: description.trim() || null,
+					priority,
+					status,
+					estimatedMinutes: parsed,
+					deadline: toTimestamp(deadline) ?? null,
+					scheduleAfter: toTimestamp(scheduleAfter) ?? null,
+					location: location.trim() || null,
+					color: color || null,
+				},
+			});
+			onOpenChange(false);
+		} catch {
+			setErrorMessage("Could not update task.");
+		}
+	};
+
+	const onDelete = async () => {
+		if (!task) return;
+		try {
+			await deleteTask({ id: task._id as Id<"tasks"> });
+			onOpenChange(false);
+		} catch {
+			setErrorMessage("Could not delete task.");
+		}
+	};
+
+	return (
+		<Sheet open={open} onOpenChange={onOpenChange}>
+			<SheetContent side="right" className="w-80 p-0 sm:max-w-md" showCloseButton={false}>
+				<SheetHeader className="border-b border-border/70 px-5 py-4">
+					<SheetTitle className="text-lg">Edit task</SheetTitle>
+				</SheetHeader>
+				{task ? (
+					<>
+						<div className="max-h-[calc(100dvh-140px)] space-y-4 overflow-y-auto px-5 py-4">
+							<div className="space-y-1.5">
+								<Label htmlFor="task-edit-title" className="text-xs uppercase tracking-[0.1em]">
+									Title
+								</Label>
+								<Input
+									id="task-edit-title"
+									value={title}
+									onChange={(e) => {
+										setTitle(e.target.value);
+										if (errorMessage) setErrorMessage(null);
+									}}
+									placeholder="Task name"
+								/>
+							</div>
+
+							<div className="grid grid-cols-2 gap-3">
+								<div className="space-y-1.5">
+									<Label className="text-xs uppercase tracking-[0.1em]">Status</Label>
+									<Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
+										<SelectTrigger>
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											{(["backlog", "queued", "scheduled", "in_progress", "done"] as const).map(
+												(s) => (
+													<SelectItem key={s} value={s}>
+														{statusLabels[s]}
+													</SelectItem>
+												),
+											)}
+										</SelectContent>
+									</Select>
+								</div>
+								<div className="space-y-1.5">
+									<Label className="text-xs uppercase tracking-[0.1em]">Priority</Label>
+									<Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
+										<SelectTrigger>
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											{(["low", "medium", "high", "critical", "blocker"] as const).map((p) => (
+												<SelectItem key={p} value={p}>
+													{priorityLabels[p]}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+							</div>
+
+							<div className="grid grid-cols-2 gap-3">
+								<div className="space-y-1.5">
+									<Label className="text-xs uppercase tracking-[0.1em]">Time needed</Label>
+									<DurationInput
+										value={estimatedMinutes}
+										onChange={setEstimatedMinutes}
+										placeholder="e.g. 30 mins"
+									/>
+								</div>
+								<div className="space-y-1.5">
+									<Label className="text-xs uppercase tracking-[0.1em]">Color</Label>
+									<div className="flex items-center gap-2">
+										<input
+											type="color"
+											value={color}
+											onChange={(e) => setColor(e.target.value)}
+											className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent p-0.5"
+										/>
+										<span className="text-xs text-muted-foreground">{color}</span>
+									</div>
+								</div>
+							</div>
+
+							<div className="space-y-1.5">
+								<Label className="text-xs uppercase tracking-[0.1em]">Deadline</Label>
+								<DateTimePicker value={deadline} onChange={setDeadline} placeholder="No deadline" />
+							</div>
+
+							<div className="space-y-1.5">
+								<Label className="text-xs uppercase tracking-[0.1em]">Schedule after</Label>
+								<DateTimePicker
+									value={scheduleAfter}
+									onChange={setScheduleAfter}
+									placeholder="No constraint"
+								/>
+							</div>
+
+							<div className="space-y-1.5">
+								<Label className="text-xs uppercase tracking-[0.1em]">Location</Label>
+								<Input
+									value={location}
+									onChange={(e) => setLocation(e.target.value)}
+									placeholder="Optional location"
+								/>
+							</div>
+
+							{/* Scheduling progress + pinning */}
+							{(() => {
+								const total = task.estimatedMinutes;
+								const remaining = Math.max(0, total - scheduledMinutes);
+								const percent =
+									total > 0 ? Math.min(100, Math.round((scheduledMinutes / total) * 100)) : 0;
+								return (
+									<div className="space-y-1.5">
+										<Label className="text-xs uppercase tracking-[0.1em]">Schedule</Label>
+										<div className="rounded-lg border border-border/70 px-3 py-2.5 space-y-2.5">
+											<div>
+												<div className="flex items-center justify-between text-[0.72rem]">
+													<span className="text-muted-foreground">
+														{formatDurationCompact(scheduledMinutes)} /{" "}
+														{formatDurationCompact(total)} scheduled
+													</span>
+													<span className="text-muted-foreground/80 text-[0.66rem]">
+														{remaining > 0
+															? `${formatDurationCompact(remaining)} left`
+															: "Fully scheduled"}
+													</span>
+												</div>
+												<div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-border/50">
+													<div
+														className="h-full rounded-full transition-all duration-300"
+														style={{
+															width: `${percent}%`,
+															backgroundColor: color || undefined,
+															opacity: 0.7,
+														}}
+													/>
+												</div>
+											</div>
+
+											{/* Pinning controls */}
+											<div className="flex items-center gap-2 text-[0.72rem]">
+												{pinnedCount > 0 ? (
+													<Pin className="size-3.5 text-amber-600" />
+												) : (
+													<PinOff className="size-3.5 text-muted-foreground" />
+												)}
+												<span className="text-muted-foreground">
+													{totalEvents === 0
+														? "No scheduled events"
+														: `${pinnedCount} of ${totalEvents} event${totalEvents !== 1 ? "s" : ""} pinned`}
+												</span>
+											</div>
+											{totalEvents > 0 ? (
+												<div className="flex gap-2">
+													<Button
+														type="button"
+														variant="outline"
+														size="sm"
+														className="h-7 gap-1.5 text-[0.7rem]"
+														onClick={() =>
+															void pinAllTaskEvents({
+																taskId: task._id,
+																pinned: true,
+															})
+														}
+														disabled={pinnedCount === totalEvents}
+													>
+														<Pin className="size-3" />
+														Pin all
+													</Button>
+													<Button
+														type="button"
+														variant="outline"
+														size="sm"
+														className="h-7 gap-1.5 text-[0.7rem]"
+														onClick={() =>
+															void pinAllTaskEvents({
+																taskId: task._id,
+																pinned: false,
+															})
+														}
+														disabled={pinnedCount === 0}
+													>
+														<PinOff className="size-3" />
+														Unpin all
+													</Button>
+												</div>
+											) : null}
+										</div>
+									</div>
+								);
+							})()}
+
+							<div className="space-y-1.5">
+								<Label className="text-xs uppercase tracking-[0.1em]">Description</Label>
+								<Textarea
+									value={description}
+									onChange={(e) => setDescription(e.target.value)}
+									placeholder="Optional description"
+									rows={3}
+								/>
+							</div>
+
+							{errorMessage ? (
+								<p className="text-xs text-rose-600 dark:text-rose-400">{errorMessage}</p>
+							) : null}
+						</div>
+						<SheetFooter className="border-t border-border/70 px-5 py-3">
+							<Button
+								type="button"
+								variant="destructive"
+								size="sm"
+								onClick={() => void onDelete()}
+								className="mr-auto gap-1.5"
+							>
+								<Trash2 className="size-3.5" />
+								Delete
+							</Button>
+							<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+								Cancel
+							</Button>
+							<Button onClick={() => void onSave()} disabled={updateStatus === "pending"}>
+								{updateStatus === "pending" ? "Saving..." : "Save"}
+							</Button>
+						</SheetFooter>
+					</>
+				) : (
+					<div className="flex items-center justify-center p-8 text-sm text-muted-foreground">
+						{taskQuery.isPending ? "Loading..." : "Task not found."}
+					</div>
+				)}
+			</SheetContent>
+		</Sheet>
+	);
+}

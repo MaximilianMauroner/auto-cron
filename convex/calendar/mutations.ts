@@ -736,17 +736,8 @@ const performUpsertSyncedEventsForUser = async (
 			if (primary.source === "task" && primary.sourceId) {
 				const startChanged = primary.start !== event.start;
 				const endChanged = primary.end !== event.end;
-				if (startChanged || endChanged) {
-					const taskId = primary.sourceId as Id<"tasks">;
-					const task = await ctx.db.get(taskId);
-					if (task && task.userId === userId) {
-						await ctx.db.patch(taskId, {
-							pinnedStart: event.start,
-							pinnedEnd: event.end,
-							scheduledStart: event.start,
-							scheduledEnd: event.end,
-						});
-					}
+				if ((startChanged || endChanged) && !primary.sourceId.includes(":travel:")) {
+					await ctx.db.patch(primary._id, { pinned: true });
 				}
 			}
 			// Last-write-wins: if local was modified more recently than Google's update,
@@ -1205,6 +1196,10 @@ export const moveResizeEvent = mutation({
 				updatedAt: now,
 				occurrenceStart: normalizeToMinute(args.start),
 			});
+			// Auto-pin task event when dragged locally
+			if (event.source === "task" && event.sourceId && !event.sourceId.includes(":travel:")) {
+				await ctx.db.patch(args.id, { pinned: true });
+			}
 			await enqueueSchedulingRunFromMutation(ctx, {
 				userId,
 				triggeredBy: "calendar_change",
@@ -1360,17 +1355,8 @@ export const upsertSyncedEventsBatch = internalMutation({
 				if (primary.source === "task" && primary.sourceId) {
 					const startChanged = primary.start !== event.start;
 					const endChanged = primary.end !== event.end;
-					if (startChanged || endChanged) {
-						const taskId = primary.sourceId as Id<"tasks">;
-						const task = await ctx.db.get(taskId);
-						if (task && task.userId === args.userId) {
-							await ctx.db.patch(taskId, {
-								pinnedStart: event.start,
-								pinnedEnd: event.end,
-								scheduledStart: event.start,
-								scheduledEnd: event.end,
-							});
-						}
+					if ((startChanged || endChanged) && !primary.sourceId.includes(":travel:")) {
+						await ctx.db.patch(primary._id, { pinned: true });
 					}
 				}
 				const localUpdatedAt = primary.updatedAt ?? primary._creationTime ?? 0;
@@ -1398,4 +1384,65 @@ export const upsertSyncedEventsBatch = internalMutation({
 
 		return { upserted: args.events.length };
 	},
+});
+
+export const setEventPinned = mutation({
+	args: {
+		id: v.id("calendarEvents"),
+		pinned: v.boolean(),
+	},
+	returns: v.null(),
+	handler: withMutationAuth(async (ctx, args: { id: Id<"calendarEvents">; pinned: boolean }) => {
+		const { userId } = ctx;
+		const event = await ctx.db.get(args.id);
+		if (!event || event.userId !== userId) {
+			throw new ConvexError({ code: "NOT_FOUND", message: "Event not found." });
+		}
+		if (event.source !== "task" && event.source !== "habit") {
+			throw new ConvexError({
+				code: "INVALID_SOURCE",
+				message: "Only task or habit events can be pinned.",
+			});
+		}
+		if (event.sourceId?.includes(":travel:")) {
+			throw new ConvexError({
+				code: "INVALID_SOURCE",
+				message: "Travel blocks cannot be pinned directly.",
+			});
+		}
+		await ctx.db.patch(args.id, { pinned: args.pinned, updatedAt: Date.now() });
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
+		return null;
+	}),
+});
+
+export const pinAllTaskEvents = mutation({
+	args: {
+		taskId: v.string(),
+		pinned: v.boolean(),
+	},
+	returns: v.null(),
+	handler: withMutationAuth(async (ctx, args: { taskId: string; pinned: boolean }) => {
+		const { userId } = ctx;
+		const events = await ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId", (q) => q.eq("userId", userId))
+			.filter((q) => q.and(q.eq(q.field("source"), "task"), q.eq(q.field("sourceId"), args.taskId)))
+			.collect();
+
+		const now = Date.now();
+		for (const event of events) {
+			if (event.sourceId?.includes(":travel:")) continue;
+			await ctx.db.patch(event._id, { pinned: args.pinned, updatedAt: now });
+		}
+
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
+		return null;
+	}),
 });

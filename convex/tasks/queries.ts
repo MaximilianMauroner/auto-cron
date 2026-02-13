@@ -1,4 +1,5 @@
 import { v } from "convex/values";
+import type { Id } from "../_generated/dataModel";
 import { query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
 import { taskSchedulingModeValidator } from "../hours/shared";
@@ -72,6 +73,32 @@ const sanitizeTaskSchedulingMode = (
 	}
 	return "fastest";
 };
+
+export const getTask = query({
+	args: {
+		id: v.id("tasks"),
+	},
+	returns: v.union(taskDtoValidator, v.null()),
+	handler: withQueryAuth(async (ctx, args: { id: string }) => {
+		const { userId } = ctx;
+		const task = await ctx.db.get(args.id as Id<"tasks">);
+		if (!task || task.userId !== userId) return null;
+		const settings = await ctx.db
+			.query("userSettings")
+			.withIndex("by_userId", (q) => q.eq("userId", userId))
+			.unique();
+		const defaultMode = sanitizeTaskSchedulingMode(settings?.defaultTaskSchedulingMode);
+		return {
+			...task,
+			schedulingMode: task.schedulingMode
+				? sanitizeTaskSchedulingMode(task.schedulingMode)
+				: undefined,
+			effectiveSchedulingMode: task.schedulingMode
+				? sanitizeTaskSchedulingMode(task.schedulingMode)
+				: defaultMode,
+		};
+	}),
+});
 
 export const listTasks = query({
 	args: {
