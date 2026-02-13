@@ -101,6 +101,19 @@ const GOOGLE_HEX_TO_COLOR_ID = Object.fromEntries(
 	Object.entries(GOOGLE_COLOR_ID_TO_HEX).map(([id, hex]) => [hex.toLowerCase(), id]),
 );
 const HEX_COLOR_REGEX = /^#(?:[0-9a-fA-F]{3}){1,2}$/;
+
+const hexToRgb = (hex: string): [number, number, number] => {
+	const h = hex.length === 4 ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}` : hex;
+	return [
+		Number.parseInt(h.slice(1, 3), 16),
+		Number.parseInt(h.slice(3, 5), 16),
+		Number.parseInt(h.slice(5, 7), 16),
+	];
+};
+
+const colorDistanceSq = (a: [number, number, number], b: [number, number, number]): number =>
+	(a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+
 const REMOTE_CALENDAR_ID_REGEX =
 	/(group\.(?:v\.)?calendar\.google\.com|import\.calendar\.google\.com|holiday)/i;
 
@@ -121,7 +134,20 @@ const toGoogleColorId = (color?: string) => {
 	if (!color) return undefined;
 	const normalized = color.trim().toLowerCase();
 	if (GOOGLE_COLOR_ID_TO_HEX[normalized]) return normalized;
-	return GOOGLE_HEX_TO_COLOR_ID[normalized];
+	const exactMatch = GOOGLE_HEX_TO_COLOR_ID[normalized];
+	if (exactMatch) return exactMatch;
+	if (!HEX_COLOR_REGEX.test(normalized)) return undefined;
+	const rgb = hexToRgb(normalized);
+	let bestId: string | undefined;
+	let bestDist = Number.POSITIVE_INFINITY;
+	for (const [id, hex] of Object.entries(GOOGLE_COLOR_ID_TO_HEX)) {
+		const dist = colorDistanceSq(rgb, hexToRgb(hex));
+		if (dist < bestDist) {
+			bestDist = dist;
+			bestId = id;
+		}
+	}
+	return bestId;
 };
 
 const toDateTime = (value: number) => new Date(value).toISOString();
