@@ -444,23 +444,49 @@ export const isRunSuperseded = internalQuery({
 		const run = await ctx.db.get(args.runId);
 		if (!run || run.userId !== args.userId) return true;
 
-		const [pending, running] = await Promise.all([
+		const [latestPending, latestRunning] = await Promise.all([
 			ctx.db
 				.query("schedulingRuns")
 				.withIndex("by_userId_status_startedAt", (q) =>
 					q.eq("userId", args.userId).eq("status", "pending"),
 				)
-				.collect(),
+				.order("desc")
+				.take(1),
 			ctx.db
 				.query("schedulingRuns")
 				.withIndex("by_userId_status_startedAt", (q) =>
 					q.eq("userId", args.userId).eq("status", "running"),
 				)
-				.collect(),
+				.order("desc")
+				.take(1),
 		]);
 
-		return [...pending, ...running].some(
-			(candidate) => candidate._id !== args.runId && isRunNewer(candidate, run),
+		for (const candidate of [latestPending[0], latestRunning[0]]) {
+			if (!candidate || candidate._id === args.runId) continue;
+			if (candidate.startedAt > run.startedAt) {
+				return true;
+			}
+		}
+
+		if (
+			latestPending[0]?.startedAt !== run.startedAt &&
+			latestRunning[0]?.startedAt !== run.startedAt
+		) {
+			return false;
+		}
+
+		const tiedRuns = await ctx.db
+			.query("schedulingRuns")
+			.withIndex("by_userId_startedAt", (q) =>
+				q.eq("userId", args.userId).eq("startedAt", run.startedAt),
+			)
+			.collect();
+
+		return tiedRuns.some(
+			(candidate) =>
+				(candidate.status === "pending" || candidate.status === "running") &&
+				candidate._id !== args.runId &&
+				isRunNewer(candidate, run),
 		);
 	},
 });

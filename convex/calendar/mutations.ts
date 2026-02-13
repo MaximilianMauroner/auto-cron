@@ -312,13 +312,15 @@ export const enqueueGoogleSyncRun = internalMutation({
 		runId: v.id("googleSyncRuns"),
 	}),
 	handler: async (ctx, args) => {
-		const pending = await ctx.db
-			.query("googleSyncRuns")
-			.withIndex("by_userId_status_startedAt", (q) =>
-				q.eq("userId", args.userId).eq("status", "pending"),
-			)
-			.collect();
-		const latestPending = pending.sort((a, b) => b.startedAt - a.startedAt)[0];
+		const latestPending = (
+			await ctx.db
+				.query("googleSyncRuns")
+				.withIndex("by_userId_status_startedAt", (q) =>
+					q.eq("userId", args.userId).eq("status", "pending"),
+				)
+				.order("desc")
+				.take(1)
+		)[0];
 		if (latestPending && !args.force) {
 			return {
 				enqueued: false,
@@ -1118,8 +1120,9 @@ export const updateEvent = mutation({
 			const baseOccurrenceStart = event.occurrenceStart ?? normalizeToMinute(event.start);
 			const seriesEvents = await ctx.db
 				.query("calendarEvents")
-				.withIndex("by_userId", (q) => q.eq("userId", userId))
-				.filter((q) => q.eq(q.field("seriesId"), event.seriesId))
+				.withIndex("by_userId_seriesId_occurrenceStart", (q) =>
+					q.eq("userId", userId).eq("seriesId", event.seriesId as Id<"calendarEventSeries">),
+				)
 				.collect();
 
 			for (const seriesEvent of seriesEvents) {
@@ -1216,8 +1219,9 @@ export const moveResizeEvent = mutation({
 		const deltaEnd = args.end - event.end;
 		const seriesEvents = await ctx.db
 			.query("calendarEvents")
-			.withIndex("by_userId", (q) => q.eq("userId", userId))
-			.filter((q) => q.eq(q.field("seriesId"), event.seriesId))
+			.withIndex("by_userId_seriesId_occurrenceStart", (q) =>
+				q.eq("userId", userId).eq("seriesId", event.seriesId as Id<"calendarEventSeries">),
+			)
 			.collect();
 
 		for (const seriesEvent of seriesEvents) {

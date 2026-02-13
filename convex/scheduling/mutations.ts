@@ -112,23 +112,46 @@ export const applySchedulingBlocks = internalMutation({
 				message: "Scheduling run not found.",
 			});
 		}
-		const [pending, running] = await Promise.all([
+		const [latestPending, latestRunning] = await Promise.all([
 			ctx.db
 				.query("schedulingRuns")
 				.withIndex("by_userId_status_startedAt", (q) =>
 					q.eq("userId", args.userId).eq("status", "pending"),
 				)
-				.collect(),
+				.order("desc")
+				.take(1),
 			ctx.db
 				.query("schedulingRuns")
 				.withIndex("by_userId_status_startedAt", (q) =>
 					q.eq("userId", args.userId).eq("status", "running"),
 				)
-				.collect(),
+				.order("desc")
+				.take(1),
 		]);
-		const superseded = [...pending, ...running].some(
-			(run) => run._id !== args.runId && isRunNewer(run, currentRun),
+		const latestCandidates = [latestPending[0], latestRunning[0]].filter(
+			(run) => run !== undefined,
 		);
+		let superseded = latestCandidates.some(
+			(run) => run._id !== args.runId && run.startedAt > currentRun.startedAt,
+		);
+
+		if (!superseded) {
+			const needTieCheck = latestCandidates.some((run) => run.startedAt === currentRun.startedAt);
+			if (needTieCheck) {
+				const tiedRuns = await ctx.db
+					.query("schedulingRuns")
+					.withIndex("by_userId_startedAt", (q) =>
+						q.eq("userId", args.userId).eq("startedAt", currentRun.startedAt),
+					)
+					.collect();
+				superseded = tiedRuns.some(
+					(run) =>
+						(run.status === "pending" || run.status === "running") &&
+						run._id !== args.runId &&
+						isRunNewer(run, currentRun),
+				);
+			}
+		}
 		if (superseded) {
 			throw new ConvexError({
 				code: "SUPERSEDED_BY_NEWER_RUN",

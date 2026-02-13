@@ -603,6 +603,7 @@ export const normalizeAndDedupeEventsInRange = internalMutation({
 						.collect();
 
 		// --- Normalize phase ---
+		const normalizedEventsById = new Map(events.map((event) => [event._id, event]));
 		const seriesCache = new Map<string, Doc<"calendarEventSeries"> | null>();
 		const processedSeriesCacheKeys = new Set<string>();
 		let seriesCreated = 0;
@@ -732,26 +733,15 @@ export const normalizeAndDedupeEventsInRange = internalMutation({
 			if (!shouldPatch) continue;
 
 			await ctx.db.patch(event._id, nextOccurrenceValues);
+			normalizedEventsById.set(event._id, {
+				...event,
+				...nextOccurrenceValues,
+			});
 			occurrencesPatched += 1;
 		}
 
-		// --- Dedupe phase (reuse the same events list) ---
-		// Re-read events that may have been patched during normalization
-		const dedupeEvents =
-			typeof args.start === "number" && typeof args.end === "number"
-				? await (() => {
-						const rangeStart = args.start;
-						const rangeEnd = args.end;
-						return ctx.db
-							.query("calendarEvents")
-							.withIndex("by_userId_start", (q) => q.eq("userId", userId).lte("start", rangeEnd))
-							.filter((q) => q.gte(q.field("end"), rangeStart))
-							.collect();
-					})()
-				: await ctx.db
-						.query("calendarEvents")
-						.withIndex("by_userId", (q) => q.eq("userId", userId))
-						.collect();
+		// --- Dedupe phase (reuse normalized event view without re-query) ---
+		const dedupeEvents = Array.from(normalizedEventsById.values());
 
 		const groups = new Map<string, Doc<"calendarEvents">[]>();
 		for (const event of dedupeEvents) {
