@@ -301,7 +301,7 @@ export const updateLocalEventFromGoogle = internalMutation({
 			occurrenceStart: normalizeToMinute(event.originalStartTime ?? event.start),
 		});
 
-		if (event.seriesId && event.source === "google") {
+		if (event.seriesId) {
 			const series = await ctx.db.get(event.seriesId);
 			if (series) {
 				await ctx.db.patch(series._id, {

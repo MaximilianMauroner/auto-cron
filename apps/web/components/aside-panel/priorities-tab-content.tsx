@@ -52,7 +52,7 @@ export function PrioritiesTabContent() {
 		return priorityOrder.map((priority) => {
 			const priorityTasks = filteredTasks.filter((t) => t.priority === priority);
 			const priorityHabits = filteredHabits.filter(
-				(h) => (h.priority ?? "medium") === (priority as string as HabitPriority),
+				(h) => (h.priority ?? "medium") === (priority as unknown as HabitPriority),
 			);
 			return {
 				priority,

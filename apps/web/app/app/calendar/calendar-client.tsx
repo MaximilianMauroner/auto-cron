@@ -373,6 +373,9 @@ const MINUTE_MS = 60 * 1000;
 const normalizeToMinute = (timestamp: number) => Math.floor(timestamp / MINUTE_MS) * MINUTE_MS;
 
 const buildDedupeKey = (event: CalendarEventDTO) => {
+	if (event.seriesId && event.occurrenceStart !== undefined) {
+		return `series:${event.seriesId}:${event.occurrenceStart}`;
+	}
 	if (event.googleEventId) {
 		const occurrenceTs = normalizeToMinute(event.originalStartTime ?? event.start);
 		return `google:${event.calendarId ?? "primary"}:${event.googleEventId}:${occurrenceTs}`;
@@ -1145,7 +1148,14 @@ const runWhenScrollControllerReady = (plugin: unknown, fn: () => void) => {
 	};
 };
 
-const toTimestampFromDayAndMinutes = (day: string, minutes: number) => {
+const toTimestampFromDayAndMinutes = (day: string, minutes: number, timeZone?: string) => {
+	if (timeZone) {
+		const hours = Math.floor(minutes / 60);
+		const mins = minutes % 60;
+		const dateTimeStr = `${day}T${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}:00`;
+		const parsed = parseLocalDateTimeInTimeZone(dateTimeStr, timeZone);
+		if (parsed !== undefined) return parsed;
+	}
 	const dayStart = new Date(`${day}T00:00:00`);
 	dayStart.setMinutes(minutes);
 	return dayStart.getTime();
@@ -1649,6 +1659,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 					isDark: isDarkTheme,
 					views: calendarViews,
 					defaultView: "week",
+					timezone: scheduleXTimeZone,
 					dayBoundaries,
 					calendars: calendarTypes,
 					weekOptions,
@@ -1852,7 +1863,10 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				schedulingStepMinutes;
 			const maxStartMinute = Math.max(dayStart, dayEnd - schedulingStepMinutes);
 			const minutes = Math.max(dayStart, Math.min(maxStartMinute, snappedMinutes));
-			const nextCurrent = snapToStep(toTimestampFromDayAndMinutes(day, minutes), schedulingStepMs);
+			const nextCurrent = snapToStep(
+				toTimestampFromDayAndMinutes(day, minutes, scheduleXTimeZone),
+				schedulingStepMs,
+			);
 			dragCreateRef.current = {
 				...dragState,
 				current: nextCurrent,
@@ -1984,7 +1998,11 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			const deltaY = pointerY - resizeState.startPointerY;
 			const candidateEnd = resizeState.originalEnd + deltaY * minutesPerPixel * 60_000;
 			const minEnd = resizeState.start + schedulingStepMs;
-			const dayMaxEnd = toTimestampFromDayAndMinutes(resizeState.day, dayBoundaryMinutes.end);
+			const dayMaxEnd = toTimestampFromDayAndMinutes(
+				resizeState.day,
+				dayBoundaryMinutes.end,
+				scheduleXTimeZone,
+			);
 			const boundedEnd = Math.max(minEnd, Math.min(dayMaxEnd, candidateEnd));
 			const steppedEnd = Math.max(
 				minEnd,
@@ -2083,7 +2101,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			window.removeEventListener("mousemove", onMouseMove);
 			window.removeEventListener("mouseup", onMouseUp);
 		};
-	}, [dayBoundaryMinutes.end, dayBoundaryMinutes.start, schedulingStepMs]);
+	}, [dayBoundaryMinutes.end, dayBoundaryMinutes.start, schedulingStepMs, scheduleXTimeZone]);
 
 	useEffect(() => {
 		if (!editor || editor.mode !== "create") return;

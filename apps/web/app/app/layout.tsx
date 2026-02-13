@@ -24,10 +24,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
 			<AppSidebar />
 			<AsidePanelProvider defaultOpen={asidePanelOpen}>
 				<main className="flex-1 min-h-0 overflow-hidden bg-background flex flex-col">
-					<div className="flex items-center justify-between border-b border-border px-2 py-1 shrink-0">
+					<header
+						className="flex items-center justify-between border-b border-border px-2 py-1 shrink-0"
+						aria-label="Sidebar and panel controls"
+					>
 						<SidebarTrigger />
 						<AsidePanelTrigger />
-					</div>
+					</header>
 					<div className="flex flex-1 min-h-0 overflow-hidden">
 						<div className="flex-1 min-w-0 overflow-hidden">{children}</div>
 						<AsidePanel>

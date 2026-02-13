@@ -91,6 +91,8 @@ export default defineSchema({
 		scheduleAfter: v.optional(v.number()),
 		scheduledStart: v.optional(v.number()),
 		scheduledEnd: v.optional(v.number()),
+		pinnedStart: v.optional(v.number()),
+		pinnedEnd: v.optional(v.number()),
 		completedAt: v.optional(v.number()),
 		sortOrder: v.number(),
 		splitAllowed: v.optional(v.boolean()),

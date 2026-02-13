@@ -27,7 +27,7 @@ export function AsidePanelProvider({
 
 	const setOpen = useCallback((value: boolean) => {
 		_setOpen(value);
-		document.cookie = `${ASIDE_COOKIE_NAME}=${value}; path=/; max-age=${ASIDE_COOKIE_MAX_AGE}`;
+		document.cookie = `${ASIDE_COOKIE_NAME}=${value}; path=/; max-age=${ASIDE_COOKIE_MAX_AGE}; SameSite=Lax; Secure`;
 	}, []);
 
 	const toggle = useCallback(() => {
