@@ -55,6 +55,7 @@ export type HabitDTO = {
 	dependencyNote?: string;
 	publicDescription?: string;
 	isActive: boolean;
+	effectiveColor?: string;
 };
 
 export type HabitCreateInput = {

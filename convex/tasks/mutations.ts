@@ -3,6 +3,7 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
+import { ensureCategoryOwnership } from "../categories/shared";
 import {
 	ensureHoursSetOwnership,
 	getDefaultHoursSet,
@@ -74,6 +75,7 @@ const taskUpdatePatchValidator = v.object({
 	visibilityPreference: v.optional(v.union(taskVisibilityPreferenceValidator, v.null())),
 	preferredCalendarId: v.optional(v.union(v.string(), v.null())),
 	color: v.optional(v.union(v.string(), v.null())),
+	categoryId: v.optional(v.id("taskCategories")),
 });
 
 type TaskStatus = "backlog" | "queued" | "scheduled" | "in_progress" | "done";
@@ -124,6 +126,7 @@ type TaskUpdatePatch = {
 	visibilityPreference?: "default" | "private" | null;
 	preferredCalendarId?: string | null;
 	color?: string | null;
+	categoryId?: Id<"taskCategories">;
 };
 type UpdateTaskArgs = {
 	id: Id<"tasks">;
@@ -231,6 +234,9 @@ export const updateTask = mutation({
 		}
 		if (args.patch.hoursSetId !== undefined && args.patch.hoursSetId !== null) {
 			await resolveHoursSetForTask(ctx, ctx.userId, args.patch.hoursSetId);
+		}
+		if (args.patch.categoryId) {
+			await ensureCategoryOwnership(ctx, args.patch.categoryId, ctx.userId);
 		}
 
 		if (args.patch.status !== undefined && args.patch.completedAt === undefined) {
@@ -344,6 +350,8 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 				message: "No category provided and no default category found",
 			});
 		}
+
+		await ensureCategoryOwnership(ctx, categoryId, args.userId);
 
 		const insertedId = await ctx.db.insert("tasks", {
 			userId: args.userId,

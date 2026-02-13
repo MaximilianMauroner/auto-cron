@@ -1,13 +1,14 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Bell, Clock3, Settings2, SlidersHorizontal, UserCircle } from "lucide-react";
+import { Bell, Clock3, Settings2, SlidersHorizontal, Tag, UserCircle } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const settingsNavItems = [
 	{ href: "/app/settings", label: "General", icon: Settings2 },
 	{ href: "/app/settings/hours", label: "Hours", icon: Clock3 },
+	{ href: "/app/settings/categories", label: "Categories", icon: Tag },
 	{ href: "/app/settings/scheduling", label: "Scheduling", icon: SlidersHorizontal },
 	{ href: "/app/settings/account", label: "Account", icon: UserCircle },
 	{ href: "/app/settings/notifications", label: "Notifications", icon: Bell },

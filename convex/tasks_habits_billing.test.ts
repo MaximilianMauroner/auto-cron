@@ -37,6 +37,24 @@ const setBillingMode = (
 	process.env.AUTUMN_BILLING_MODE = mode;
 };
 
+const bootstrapAndGetDefaultCategoryId = async (
+	testConvex: ReturnType<typeof createTestConvex>,
+	userId: string,
+) => {
+	await testConvex.mutation(internal.hours.mutations.internalBootstrapDefaultPlannerDataForUser, {
+		userId,
+	});
+	const categories = await testConvex.run(async (ctx) => {
+		return await ctx.db
+			.query("taskCategories")
+			.withIndex("by_userId", (q) => q.eq("userId", userId))
+			.collect();
+	});
+	const defaultCategory = categories.find((c) => c.isDefault);
+	if (!defaultCategory) throw new Error("Expected default category after bootstrap");
+	return defaultCategory._id;
+};
+
 describe("tasks/habits billing checks", () => {
 	beforeEach(() => {
 		setBillingMode("allow_all");
@@ -56,13 +74,13 @@ describe("tasks/habits billing checks", () => {
 			"UNAUTHORIZED",
 		);
 
+		const categoryId = await bootstrapAndGetDefaultCategoryId(testConvex, "bootstrap_user_unauth");
 		await expectErrorCode(
 			testConvex.action(api.habits.actions.createHabit, {
 				requestId: "req-habit-unauth",
 				input: {
 					title: "Blocked habit",
-					// biome-ignore lint/suspicious/noExplicitAny: placeholder until tests use real category IDs
-					categoryId: "placeholder_category_id" as any,
+					categoryId,
 					frequency: "daily",
 					durationMinutes: 20,
 				},
@@ -74,6 +92,7 @@ describe("tasks/habits billing checks", () => {
 	test("over-limit create returns FEATURE_LIMIT_REACHED with no insert", async () => {
 		const testConvex = createTestConvex();
 		const user = testConvex.withIdentity({ subject: "user_limit" });
+		const categoryId = await bootstrapAndGetDefaultCategoryId(testConvex, "user_limit");
 
 		setBillingMode("deny_tasks");
 		await expectErrorCode(
@@ -94,8 +113,7 @@ describe("tasks/habits billing checks", () => {
 				requestId: "deny-habit",
 				input: {
 					title: "Denied habit",
-					// biome-ignore lint/suspicious/noExplicitAny: placeholder until tests use real category IDs
-					categoryId: "placeholder_category_id" as any,
+					categoryId,
 					frequency: "weekly",
 					durationMinutes: 45,
 				},
@@ -167,6 +185,7 @@ describe("tasks/habits billing checks", () => {
 	test("task and habit update/delete paths are not billing-gated", async () => {
 		const testConvex = createTestConvex();
 		const user = testConvex.withIdentity({ subject: "user_ungated_updates" });
+		const categoryId = await bootstrapAndGetDefaultCategoryId(testConvex, "user_ungated_updates");
 
 		setBillingMode("allow_all");
 		const taskId = await user.action(api.tasks.actions.createTask, {
@@ -180,8 +199,7 @@ describe("tasks/habits billing checks", () => {
 			requestId: "seed-habit",
 			input: {
 				title: "Habit to update",
-				// biome-ignore lint/suspicious/noExplicitAny: placeholder until tests use real category IDs
-				categoryId: "placeholder_category_id" as any,
+				categoryId,
 				frequency: "daily",
 				durationMinutes: 15,
 			},
@@ -279,12 +297,15 @@ describe("tasks/habits billing checks", () => {
 		expect(task?.maxChunkMinutes).toBeUndefined();
 		expect(task?.preferredCalendarId).toBeUndefined();
 
+		const categoryId = await bootstrapAndGetDefaultCategoryId(
+			testConvex,
+			"user_clear_optional_fields",
+		);
 		const habitId = await user.action(api.habits.actions.createHabit, {
 			requestId: "clear-habit-fields",
 			input: {
 				title: "Habit with optional fields",
-				// biome-ignore lint/suspicious/noExplicitAny: placeholder until tests use real category IDs
-				categoryId: "placeholder_category_id" as any,
+				categoryId,
 				frequency: "weekly",
 				durationMinutes: 45,
 				location: "Gym",

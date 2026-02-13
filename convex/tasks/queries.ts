@@ -49,6 +49,8 @@ const taskDtoValidator = v.object({
 	visibilityPreference: v.optional(taskVisibilityPreferenceValidator),
 	preferredCalendarId: v.optional(v.string()),
 	color: v.optional(v.string()),
+	categoryId: v.optional(v.id("taskCategories")),
+	effectiveColor: v.string(),
 });
 
 type TaskStatus = "backlog" | "queued" | "scheduled" | "in_progress" | "done";
@@ -88,6 +90,8 @@ export const getTask = query({
 			.withIndex("by_userId", (q) => q.eq("userId", userId))
 			.unique();
 		const defaultMode = sanitizeTaskSchedulingMode(settings?.defaultTaskSchedulingMode);
+		const category = task.categoryId ? await ctx.db.get(task.categoryId) : null;
+		const effectiveColor = task.color ?? category?.color ?? "#f59e0b";
 		return {
 			...task,
 			schedulingMode: task.schedulingMode
@@ -96,6 +100,7 @@ export const getTask = query({
 			effectiveSchedulingMode: task.schedulingMode
 				? sanitizeTaskSchedulingMode(task.schedulingMode)
 				: defaultMode,
+			effectiveColor,
 		};
 	}),
 });
@@ -133,6 +138,13 @@ export const listTasks = query({
 					.withIndex("by_userId", (q) => q.eq("userId", userId))
 					.collect();
 
+		// Batch-load all unique categories for effective color resolution
+		const uniqueCategoryIds = [
+			...new Set(tasks.map((t) => t.categoryId).filter((id): id is Id<"taskCategories"> => !!id)),
+		];
+		const categories = await Promise.all(uniqueCategoryIds.map((id) => ctx.db.get(id)));
+		const categoryMap = new Map(uniqueCategoryIds.map((id, i) => [id, categories[i]]));
+
 		return [...tasks]
 			.sort((a, b) => {
 				if (statusOrder[a.status] !== statusOrder[b.status]) {
@@ -141,14 +153,18 @@ export const listTasks = query({
 				if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
 				return a._creationTime - b._creationTime;
 			})
-			.map((task) => ({
-				...task,
-				schedulingMode: task.schedulingMode
-					? sanitizeTaskSchedulingMode(task.schedulingMode)
-					: undefined,
-				effectiveSchedulingMode: task.schedulingMode
-					? sanitizeTaskSchedulingMode(task.schedulingMode)
-					: defaultTaskSchedulingMode,
-			}));
+			.map((task) => {
+				const category = task.categoryId ? (categoryMap.get(task.categoryId) ?? null) : null;
+				return {
+					...task,
+					schedulingMode: task.schedulingMode
+						? sanitizeTaskSchedulingMode(task.schedulingMode)
+						: undefined,
+					effectiveSchedulingMode: task.schedulingMode
+						? sanitizeTaskSchedulingMode(task.schedulingMode)
+						: defaultTaskSchedulingMode,
+					effectiveColor: task.color ?? category?.color ?? "#f59e0b",
+				};
+			});
 	}),
 });

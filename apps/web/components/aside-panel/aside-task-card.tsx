@@ -84,7 +84,7 @@ export function AsideTaskCard({ task, onEditTask }: AsideTaskCardProps) {
 								<div className="flex items-start gap-2">
 									<span
 										className="mt-1 size-2 shrink-0 rounded-full"
-										style={{ backgroundColor: task.color ?? "#f59e0b" }}
+										style={{ backgroundColor: task.effectiveColor ?? task.color ?? "#f59e0b" }}
 									/>
 									<div className="min-w-0 flex-1">
 										<p className="truncate text-[0.76rem] font-medium">{task.title}</p>

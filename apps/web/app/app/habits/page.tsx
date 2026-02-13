@@ -1,6 +1,7 @@
 "use client";
 
 import PaywallDialog from "@/components/autumn/paywall-dialog";
+import { CategoryPicker } from "@/components/category-picker";
 import {
 	Accordion,
 	AccordionContent,
@@ -45,15 +46,6 @@ import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duratio
 import { cn } from "@/lib/utils";
 import type { HabitDTO, HabitFrequency, HabitPriority, HoursSetDTO } from "@auto-cron/types";
 
-/** @deprecated Temporary local type until UI is migrated to use real category IDs */
-type HabitCategory =
-	| "health"
-	| "fitness"
-	| "learning"
-	| "mindfulness"
-	| "productivity"
-	| "social"
-	| "other";
 import {
 	Calendar,
 	CalendarDays,
@@ -83,7 +75,7 @@ type HabitEditorState = {
 	title: string;
 	description: string;
 	priority: HabitPriority;
-	category: HabitCategory;
+	categoryId: string;
 	frequency: HabitFrequency;
 	repeatsPerPeriod: string;
 	minDurationMinutes: string;
@@ -137,7 +129,7 @@ type HabitTemplate = {
 	emoji: string;
 	category: HabitTemplateCategory;
 	description: string;
-	habitCategory: HabitCategory;
+	habitCategory: string;
 	priority: HabitPriority;
 	frequency: HabitFrequency;
 	minDurationMinutes: number;
@@ -148,16 +140,6 @@ type HabitTemplate = {
 	timeDefenseMode: HabitTimeDefenseMode;
 	recoveryPolicy: HabitRecoveryPolicy;
 	visibilityPreference: HabitVisibilityPreference;
-};
-
-const categoryLabels: Record<HabitCategory, string> = {
-	health: "Health",
-	fitness: "Fitness",
-	learning: "Learning",
-	mindfulness: "Mindfulness",
-	productivity: "Productivity",
-	social: "Social",
-	other: "Other",
 };
 
 const priorityLabels: Record<HabitPriority, string> = {
@@ -467,7 +449,7 @@ const initialForm: HabitEditorState = {
 	title: "",
 	description: "",
 	priority: "medium",
-	category: "productivity",
+	categoryId: "",
 	frequency: "weekly",
 	repeatsPerPeriod: "1",
 	minDurationMinutes: "30 mins",
@@ -633,6 +615,9 @@ export default function HabitsPage() {
 	const [templateCategory, setTemplateCategory] = useState<HabitTemplateCategory>("All");
 	const [templateQuery, setTemplateQuery] = useState("");
 
+	const categoriesQuery = useAuthenticatedQueryWithStatus(api.categories.queries.getCategories, {});
+	const categories = categoriesQuery.data ?? [];
+
 	const habitsQuery = useAuthenticatedQueryWithStatus(api.habits.queries.listHabits, {});
 	const habits = (habitsQuery.data ?? []) as HabitDTO[];
 	const hoursSetsQuery = useAuthenticatedQueryWithStatus(api.hours.queries.listHoursSets, {});
@@ -781,8 +766,7 @@ export default function HabitsPage() {
 			title: form.title.trim(),
 			description: form.description.trim() || undefined,
 			priority: form.priority,
-			// biome-ignore lint/suspicious/noExplicitAny: temporary until UI migrated to category IDs
-			categoryId: form.category as any,
+			categoryId: form.categoryId as Id<"taskCategories">,
 			recurrenceRule: recurrenceFromFrequency(form.frequency),
 			recoveryPolicy: form.recoveryPolicy,
 			frequency: form.frequency,
@@ -879,8 +863,7 @@ export default function HabitsPage() {
 			title: habit.title,
 			description: habit.description ?? "",
 			priority: habit.priority ?? "medium",
-			// biome-ignore lint/suspicious/noExplicitAny: temporary until UI migrated to category IDs
-			category: (habit as any).category ?? "other",
+			categoryId: habit.categoryId ?? "",
 			frequency: habit.frequency ?? frequencyFromRecurrenceRule(habit.recurrenceRule),
 			repeatsPerPeriod: String(habit.repeatsPerPeriod ?? 1),
 			minDurationMinutes: formatDurationFromMinutes(
@@ -920,7 +903,7 @@ export default function HabitsPage() {
 			title: template.name,
 			description: template.description,
 			priority: template.priority,
-			category: template.habitCategory,
+			categoryId: "",
 			frequency: template.frequency,
 			repeatsPerPeriod: "1",
 			minDurationMinutes: formatDurationFromMinutes(template.minDurationMinutes),
@@ -1122,6 +1105,7 @@ export default function HabitsPage() {
 												<HabitCard
 													key={habit._id}
 													habit={habit}
+													categories={categories}
 													hoursSetName={
 														habit.hoursSetId ? hoursSetNameById.get(habit.hoursSetId) : undefined
 													}
@@ -1286,7 +1270,9 @@ function TemplateCard({
 				</div>
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex flex-wrap items-center gap-1.5">
-						<Badge variant="secondary">{categoryLabels[template.habitCategory]}</Badge>
+						<Badge variant="secondary">
+							{template.habitCategory.charAt(0).toUpperCase() + template.habitCategory.slice(1)}
+						</Badge>
 						<Badge variant="outline">{defenseModeLabels[template.timeDefenseMode]}</Badge>
 					</div>
 					<Button
@@ -1304,6 +1290,7 @@ function TemplateCard({
 
 function HabitCard({
 	habit,
+	categories,
 	hoursSetName,
 	calendarName,
 	onEdit,
@@ -1312,6 +1299,7 @@ function HabitCard({
 	isBusy,
 }: {
 	habit: HabitDTO;
+	categories: { _id: string; name: string }[];
 	hoursSetName?: string;
 	calendarName?: string;
 	onEdit: () => void;
@@ -1327,7 +1315,7 @@ function HabitCard({
 					<p className="truncate text-sm font-semibold inline-flex items-center gap-2">
 						<span
 							className="size-2.5 rounded-full border border-border/70"
-							style={{ backgroundColor: habit.color ?? "#f59e0b" }}
+							style={{ backgroundColor: habit.effectiveColor ?? habit.color ?? "#f59e0b" }}
 						/>
 						{habit.title}
 					</p>
@@ -1339,8 +1327,8 @@ function HabitCard({
 			</div>
 			<div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
 				<Badge variant="outline">
-					{/* biome-ignore lint/suspicious/noExplicitAny: temporary until UI migrated to category IDs */}
-					{categoryLabels[((habit as any).category ?? "other") as HabitCategory]}
+					{categories.find((c: { _id: string; name: string }) => c._id === habit.categoryId)
+						?.name ?? "Uncategorized"}
 				</Badge>
 				<Badge className={priorityClass[habit.priority ?? "medium"]}>
 					{priorityLabels[habit.priority ?? "medium"]}
@@ -1525,23 +1513,10 @@ function HabitDialog({
 									</div>
 									<div className="space-y-2">
 										<Label>Category</Label>
-										<Select
-											value={value.category}
-											onValueChange={(category) =>
-												onChange({ ...value, category: category as HabitCategory })
-											}
-										>
-											<SelectTrigger>
-												<SelectValue />
-											</SelectTrigger>
-											<SelectContent>
-												{Object.entries(categoryLabels).map(([category, label]) => (
-													<SelectItem key={category} value={category}>
-														{label}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
+										<CategoryPicker
+											value={value.categoryId}
+											onValueChange={(id) => onChange({ ...value, categoryId: id })}
+										/>
 									</div>
 								</div>
 

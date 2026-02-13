@@ -1,5 +1,6 @@
 "use client";
 
+import { CategoryPicker } from "@/components/category-picker";
 import { Button } from "@/components/ui/button";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { DurationInput } from "@/components/ui/duration-input";
@@ -92,6 +93,7 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 	const [scheduleAfter, setScheduleAfter] = useState("");
 	const [location, setLocation] = useState("");
 	const [color, setColor] = useState("#f59e0b");
+	const [categoryId, setCategoryId] = useState<string>("");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
 	useEffect(() => {
@@ -105,6 +107,7 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 		setScheduleAfter(toDateTimeLocal(task.scheduleAfter));
 		setLocation(task.location ?? "");
 		setColor(task.color ?? "#f59e0b");
+		setCategoryId(task.categoryId ?? "");
 		setErrorMessage(null);
 	}, [task]);
 
@@ -144,6 +147,7 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 					scheduleAfter: toTimestamp(scheduleAfter) ?? null,
 					location: location.trim() || null,
 					color: color || null,
+					...(categoryId ? { categoryId: categoryId as Id<"taskCategories"> } : {}),
 				},
 			});
 			onOpenChange(false);
@@ -242,6 +246,11 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 										<span className="text-xs text-muted-foreground">{color}</span>
 									</div>
 								</div>
+							</div>
+
+							<div className="space-y-1.5">
+								<Label className="text-xs uppercase tracking-[0.1em]">Category</Label>
+								<CategoryPicker value={categoryId} onValueChange={setCategoryId} />
 							</div>
 
 							<div className="space-y-1.5">

@@ -1,6 +1,7 @@
 "use client";
 
 import PaywallDialog from "@/components/autumn/paywall-dialog";
+import { CategoryPicker } from "@/components/category-picker";
 import { Button } from "@/components/ui/button";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { DurationInput } from "@/components/ui/duration-input";
@@ -22,6 +23,7 @@ import type { Priority, TaskVisibilityPreference } from "@auto-cron/types";
 import { Rocket } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 type TaskQuickCreateDefaults = {
 	priority: Priority;
@@ -83,6 +85,7 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 	const [deadline, setDeadline] = useState("");
 	const [priority, setPriority] = useState<Priority>("medium");
 	const [sendToUpNext, setSendToUpNext] = useState(false);
+	const [categoryId, setCategoryId] = useState<string>("");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [paywallOpen, setPaywallOpen] = useState(false);
 
@@ -94,6 +97,10 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 		() => schedulingDefaultsQuery.data?.taskQuickCreateDefaults ?? fallbackDefaults,
 		[schedulingDefaultsQuery.data?.taskQuickCreateDefaults],
 	);
+	const defaultCategoryQuery = useAuthenticatedQueryWithStatus(
+		api.categories.queries.getDefaultCategory,
+		{},
+	);
 
 	const { execute: createTask, isPending } = useActionWithStatus(api.tasks.actions.createTask);
 
@@ -104,8 +111,9 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 		setDeadline("");
 		setPriority(defaults.priority);
 		setSendToUpNext(defaults.sendToUpNext);
+		setCategoryId(defaultCategoryQuery.data?._id ?? "");
 		setErrorMessage(null);
-	}, [open, defaults]);
+	}, [open, defaults, defaultCategoryQuery.data]);
 
 	const onSubmit = async () => {
 		const parsed = parseDurationToMinutes(estimatedMinutes);
@@ -131,6 +139,7 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 					travelMinutes: defaults.travelMinutes,
 					visibilityPreference: defaults.visibilityPreference,
 					color: defaults.color,
+					categoryId: categoryId ? (categoryId as Id<"taskCategories">) : undefined,
 				},
 			});
 			onOpenChange(false);
@@ -220,6 +229,10 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 									</Label>
 								</div>
 							</div>
+						</div>
+						<div className="space-y-1.5">
+							<Label className="text-xs uppercase tracking-[0.1em]">Category</Label>
+							<CategoryPicker value={categoryId} onValueChange={setCategoryId} />
 						</div>
 						{errorMessage ? (
 							<p className="text-xs text-rose-600 dark:text-rose-400">{errorMessage}</p>

@@ -3,6 +3,7 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
+import { ensureCategoryOwnership } from "../categories/shared";
 import { ensureHoursSetOwnership, getDefaultHoursSet } from "../hours/shared";
 import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
 
@@ -261,6 +262,9 @@ export const updateHabit = mutation({
 		if (args.patch.hoursSetId !== undefined && args.patch.hoursSetId !== null) {
 			await resolveHoursSetForHabit(ctx, ctx.userId, args.patch.hoursSetId);
 		}
+		if (args.patch.categoryId) {
+			await ensureCategoryOwnership(ctx, args.patch.categoryId, ctx.userId);
+		}
 		await ctx.db.patch(args.id, nextPatch as Partial<typeof habit>);
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId: ctx.userId,
@@ -329,6 +333,7 @@ export const internalCreateHabitForUserWithOperation = internalMutation({
 		}
 
 		const hoursSetId = await resolveHoursSetForHabit(ctx, args.userId, args.input.hoursSetId);
+		await ensureCategoryOwnership(ctx, args.input.categoryId, args.userId);
 		const insertedId = await ctx.db.insert("habits", {
 			userId: args.userId,
 			title: args.input.title,

@@ -1,6 +1,6 @@
 import { convexTest } from "convex-test";
 import { beforeEach, describe, expect, test } from "vitest";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import schema from "./schema";
 
 const modules = import.meta.glob(["./**/*.ts", "./**/*.js", "!./**/*.test.ts", "!./**/*.d.ts"]);
@@ -29,6 +29,24 @@ const extractErrorCode = (error: unknown): string | undefined => {
 
 const expectErrorCode = async (promise: Promise<unknown>, code: string) => {
 	await expect(promise).rejects.toSatisfy((error: unknown) => extractErrorCode(error) === code);
+};
+
+const bootstrapAndGetDefaultCategoryId = async (
+	testConvex: ReturnType<typeof createTestConvex>,
+	userId: string,
+) => {
+	await testConvex.mutation(internal.hours.mutations.internalBootstrapDefaultPlannerDataForUser, {
+		userId,
+	});
+	const categories = await testConvex.run(async (ctx) => {
+		return await ctx.db
+			.query("taskCategories")
+			.withIndex("by_userId", (q) => q.eq("userId", userId))
+			.collect();
+	});
+	const defaultCategory = categories.find((c) => c.isDefault);
+	if (!defaultCategory) throw new Error("Expected default category after bootstrap");
+	return defaultCategory._id;
 };
 
 describe("hours sets", () => {
@@ -99,12 +117,12 @@ describe("hours sets", () => {
 				hoursSetId: customSetId,
 			},
 		});
+		const categoryId = await bootstrapAndGetDefaultCategoryId(testConvex, "hours_delete_reassign");
 		await user.action(api.habits.actions.createHabit, {
 			requestId: "hours-delete-habit",
 			input: {
 				title: "Habit on custom set",
-				// biome-ignore lint/suspicious/noExplicitAny: placeholder until tests use real category IDs
-				categoryId: "placeholder_category_id" as any,
+				categoryId,
 				frequency: "weekly",
 				durationMinutes: 45,
 				hoursSetId: customSetId,

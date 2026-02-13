@@ -1,6 +1,7 @@
 "use client";
 
 import PaywallDialog from "@/components/autumn/paywall-dialog";
+import { CategoryPicker } from "@/components/category-picker";
 import { Button } from "@/components/ui/button";
 import { DurationInput } from "@/components/ui/duration-input";
 import { Input } from "@/components/ui/input";
@@ -13,33 +14,14 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useActionWithStatus } from "@/hooks/use-convex-status";
+import { useActionWithStatus, useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import { getConvexErrorPayload } from "@/lib/convex-errors";
 import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duration";
 import type { HabitFrequency, HabitPriority } from "@auto-cron/types";
-
-/** @deprecated Temporary local type until UI is migrated to use real category IDs */
-type HabitCategory =
-	| "health"
-	| "fitness"
-	| "learning"
-	| "mindfulness"
-	| "productivity"
-	| "social"
-	| "other";
 import { Repeat2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
-
-const categoryLabels: Record<HabitCategory, string> = {
-	health: "Health",
-	fitness: "Fitness",
-	learning: "Learning",
-	mindfulness: "Mindfulness",
-	productivity: "Productivity",
-	social: "Social",
-	other: "Other",
-};
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 const frequencyLabels: Record<HabitFrequency, string> = {
 	daily: "Daily",
@@ -85,23 +67,27 @@ type QuickCreateHabitDialogProps = {
 export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitDialogProps) {
 	const [title, setTitle] = useState("");
 	const [durationMinutes, setDurationMinutes] = useState("");
-	const [category, setCategory] = useState<HabitCategory>("productivity");
+	const [categoryId, setCategoryId] = useState<string>("");
 	const [frequency, setFrequency] = useState<HabitFrequency>("weekly");
 	const [priority, setPriority] = useState<HabitPriority>("medium");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [paywallOpen, setPaywallOpen] = useState(false);
 
 	const { execute: createHabit, isPending } = useActionWithStatus(api.habits.actions.createHabit);
+	const defaultCategoryQuery = useAuthenticatedQueryWithStatus(
+		api.categories.queries.getDefaultCategory,
+		{},
+	);
 
 	useEffect(() => {
 		if (!open) return;
 		setTitle("");
 		setDurationMinutes(formatDurationFromMinutes(30));
-		setCategory("productivity");
+		setCategoryId(defaultCategoryQuery.data?._id ?? "");
 		setFrequency("weekly");
 		setPriority("medium");
 		setErrorMessage(null);
-	}, [open]);
+	}, [open, defaultCategoryQuery.data]);
 
 	const onSubmit = async () => {
 		const parsed = parseDurationToMinutes(durationMinutes);
@@ -115,8 +101,7 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 				requestId: createRequestId(),
 				input: {
 					title: title.trim(),
-					// biome-ignore lint/suspicious/noExplicitAny: temporary until UI migrated to category IDs
-					categoryId: category as any,
+					categoryId: categoryId as Id<"taskCategories">,
 					frequency,
 					recurrenceRule: recurrenceFromFrequency(frequency),
 					priority,
@@ -199,31 +184,8 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 						</div>
 						<div className="grid grid-cols-2 gap-3">
 							<div className="space-y-1.5">
-								<Label htmlFor="qc-habit-category" className="text-xs uppercase tracking-[0.1em]">
-									Category
-								</Label>
-								<Select value={category} onValueChange={(v) => setCategory(v as HabitCategory)}>
-									<SelectTrigger id="qc-habit-category">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{(
-											[
-												"health",
-												"fitness",
-												"learning",
-												"mindfulness",
-												"productivity",
-												"social",
-												"other",
-											] as const
-										).map((c) => (
-											<SelectItem key={c} value={c}>
-												{categoryLabels[c]}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
+								<Label className="text-xs uppercase tracking-[0.1em]">Category</Label>
+								<CategoryPicker value={categoryId} onValueChange={setCategoryId} />
 							</div>
 							<div className="space-y-1.5">
 								<Label htmlFor="qc-habit-priority" className="text-xs uppercase tracking-[0.1em]">

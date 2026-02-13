@@ -3,6 +3,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
+import { GOOGLE_CALENDAR_COLORS, ensureDefaultCategories } from "../categories/shared";
 import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
 import {
 	type HourWindow,
@@ -38,63 +39,6 @@ const DEFAULT_WORK_WINDOW_END = "17:00";
 const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5] as const;
 const WEEKDAY_PREFERRED_DAYS = [1, 2, 3, 4, 5] as const;
 const WEEKDAY_RECURRENCE_RULE = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR";
-
-const GOOGLE_CALENDAR_COLORS = [
-	"#f59e0b", // amber/gold
-	"#ef4444", // red
-	"#22c55e", // green
-	"#0ea5e9", // sky blue
-	"#6366f1", // indigo
-	"#a855f7", // purple
-	"#ec4899", // pink
-	"#14b8a6", // teal
-] as const;
-
-async function ensureDefaultCategories(
-	ctx: MutationCtx,
-	userId: string,
-): Promise<{ personalId: Id<"taskCategories">; travelId: Id<"taskCategories"> }> {
-	const existing = await ctx.db
-		.query("taskCategories")
-		.withIndex("by_userId", (q) => q.eq("userId", userId))
-		.collect();
-
-	if (existing.length > 0) {
-		const personal = existing.find((c) => c.name === "Personal");
-		const travel = existing.find((c) => c.name === "Travel");
-		if (personal && travel) {
-			return { personalId: personal._id, travelId: travel._id };
-		}
-	}
-
-	const now = Date.now();
-
-	const personalId = await ctx.db.insert("taskCategories", {
-		userId,
-		name: "Personal",
-		description: "Your personal tasks and habits",
-		color: GOOGLE_CALENDAR_COLORS[0],
-		isSystem: true,
-		isDefault: true,
-		sortOrder: 0,
-		createdAt: now,
-		updatedAt: now,
-	});
-
-	const travelId = await ctx.db.insert("taskCategories", {
-		userId,
-		name: "Travel",
-		description: "Flights, travel, and buffer time",
-		color: GOOGLE_CALENDAR_COLORS[7],
-		isSystem: true,
-		isDefault: false,
-		sortOrder: 1,
-		createdAt: now,
-		updatedAt: now,
-	});
-
-	return { personalId, travelId };
-}
 
 type SeedTaskTemplate = {
 	title: string;

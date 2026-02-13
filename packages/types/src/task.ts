@@ -47,6 +47,7 @@ export type TaskDTO = {
 	preferredCalendarId?: string;
 	color?: string;
 	categoryId: string;
+	effectiveColor?: string;
 };
 
 export type TaskCreateInput = {

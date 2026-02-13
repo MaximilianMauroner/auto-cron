@@ -8,7 +8,7 @@ export function AsideHabitItem({ habit }: { habit: HabitDTO }) {
 		<div className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-accent/50">
 			<span
 				className="size-2 shrink-0 rounded-full"
-				style={{ backgroundColor: habit.color ?? "#6366f1" }}
+				style={{ backgroundColor: habit.effectiveColor ?? habit.color ?? "#6366f1" }}
 			/>
 			<div className="min-w-0 flex-1">
 				<p className="truncate text-[0.76rem] font-medium">{habit.title}</p>

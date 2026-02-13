@@ -1,6 +1,7 @@
 "use client";
 
 import PaywallDialog from "@/components/autumn/paywall-dialog";
+import { CategoryPicker } from "@/components/category-picker";
 import {
 	Accordion,
 	AccordionContent,
@@ -54,6 +55,7 @@ import type {
 	TaskStatus,
 	TaskVisibilityPreference,
 } from "@auto-cron/types";
+import { GOOGLE_CALENDAR_COLORS } from "@auto-cron/types";
 import {
 	ArrowDown,
 	ArrowUp,
@@ -89,6 +91,7 @@ type TaskEditorState = {
 	visibilityPreference: TaskVisibilityPreference;
 	preferredCalendarId: string;
 	color: string;
+	categoryId: string;
 };
 
 type TaskQuickCreateDefaults = {
@@ -153,16 +156,7 @@ const rightLaneColumns: TaskColumn[] = [
 	{ key: "done", title: "Done", empty: "No completed tasks yet" },
 ];
 
-const taskColors = [
-	"#f59e0b",
-	"#ef4444",
-	"#22c55e",
-	"#0ea5e9",
-	"#6366f1",
-	"#a855f7",
-	"#ec4899",
-	"#14b8a6",
-] as const;
+const taskColors = GOOGLE_CALENDAR_COLORS;
 
 const schedulingModeLabels: Record<TaskSchedulingMode, string> = {
 	fastest: "Fastest",
@@ -193,10 +187,12 @@ const createTaskEditorState = ({
 	defaults,
 	defaultHoursSetId,
 	defaultCalendarId,
+	defaultCategoryId,
 }: {
 	defaults: TaskQuickCreateDefaults;
 	defaultHoursSetId: string;
 	defaultCalendarId: string;
+	defaultCategoryId?: string;
 }): TaskEditorState => ({
 	title: "",
 	description: "",
@@ -217,6 +213,7 @@ const createTaskEditorState = ({
 	visibilityPreference: defaults.visibilityPreference,
 	preferredCalendarId: defaultCalendarId,
 	color: defaults.color,
+	categoryId: defaultCategoryId ?? "",
 });
 
 const createRequestId = () => {
@@ -275,6 +272,7 @@ export default function TasksPage() {
 			defaults: fallbackTaskQuickCreateDefaults,
 			defaultHoursSetId: "",
 			defaultCalendarId: "primary",
+			defaultCategoryId: "",
 		}),
 	);
 	const [editForm, setEditForm] = useState<TaskEditorState | null>(null);
@@ -318,6 +316,11 @@ export default function TasksPage() {
 	}, [googleCalendars]);
 	const defaultCalendarId =
 		editableGoogleCalendars.find((calendar) => calendar.primary)?.id ?? "primary";
+	const defaultCategoryQuery = useAuthenticatedQueryWithStatus(
+		api.categories.queries.getDefaultCategory,
+		{},
+	);
+	const defaultCategoryId = defaultCategoryQuery.data?._id ?? "";
 
 	const openCreate = () => {
 		setCreateForm(
@@ -325,6 +328,7 @@ export default function TasksPage() {
 				defaults: taskQuickCreateDefaults,
 				defaultHoursSetId,
 				defaultCalendarId,
+				defaultCategoryId,
 			}),
 		);
 		setErrorMessage(null);
@@ -461,6 +465,9 @@ export default function TasksPage() {
 			visibilityPreference: createForm.visibilityPreference,
 			preferredCalendarId: createForm.preferredCalendarId || undefined,
 			color: createForm.color,
+			categoryId: createForm.categoryId
+				? (createForm.categoryId as Id<"taskCategories">)
+				: undefined,
 		};
 
 		setErrorMessage(null);
@@ -471,6 +478,7 @@ export default function TasksPage() {
 					defaults: taskQuickCreateDefaults,
 					defaultHoursSetId,
 					defaultCalendarId,
+					defaultCategoryId,
 				}),
 			);
 			setIsCreateOpen(false);
@@ -532,6 +540,7 @@ export default function TasksPage() {
 			visibilityPreference: editForm.visibilityPreference,
 			preferredCalendarId: editForm.preferredCalendarId || null,
 			color: editForm.color,
+			...(editForm.categoryId ? { categoryId: editForm.categoryId as Id<"taskCategories"> } : {}),
 		};
 
 		setErrorMessage(null);
@@ -599,6 +608,7 @@ export default function TasksPage() {
 			visibilityPreference: task.visibilityPreference ?? "default",
 			preferredCalendarId: task.preferredCalendarId ?? "primary",
 			color: task.color ?? "#f59e0b",
+			categoryId: task.categoryId ?? "",
 		});
 		setIsEditOpen(true);
 	};
@@ -782,6 +792,7 @@ export default function TasksPage() {
 						defaults: taskQuickCreateDefaults,
 						defaultHoursSetId,
 						defaultCalendarId,
+						defaultCategoryId,
 					})
 				}
 				onChange={(nextValue) => setEditForm(nextValue)}
@@ -841,7 +852,7 @@ function TaskCard({
 					<p className="truncate text-sm font-semibold inline-flex items-center gap-2">
 						<span
 							className="size-2.5 rounded-full border border-border/60"
-							style={{ backgroundColor: task.color ?? "#f59e0b" }}
+							style={{ backgroundColor: task.effectiveColor ?? task.color ?? "#f59e0b" }}
 						/>
 						{task.title}
 					</p>
@@ -1097,6 +1108,13 @@ function TaskDialog({
 											placeholder="Task name..."
 											value={value.title}
 											onChange={(event) => onChange({ ...value, title: event.target.value })}
+										/>
+									</div>
+									<div className="space-y-2">
+										<Label>Category</Label>
+										<CategoryPicker
+											value={value.categoryId}
+											onValueChange={(categoryId) => onChange({ ...value, categoryId })}
 										/>
 									</div>
 									<div className="grid gap-3 md:grid-cols-3">
