@@ -102,11 +102,14 @@ const GOOGLE_HEX_TO_COLOR_ID = Object.fromEntries(
 );
 const HEX_COLOR_REGEX = /^#(?:[0-9a-fA-F]{3}){1,2}$/;
 
-const hexToRgb = (hex: string): [number, number, number] => [
-	Number.parseInt(hex.slice(1, 3), 16),
-	Number.parseInt(hex.slice(3, 5), 16),
-	Number.parseInt(hex.slice(5, 7), 16),
-];
+const hexToRgb = (hex: string): [number, number, number] => {
+	const h = hex.length === 4 ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}` : hex;
+	return [
+		Number.parseInt(h.slice(1, 3), 16),
+		Number.parseInt(h.slice(3, 5), 16),
+		Number.parseInt(h.slice(5, 7), 16),
+	];
+};
 
 const colorDistanceSq = (a: [number, number, number], b: [number, number, number]): number =>
 	(a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
