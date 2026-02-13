@@ -1,8 +1,8 @@
 "use client";
 
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
 	Dialog,
 	DialogContent,
@@ -12,13 +12,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
 import { getConvexErrorPayload } from "@/lib/convex-errors";
 import { cn } from "@/lib/utils";
 import { GOOGLE_CALENDAR_COLORS } from "@auto-cron/types";
-import { Check, Pencil, Plus, Shield, Star, Trash2 } from "lucide-react";
+import { Check, FolderOpen, Pencil, Plus, Shield, Star, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
@@ -163,123 +162,117 @@ export default function SettingsCategoriesPage() {
 
 	return (
 		<>
-			<Card className="border-border/70 bg-card/70">
-				<CardHeader className="flex flex-row items-start justify-between gap-4">
-					<div>
-						<CardTitle className="text-lg font-semibold tracking-tight">Categories</CardTitle>
-						<CardDescription className="mt-1 text-sm">
-							Organize tasks and habits with color-coded categories. Colors cascade to all items in
-							a category unless manually overridden.
-						</CardDescription>
+			<div className="flex items-start justify-between gap-4">
+				<SettingsSectionHeader
+					sectionNumber="03"
+					sectionLabel="Categories"
+					title="Categories"
+					description="Organize tasks and habits with color-coded categories."
+				/>
+				<Button
+					size="sm"
+					className="mt-6 shrink-0 gap-1.5"
+					onClick={() => setCreateOpen(true)}
+					disabled={isBusy}
+				>
+					<Plus className="size-3.5" />
+					Add
+				</Button>
+			</div>
+
+			{categories.length === 0 ? (
+				<div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 py-16">
+					<div className="mb-4 rounded-full bg-muted/40 p-4">
+						<FolderOpen className="size-8 text-muted-foreground/40" />
 					</div>
+					<p className="text-sm font-medium text-muted-foreground">No categories yet</p>
+					<p className="mt-1 text-xs text-muted-foreground/60">
+						Create one to start organizing your tasks
+					</p>
 					<Button
 						size="sm"
-						className="shrink-0 gap-1.5"
+						variant="outline"
+						className="mt-4 gap-1.5"
 						onClick={() => setCreateOpen(true)}
-						disabled={isBusy}
 					>
 						<Plus className="size-3.5" />
-						Add category
+						Create category
 					</Button>
-				</CardHeader>
-				<CardContent>
-					{categories.length === 0 ? (
-						<p className="py-8 text-center text-sm text-muted-foreground">
-							No categories yet. Create one to get started.
-						</p>
-					) : (
-						<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-							{categories.map((cat) => (
-								<div
-									key={cat._id}
-									className={cn(
-										"group relative rounded-lg border border-border/60 bg-background/60 p-4 transition-colors hover:border-border hover:bg-background/80",
-										editState?.categoryId === cat._id && "border-primary/40 bg-primary/5",
-									)}
-								>
-									{/* Color bar top accent */}
-									<div
-										className="absolute inset-x-0 top-0 h-1 rounded-t-lg"
-										style={{ backgroundColor: cat.color }}
-									/>
+				</div>
+			) : (
+				<div className="space-y-2">
+					{categories.map((cat) => (
+						<div
+							key={cat._id}
+							className={cn(
+								"group flex items-center gap-3 rounded-lg border border-border/50 px-4 py-3 transition-colors hover:border-border/80 hover:bg-muted/20",
+								editState?.categoryId === cat._id && "border-primary/40 bg-primary/5",
+							)}
+						>
+							{/* Color indicator */}
+							<div
+								className="size-3 shrink-0 rounded-full ring-1 ring-black/10"
+								style={{ backgroundColor: cat.color }}
+							/>
 
-									<div className="flex items-start gap-3 pt-1">
-										{/* Color swatch */}
-										<div
-											className="mt-0.5 size-8 shrink-0 rounded-md shadow-sm ring-1 ring-black/10"
-											style={{ backgroundColor: cat.color }}
-										/>
-
-										<div className="min-w-0 flex-1">
-											<div className="flex items-center gap-2">
-												<p className="truncate text-sm font-semibold">{cat.name}</p>
-												{cat.isSystem ? (
-													<Badge
-														variant="outline"
-														className="shrink-0 gap-1 px-1.5 py-0 text-[10px]"
-													>
-														<Shield className="size-2.5" />
-														System
-													</Badge>
-												) : null}
-												{cat.isDefault ? (
-													<Badge
-														variant="secondary"
-														className="shrink-0 gap-1 px-1.5 py-0 text-[10px]"
-													>
-														<Star className="size-2.5" />
-														Default
-													</Badge>
-												) : null}
-											</div>
-											{cat.description ? (
-												<p className="mt-0.5 truncate text-xs text-muted-foreground">
-													{cat.description}
-												</p>
-											) : null}
-										</div>
-									</div>
-
-									{/* Actions */}
-									<div className="mt-3 flex items-center gap-1.5 border-t border-border/40 pt-3">
-										<button
-											type="button"
-											onClick={() => openEdit(cat)}
-											disabled={isBusy}
-											className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-										>
-											<Pencil className="size-3" />
-											Edit
-										</button>
-										{!cat.isDefault ? (
-											<button
-												type="button"
-												onClick={() => void handleSetDefault(cat._id)}
-												disabled={isBusy}
-												className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-											>
-												<Star className="size-3" />
-												Set default
-											</button>
-										) : null}
-										{!cat.isSystem ? (
-											<button
-												type="button"
-												onClick={() => setDeleteConfirm(cat._id)}
-												disabled={isBusy}
-												className="ml-auto inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-rose-600/80 transition-colors hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400/80 dark:hover:bg-rose-950/30 dark:hover:text-rose-300"
-											>
-												<Trash2 className="size-3" />
-												Delete
-											</button>
-										) : null}
-									</div>
+							{/* Name & badges */}
+							<div className="min-w-0 flex-1">
+								<div className="flex items-center gap-2">
+									<p className="truncate text-sm font-medium">{cat.name}</p>
+									{cat.isSystem ? (
+										<Badge variant="outline" className="shrink-0 gap-1 px-1.5 py-0 text-[10px]">
+											<Shield className="size-2.5" />
+											System
+										</Badge>
+									) : null}
+									{cat.isDefault ? (
+										<Badge variant="secondary" className="shrink-0 gap-1 px-1.5 py-0 text-[10px]">
+											<Star className="size-2.5" />
+											Default
+										</Badge>
+									) : null}
 								</div>
-							))}
+								{cat.description ? (
+									<p className="mt-0.5 truncate text-xs text-muted-foreground">{cat.description}</p>
+								) : null}
+							</div>
+
+							{/* Actions */}
+							<div className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+								<button
+									type="button"
+									onClick={() => openEdit(cat)}
+									disabled={isBusy}
+									className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
+								>
+									<Pencil className="size-3.5" />
+								</button>
+								{!cat.isDefault ? (
+									<button
+										type="button"
+										onClick={() => void handleSetDefault(cat._id)}
+										disabled={isBusy}
+										className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
+										title="Set as default"
+									>
+										<Star className="size-3.5" />
+									</button>
+								) : null}
+								{!cat.isSystem ? (
+									<button
+										type="button"
+										onClick={() => setDeleteConfirm(cat._id)}
+										disabled={isBusy}
+										className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+									>
+										<Trash2 className="size-3.5" />
+									</button>
+								) : null}
+							</div>
 						</div>
-					)}
-				</CardContent>
-			</Card>
+					))}
+				</div>
+			)}
 
 			{/* Create Dialog */}
 			<Dialog open={createOpen} onOpenChange={setCreateOpen}>

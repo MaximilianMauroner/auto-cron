@@ -7,12 +7,18 @@ import { TasksTabContent } from "./tasks-tab-content";
 export function TasksPrioritiesAside() {
 	return (
 		<Tabs defaultValue="tasks" className="flex h-full flex-col">
-			<div className="shrink-0 border-b border-border px-3 pt-3 pb-0">
+			<div className="shrink-0 border-b border-border/60 px-3 pt-3 pb-0">
 				<TabsList variant="line" className="w-full">
-					<TabsTrigger value="tasks" className="text-[0.76rem]">
+					<TabsTrigger
+						value="tasks"
+						className="font-[family-name:var(--font-outfit)] text-[0.76rem]"
+					>
 						Tasks
 					</TabsTrigger>
-					<TabsTrigger value="priorities" className="text-[0.76rem]">
+					<TabsTrigger
+						value="priorities"
+						className="font-[family-name:var(--font-outfit)] text-[0.76rem]"
+					>
 						Priorities
 					</TabsTrigger>
 				</TabsList>

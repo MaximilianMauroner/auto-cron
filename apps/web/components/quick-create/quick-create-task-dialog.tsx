@@ -14,6 +14,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { useActionWithStatus, useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
@@ -166,7 +167,7 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 					</SheetHeader>
 					<div className="space-y-4 px-5 py-4">
 						<div className="space-y-1.5">
-							<Label htmlFor="qc-task-title" className="text-xs uppercase tracking-[0.1em]">
+							<Label htmlFor="qc-task-title" className="text-xs text-muted-foreground">
 								Task name
 							</Label>
 							<Input
@@ -185,9 +186,12 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 								autoFocus
 							/>
 						</div>
+
+						<Separator className="bg-border/40" />
+
 						<div className="grid grid-cols-2 gap-3">
 							<div className="space-y-1.5">
-								<Label className="text-xs uppercase tracking-[0.1em]">Time needed</Label>
+								<Label className="text-xs text-muted-foreground">Time needed</Label>
 								<DurationInput
 									value={estimatedMinutes}
 									onChange={setEstimatedMinutes}
@@ -195,13 +199,13 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 								/>
 							</div>
 							<div className="space-y-1.5">
-								<Label className="text-xs uppercase tracking-[0.1em]">Due date</Label>
+								<Label className="text-xs text-muted-foreground">Due date</Label>
 								<DateTimePicker value={deadline} onChange={setDeadline} placeholder="No deadline" />
 							</div>
 						</div>
 						<div className="grid grid-cols-2 gap-3">
 							<div className="space-y-1.5">
-								<Label htmlFor="qc-task-priority" className="text-xs uppercase tracking-[0.1em]">
+								<Label htmlFor="qc-task-priority" className="text-xs text-muted-foreground">
 									Priority
 								</Label>
 								<Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
@@ -217,28 +221,26 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 									</SelectContent>
 								</Select>
 							</div>
-							<div className="flex items-end pb-1">
-								<div className="flex items-center gap-2">
-									<Switch
-										id="qc-task-upnext"
-										checked={sendToUpNext}
-										onCheckedChange={setSendToUpNext}
-									/>
-									<Label htmlFor="qc-task-upnext" className="text-sm">
-										Send to Up Next
-									</Label>
-								</div>
+							<div className="space-y-1.5">
+								<Label className="text-xs text-muted-foreground">Category</Label>
+								<CategoryPicker value={categoryId} onValueChange={setCategoryId} />
 							</div>
 						</div>
-						<div className="space-y-1.5">
-							<Label className="text-xs uppercase tracking-[0.1em]">Category</Label>
-							<CategoryPicker value={categoryId} onValueChange={setCategoryId} />
+						<div className="flex items-center gap-2">
+							<Switch
+								id="qc-task-upnext"
+								checked={sendToUpNext}
+								onCheckedChange={setSendToUpNext}
+							/>
+							<Label htmlFor="qc-task-upnext" className="text-sm">
+								Send to Up Next
+							</Label>
 						</div>
 						{errorMessage ? (
 							<p className="text-xs text-rose-600 dark:text-rose-400">{errorMessage}</p>
 						) : null}
 					</div>
-					<SheetFooter className="border-t border-border/70 px-5 py-3">
+					<SheetFooter className="flex-row items-center border-t border-border/70 px-5 py-3">
 						<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
 							Cancel
 						</Button>

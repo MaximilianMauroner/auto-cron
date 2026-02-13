@@ -38,6 +38,24 @@ export const defaultTaskQuickCreateSettings = {
 	color: "#f59e0b",
 } as const;
 
+export const habitFrequencyValidator = v.union(
+	v.literal("daily"),
+	v.literal("weekly"),
+	v.literal("biweekly"),
+	v.literal("monthly"),
+);
+
+export const habitRecoveryPolicyValidator = v.union(v.literal("skip"), v.literal("recover"));
+
+export const defaultHabitQuickCreateSettings = {
+	priority: "medium",
+	durationMinutes: 30,
+	frequency: "daily",
+	recoveryPolicy: "skip",
+	visibilityPreference: "private",
+	color: "#22c55e",
+} as const;
+
 export const defaultSchedulingDowntimeMinutes = 0;
 const maxSchedulingDowntimeMinutes = 24 * 60;
 export const schedulingStepMinutesOptions = [15, 30, 60] as const;

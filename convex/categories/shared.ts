@@ -17,6 +17,7 @@ export type GoogleCalendarColor = (typeof GOOGLE_CALENDAR_COLORS)[number];
 
 export const categoryDtoValidator = v.object({
 	_id: v.id("taskCategories"),
+	_creationTime: v.number(),
 	userId: v.string(),
 	name: v.string(),
 	description: v.optional(v.string()),

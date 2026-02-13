@@ -74,12 +74,14 @@ export function PrioritiesTabContent() {
 						value={search}
 						onChange={(e) => setSearch(e.target.value)}
 						placeholder="Search for something..."
-						className="h-8 pl-8 text-[0.76rem]"
+						className="h-8 pl-8 font-[family-name:var(--font-outfit)] text-[0.76rem]"
 					/>
 				</div>
 
 				{isLoading ? (
-					<div className="text-[0.76rem] text-muted-foreground">Loading...</div>
+					<div className="font-[family-name:var(--font-cutive)] text-[0.76rem] text-muted-foreground">
+						Loading...
+					</div>
 				) : (
 					<div className="space-y-1">
 						{groupedByPriority.map((group) =>
@@ -87,9 +89,11 @@ export function PrioritiesTabContent() {
 								<Collapsible key={group.priority} defaultOpen>
 									<CollapsibleTrigger className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-[0.76rem] font-medium hover:bg-accent/50">
 										<div className="flex items-center gap-2">
-											<span>{priorityLabels[group.priority]}</span>
+											<span className="font-[family-name:var(--font-outfit)]">
+												{priorityLabels[group.priority]}
+											</span>
 											<Badge
-												className={`${priorityClass[group.priority]} text-[0.6rem] px-1.5 py-0`}
+												className={`${priorityClass[group.priority]} font-[family-name:var(--font-outfit)] tabular-nums text-[0.6rem] px-1.5 py-0`}
 											>
 												{group.total}
 											</Badge>
@@ -100,9 +104,12 @@ export function PrioritiesTabContent() {
 										<div className="space-y-1 pl-1">
 											{group.habits.length > 0 ? (
 												<div className="space-y-0.5">
-													<div className="flex items-center gap-2 px-2 py-1 text-[0.66rem] uppercase tracking-[0.08em] text-muted-foreground">
+													<div className="flex items-center gap-2 px-2 py-1 font-[family-name:var(--font-cutive)] text-[0.66rem] uppercase tracking-[0.08em] text-muted-foreground">
 														Habits
-														<Badge variant="secondary" className="text-[0.58rem] px-1 py-0">
+														<Badge
+															variant="secondary"
+															className="font-[family-name:var(--font-outfit)] tabular-nums text-[0.58rem] px-1 py-0"
+														>
 															{group.habits.length}
 														</Badge>
 													</div>
@@ -113,9 +120,12 @@ export function PrioritiesTabContent() {
 											) : null}
 											{group.tasks.length > 0 ? (
 												<div className="space-y-1">
-													<div className="flex items-center gap-2 px-2 py-1 text-[0.66rem] uppercase tracking-[0.08em] text-muted-foreground">
+													<div className="flex items-center gap-2 px-2 py-1 font-[family-name:var(--font-cutive)] text-[0.66rem] uppercase tracking-[0.08em] text-muted-foreground">
 														Tasks
-														<Badge variant="secondary" className="text-[0.58rem] px-1 py-0">
+														<Badge
+															variant="secondary"
+															className="font-[family-name:var(--font-outfit)] tabular-nums text-[0.58rem] px-1 py-0"
+														>
 															{group.tasks.length}
 														</Badge>
 													</div>
@@ -134,8 +144,8 @@ export function PrioritiesTabContent() {
 							) : null,
 						)}
 						{groupedByPriority.every((g) => g.total === 0) ? (
-							<div className="rounded-lg border border-dashed border-border p-4 text-center text-[0.76rem] text-muted-foreground">
-								{search ? `No items match "${search}"` : "No active tasks or habits."}
+							<div className="font-[family-name:var(--font-cutive)] rounded-xl border border-dashed border-border/60 p-4 text-center text-[0.76rem] text-muted-foreground">
+								{search ? `No items match \u201c${search}\u201d` : "No active tasks or habits."}
 							</div>
 						) : null}
 					</div>

@@ -31,18 +31,28 @@ const bootstrapAndGetDefaultCategoryId = async (
 	testConvex: ReturnType<typeof createTestConvex>,
 	userId: string,
 ) => {
-	await testConvex.mutation(internal.hours.mutations.internalBootstrapDefaultPlannerDataForUser, {
+	await testConvex.mutation(internal.hours.mutations.internalBootstrapHoursSetsForUser, {
 		userId,
 	});
-	const categories = await testConvex.run(async (ctx) => {
-		return await ctx.db
+	const categoryId = await testConvex.run(async (ctx) => {
+		const existing = await ctx.db
 			.query("taskCategories")
-			.withIndex("by_userId", (q) => q.eq("userId", userId))
-			.collect();
+			.withIndex("by_userId_isDefault", (q) => q.eq("userId", userId).eq("isDefault", true))
+			.first();
+		if (existing) return existing._id;
+		const now = Date.now();
+		return ctx.db.insert("taskCategories", {
+			userId,
+			name: "Personal",
+			color: "#f59e0b",
+			isSystem: true,
+			isDefault: true,
+			sortOrder: 0,
+			createdAt: now,
+			updatedAt: now,
+		});
 	});
-	const defaultCategory = categories.find((c) => c.isDefault);
-	if (!defaultCategory) throw new Error("Expected default category after bootstrap");
-	return defaultCategory._id;
+	return categoryId;
 };
 
 describe("hours sets", () => {

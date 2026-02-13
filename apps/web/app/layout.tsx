@@ -1,8 +1,8 @@
-import { FeedbackFloatingButton } from "@/components/feedback-floating-button";
 import { ToastProvider } from "@/components/ui/toast-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UserPreferencesProvider } from "@/components/user-preferences-context";
 import { getConvexUrl } from "@/env/server";
+import { bebasNeue, cutiveMono, outfit } from "@/lib/fonts";
 import type { Metadata } from "next";
 import { ThemeProvider } from "next-themes";
 import { AutumnProvider } from "./AutumnProvider";
@@ -44,7 +44,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
 	return (
 		<html lang="en" suppressHydrationWarning>
-			<body>
+			<body className={`${bebasNeue.variable} ${outfit.variable} ${cutiveMono.variable}`}>
 				<ThemeProvider
 					attribute="class"
 					defaultTheme="system"
@@ -55,10 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 						<UserPreferencesProvider>
 							<AutumnProvider>
 								<ToastProvider>
-									<TooltipProvider>
-										{children}
-										<FeedbackFloatingButton />
-									</TooltipProvider>
+									<TooltipProvider>{children}</TooltipProvider>
 								</ToastProvider>
 							</AutumnProvider>
 						</UserPreferencesProvider>

@@ -1,15 +1,15 @@
 "use client";
 
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import { useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { useCustomer } from "autumn-js/react";
-import { CalendarSync, CreditCard, ExternalLink, Link2, Sparkles, UserCircle2 } from "lucide-react";
+import { CreditCard, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { api } from "../../../../../../convex/_generated/api";
@@ -161,200 +161,149 @@ export default function AccountSettingsPage() {
 	const profileEmail = user?.email || customer?.email || "No email";
 
 	return (
-		<div className="grid gap-4 xl:grid-cols-[1.4fr_1fr]">
-			<Card className="relative overflow-hidden border-border/70 bg-card/70">
-				<div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-r from-primary/12 via-sky-500/8 to-emerald-500/10" />
-				<CardHeader className="relative">
-					<CardDescription className="text-xs uppercase tracking-[0.14em]">
-						Account overview
-					</CardDescription>
-					<CardTitle className="flex items-center gap-2 text-xl">
-						<UserCircle2 className="size-4 text-primary" />
-						Subscription & Usage
-					</CardTitle>
-				</CardHeader>
-				<CardContent className="relative space-y-5">
-					<div className="grid gap-3 lg:grid-cols-[1.2fr_1fr]">
-						<div className="rounded-xl border border-border/70 bg-background/70 p-4">
-							<div className="flex items-start justify-between gap-3">
-								<div>
-									<p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
-										Current plan
-									</p>
-									<p className="mt-1 text-xl font-semibold text-foreground">
-										{primaryProduct?.name || prettifyKey(primaryProduct?.id ?? "free")}
-									</p>
-								</div>
-								{primaryProduct ? (
-									<Badge
-										variant="outline"
-										className={cn(
-											"text-[0.72rem] capitalize",
-											statusBadgeClass[primaryProduct.status as CustomerProductStatus],
-										)}
-									>
-										{formatStatusLabel(primaryProduct.status as CustomerProductStatus)}
-									</Badge>
-								) : (
-									<Badge variant="outline" className="text-[0.72rem]">
-										Not subscribed
-									</Badge>
-								)}
+		<>
+			<SettingsSectionHeader
+				sectionNumber="04"
+				sectionLabel="Account"
+				title="Account & Sync"
+				description="Manage your subscription, usage limits, connected services, and billing."
+			/>
+
+			<div className="space-y-4">
+				{/* Plan + Profile row */}
+				<div className="grid gap-4 md:grid-cols-2">
+					{/* Current plan */}
+					<div className="rounded-xl border border-border/60 p-5">
+						<div className="flex items-start justify-between gap-3">
+							<div>
+								<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+									Current plan
+								</p>
+								<p className="mt-1 text-lg font-semibold text-foreground">
+									{primaryProduct?.name || prettifyKey(primaryProduct?.id ?? "free")}
+								</p>
 							</div>
-							<div className="mt-3 grid gap-1.5 text-xs text-muted-foreground">
-								<p>Started: {formatDateTime(primaryProduct?.started_at)}</p>
-								<p>Renews: {formatDateTime(primaryProduct?.current_period_end)}</p>
-								<p>Trial ends: {formatDateTime(primaryProduct?.trial_ends_at)}</p>
-							</div>
-							<div className="mt-3 flex flex-wrap items-center gap-2">
-								<Button
-									onClick={() => void onOpenBillingPortal()}
-									disabled={isOpeningBillingPortal || isCustomerLoading}
-									className="gap-1.5"
+							{primaryProduct ? (
+								<Badge
+									variant="outline"
+									className={cn(
+										"text-[0.68rem] capitalize",
+										statusBadgeClass[primaryProduct.status as CustomerProductStatus],
+									)}
 								>
-									<CreditCard className="size-3.5" />
-									{isOpeningBillingPortal ? "Opening..." : "Manage billing"}
-								</Button>
-								<Button asChild variant="outline" className="gap-1.5">
-									<Link href="/app/pricing">
-										<ExternalLink className="size-3.5" />
-										View plans
-									</Link>
-								</Button>
-							</div>
+									{formatStatusLabel(primaryProduct.status as CustomerProductStatus)}
+								</Badge>
+							) : (
+								<Badge variant="outline" className="text-[0.68rem]">
+									Not subscribed
+								</Badge>
+							)}
 						</div>
-						<div className="rounded-xl border border-border/70 bg-background/70 p-4">
-							<p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Profile</p>
-							<p className="mt-1 text-base font-semibold text-foreground">{profileName}</p>
-							<p className="text-sm text-muted-foreground">{profileEmail}</p>
-							<Separator className="my-3" />
-							<div className="space-y-2 text-xs text-muted-foreground">
-								<div className="flex items-center justify-between gap-3">
-									<span>Connected calendars</span>
-									<span className="font-medium text-foreground">{connectedCalendarsCount}</span>
-								</div>
-								<div className="flex items-center justify-between gap-3">
-									<span>Google sync</span>
-									<Badge variant="outline" className="text-[0.68rem]">
-										{googleSyncHealth?.googleConnected ? "Connected" : "Not connected"}
-									</Badge>
-								</div>
-								<div className="flex items-center justify-between gap-3">
-									<span>Sync channels</span>
-									<span className="font-medium text-foreground">
-										{googleSyncHealth?.activeChannels ?? 0}
-									</span>
-								</div>
-							</div>
+						<div className="mt-3 grid gap-1 text-xs text-muted-foreground">
+							<p>Started: {formatDateTime(primaryProduct?.started_at)}</p>
+							<p>Renews: {formatDateTime(primaryProduct?.current_period_end)}</p>
+							<p>Trial ends: {formatDateTime(primaryProduct?.trial_ends_at)}</p>
+						</div>
+						<div className="mt-4 flex flex-wrap items-center gap-2">
+							<Button
+								size="sm"
+								onClick={() => void onOpenBillingPortal()}
+								disabled={isOpeningBillingPortal || isCustomerLoading}
+								className="gap-1.5"
+							>
+								<CreditCard className="size-3.5" />
+								{isOpeningBillingPortal ? "Opening..." : "Manage billing"}
+							</Button>
+							<Button asChild variant="outline" size="sm" className="gap-1.5">
+								<Link href="/app/pricing">
+									<ExternalLink className="size-3" />
+									Plans
+								</Link>
+							</Button>
 						</div>
 					</div>
 
-					<div className="rounded-xl border border-border/70 bg-background/70 p-4">
-						<div className="mb-3 flex items-center justify-between gap-3">
-							<div>
-								<p className="text-xs uppercase tracking-[0.14em] text-muted-foreground">
-									Usage this cycle
-								</p>
-								<p className="text-sm text-muted-foreground">
-									Tracked feature limits and remaining capacity.
-								</p>
+					{/* Profile + Sync */}
+					<div className="rounded-xl border border-border/60 p-5">
+						<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+							Profile
+						</p>
+						<p className="mt-1 text-base font-semibold text-foreground">{profileName}</p>
+						<p className="text-sm text-muted-foreground">{profileEmail}</p>
+						<Separator className="my-3" />
+						<div className="space-y-2 text-xs text-muted-foreground">
+							<div className="flex items-center justify-between gap-3">
+								<span>Connected calendars</span>
+								<span className="font-medium text-foreground">{connectedCalendarsCount}</span>
 							</div>
-							{addOnProducts.length > 0 ? (
+							<div className="flex items-center justify-between gap-3">
+								<span>Google sync</span>
 								<Badge variant="outline" className="text-[0.68rem]">
-									{addOnProducts.length} add-on{addOnProducts.length > 1 ? "s" : ""}
+									{googleSyncHealth?.googleConnected ? "Connected" : "Not connected"}
 								</Badge>
-							) : null}
+							</div>
+							<div className="flex items-center justify-between gap-3">
+								<span>Sync channels</span>
+								<span className="font-medium text-foreground">
+									{googleSyncHealth?.activeChannels ?? 0}
+								</span>
+							</div>
+							<div className="flex items-center justify-between gap-3">
+								<span>Last sync</span>
+								<span className="font-medium text-foreground">
+									{formatDateTime(googleSyncHealth?.latestRunCompletedAt)}
+								</span>
+							</div>
 						</div>
-						{isCustomerLoading ? (
-							<p className="text-sm text-muted-foreground">Loading subscription data...</p>
-						) : usageItems.length === 0 ? (
-							<p className="text-sm text-muted-foreground">
-								No metered usage data available for the current plan.
-							</p>
-						) : (
-							<div className="grid gap-3 md:grid-cols-2">
-								{usageItems.map((item) => (
-									<div key={item.id} className="rounded-lg border border-border/70 bg-card/60 p-3">
-										<div className="mb-2 flex items-center justify-between gap-3">
-											<p className="text-sm font-medium text-foreground">{item.name}</p>
-											<p className="text-xs text-muted-foreground">
-												{item.limit === null
-													? `${item.usage} used`
-													: `${item.usage} / ${item.limit}`}
-											</p>
-										</div>
-										<Progress value={item.limit ? item.percent : 0} className="h-2" />
-										<p className="mt-2 text-xs text-muted-foreground">
-											{item.limit === null
-												? "No hard limit"
-												: `${item.remaining ?? 0} remaining (${item.percent}% used)`}
+					</div>
+				</div>
+
+				{/* Usage */}
+				<div className="rounded-xl border border-border/60 p-5">
+					<div className="mb-3 flex items-center justify-between gap-3">
+						<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+							Usage this cycle
+						</p>
+						{addOnProducts.length > 0 ? (
+							<Badge variant="outline" className="text-[0.68rem]">
+								{addOnProducts.length} add-on{addOnProducts.length > 1 ? "s" : ""}
+							</Badge>
+						) : null}
+					</div>
+					{isCustomerLoading ? (
+						<p className="text-sm text-muted-foreground">Loading subscription data...</p>
+					) : usageItems.length === 0 ? (
+						<p className="text-sm text-muted-foreground">
+							No metered usage data available for the current plan.
+						</p>
+					) : (
+						<div className="grid gap-3 sm:grid-cols-2">
+							{usageItems.map((item) => (
+								<div key={item.id} className="rounded-lg border border-border/50 p-3">
+									<div className="mb-2 flex items-center justify-between gap-3">
+										<p className="text-sm font-medium text-foreground">{item.name}</p>
+										<p className="text-xs text-muted-foreground">
+											{item.limit === null ? `${item.usage} used` : `${item.usage} / ${item.limit}`}
 										</p>
 									</div>
-								))}
-							</div>
-						)}
-					</div>
-				</CardContent>
-			</Card>
-
-			<Card className="border-border/70 bg-card/70">
-				<CardHeader>
-					<CardDescription className="text-xs uppercase tracking-[0.14em]">
-						Connected services
-					</CardDescription>
-					<CardTitle className="flex items-center gap-2 text-xl">
-						<CalendarSync className="size-4 text-primary" />
-						Sync & Shortcuts
-					</CardTitle>
-				</CardHeader>
-				<CardContent className="space-y-3">
-					<div className="grid gap-2 text-sm">
-						<div className="flex items-center justify-between">
-							<span className="text-muted-foreground">Google account</span>
-							<Badge variant="outline">
-								{googleSyncHealth?.googleConnected ? "Connected" : "Not connected"}
-							</Badge>
+									<Progress value={item.limit ? item.percent : 0} className="h-1.5" />
+									<p className="mt-1.5 text-[11px] text-muted-foreground">
+										{item.limit === null
+											? "No hard limit"
+											: `${item.remaining ?? 0} remaining (${item.percent}%)`}
+									</p>
+								</div>
+							))}
 						</div>
-						<div className="flex items-center justify-between">
-							<span className="text-muted-foreground">Watch channels</span>
-							<span className="font-medium">{googleSyncHealth?.activeChannels ?? 0}</span>
-						</div>
-						<div className="flex items-center justify-between">
-							<span className="text-muted-foreground">Last sync run</span>
-							<span className="font-medium">
-								{formatDateTime(googleSyncHealth?.latestRunCompletedAt)}
-							</span>
-						</div>
-					</div>
-					<Separator />
-					<div className="grid gap-2">
-						<Button asChild variant="outline" className="justify-between">
-							<Link href="/app/settings/hours">
-								<span className="inline-flex items-center gap-1.5">
-									<Link2 className="size-3.5" />
-									Working hours
-								</span>
-								<ExternalLink className="size-3.5" />
-							</Link>
-						</Button>
-						<Button asChild variant="outline" className="justify-between">
-							<Link href="/app/settings/scheduling">
-								<span className="inline-flex items-center gap-1.5">
-									<Sparkles className="size-3.5" />
-									Advanced scheduling
-								</span>
-								<ExternalLink className="size-3.5" />
-							</Link>
-						</Button>
-					</div>
-				</CardContent>
-			</Card>
-
-			{errorMessage ? (
-				<div className="xl:col-span-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-					{errorMessage}
+					)}
 				</div>
-			) : null}
-		</div>
+
+				{errorMessage ? (
+					<div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+						{errorMessage}
+					</div>
+				) : null}
+			</div>
+		</>
 	);
 }

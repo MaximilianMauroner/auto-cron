@@ -3,7 +3,7 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
-import { ensureCategoryOwnership } from "../categories/shared";
+import { ensureCategoryOwnership, ensureDefaultCategories } from "../categories/shared";
 import {
 	ensureHoursSetOwnership,
 	getDefaultHoursSet,
@@ -332,24 +332,9 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 		const restMinutes = normalizeOptionalNonNegativeMinutes(args.input.restMinutes);
 		const travelMinutes = normalizeOptionalNonNegativeMinutes(args.input.travelMinutes);
 		const location = args.input.location?.trim();
-		// Get default category if none provided
-		let categoryId = args.input.categoryId;
-		if (!categoryId) {
-			const defaultCategory = await ctx.db
-				.query("taskCategories")
-				.withIndex("by_userId_isDefault", (q) => q.eq("userId", args.userId).eq("isDefault", true))
-				.first();
-			if (defaultCategory) {
-				categoryId = defaultCategory._id;
-			}
-		}
-
-		if (!categoryId) {
-			throw new ConvexError({
-				code: "NO_CATEGORY",
-				message: "No category provided and no default category found",
-			});
-		}
+		// Ensure default categories exist, then resolve categoryId
+		const { personalId: defaultCategoryId } = await ensureDefaultCategories(ctx, args.userId);
+		const categoryId = args.input.categoryId ?? defaultCategoryId;
 
 		await ensureCategoryOwnership(ctx, categoryId, args.userId);
 
@@ -406,30 +391,6 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 		});
 
 		return insertedId;
-	},
-});
-
-/**
- * Migration: strip deprecated pinnedStart/pinnedEnd fields from task documents.
- * Run once via the Convex dashboard, then remove pinnedStart/pinnedEnd from schema.ts.
- */
-export const stripLegacyPinnedFields = internalMutation({
-	args: {},
-	returns: v.object({ patched: v.number() }),
-	handler: async (ctx): Promise<{ patched: number }> => {
-		const tasks = await ctx.db.query("tasks").collect();
-		let patched = 0;
-		for (const task of tasks) {
-			const doc = task as Record<string, unknown>;
-			if (doc.pinnedStart !== undefined || doc.pinnedEnd !== undefined) {
-				await ctx.db.patch(task._id, {
-					pinnedStart: undefined,
-					pinnedEnd: undefined,
-				});
-				patched++;
-			}
-		}
-		return { patched };
 	},
 });
 

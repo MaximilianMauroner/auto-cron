@@ -6,6 +6,7 @@ export default defineConfig({
 		include: ["tests/**/*.test.ts"],
 		env: {
 			AUTUMN_SECRET_KEY: "test-autumn-secret",
+			CONVEX_DISABLE_BACKGROUND_DISPATCH: "true",
 			GOOGLE_CLIENT_ID: "test-google-client-id",
 			GOOGLE_CLIENT_SECRET: "test-google-client-secret",
 			WORKOS_CLIENT_ID: "test-client-id",

@@ -32,6 +32,24 @@ export default defineSchema({
 			v.union(v.literal("default"), v.literal("private")),
 		),
 		taskQuickCreateColor: v.optional(v.string()),
+		habitQuickCreatePriority: v.optional(
+			v.union(
+				v.literal("low"),
+				v.literal("medium"),
+				v.literal("high"),
+				v.literal("critical"),
+				v.literal("blocker"),
+			),
+		),
+		habitQuickCreateDurationMinutes: v.optional(v.number()),
+		habitQuickCreateFrequency: v.optional(
+			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly")),
+		),
+		habitQuickCreateRecoveryPolicy: v.optional(v.union(v.literal("skip"), v.literal("recover"))),
+		habitQuickCreateVisibilityPreference: v.optional(
+			v.union(v.literal("default"), v.literal("private")),
+		),
+		habitQuickCreateColor: v.optional(v.string()),
 		googleRefreshToken: v.optional(v.string()),
 		googleSyncToken: v.optional(v.string()),
 		googleCalendarSyncTokens: v.optional(
@@ -138,11 +156,6 @@ export default defineSchema({
 		preferredCalendarId: v.optional(v.string()),
 		color: v.optional(v.string()),
 		categoryId: v.optional(v.id("taskCategories")),
-		// Deprecated: task-level pinning replaced by per-event pinning on calendarEvents.
-		// Kept temporarily for schema compatibility with existing documents.
-		// Run stripLegacyPinnedFields migration, then remove these two lines.
-		pinnedStart: v.optional(v.number()),
-		pinnedEnd: v.optional(v.number()),
 	})
 		.index("by_userId", ["userId"])
 		.index("by_userId_status", ["userId", "status"])

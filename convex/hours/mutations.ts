@@ -10,11 +10,14 @@ import {
 	anytimeWindows,
 	assertValidWindows,
 	dateFormatValidator,
+	defaultHabitQuickCreateSettings,
 	defaultSchedulingDowntimeMinutes,
 	defaultSchedulingStepMinutes,
 	defaultTaskQuickCreateSettings,
 	ensureHoursSetOwnership,
 	getDefaultHoursSet,
+	habitFrequencyValidator,
+	habitRecoveryPolicyValidator,
 	hourWindowValidator,
 	isValidTimeZone,
 	normalizeDateFormat,
@@ -440,6 +443,74 @@ const sanitizeHabitPriority = (
 	if (priority === "low" || priority === "medium" || priority === "high") return priority;
 	if (priority === "critical" || priority === "blocker") return "critical";
 	return "medium";
+};
+
+type HabitQuickCreateSettingsShape = {
+	habitQuickCreatePriority?: string;
+	habitQuickCreateDurationMinutes?: number;
+	habitQuickCreateFrequency?: string;
+	habitQuickCreateRecoveryPolicy?: string;
+	habitQuickCreateVisibilityPreference?: string;
+	habitQuickCreateColor?: string;
+};
+
+type NormalizedHabitQuickCreateDefaults = {
+	habitQuickCreatePriority: "low" | "medium" | "high" | "critical" | "blocker";
+	habitQuickCreateDurationMinutes: number;
+	habitQuickCreateFrequency: "daily" | "weekly" | "biweekly" | "monthly";
+	habitQuickCreateRecoveryPolicy: "skip" | "recover";
+	habitQuickCreateVisibilityPreference: "default" | "private";
+	habitQuickCreateColor: string;
+};
+
+const normalizeHabitQuickCreateDefaults = (
+	settings: HabitQuickCreateSettingsShape | null,
+): NormalizedHabitQuickCreateDefaults => {
+	const priority =
+		settings?.habitQuickCreatePriority === "low" ||
+		settings?.habitQuickCreatePriority === "medium" ||
+		settings?.habitQuickCreatePriority === "high" ||
+		settings?.habitQuickCreatePriority === "critical" ||
+		settings?.habitQuickCreatePriority === "blocker"
+			? settings.habitQuickCreatePriority
+			: defaultHabitQuickCreateSettings.priority;
+
+	const durationCandidate = Number.isFinite(settings?.habitQuickCreateDurationMinutes)
+		? (settings?.habitQuickCreateDurationMinutes ?? defaultHabitQuickCreateSettings.durationMinutes)
+		: defaultHabitQuickCreateSettings.durationMinutes;
+	const durationMinutes = Math.max(5, Math.round(durationCandidate));
+
+	const frequency =
+		settings?.habitQuickCreateFrequency === "daily" ||
+		settings?.habitQuickCreateFrequency === "weekly" ||
+		settings?.habitQuickCreateFrequency === "biweekly" ||
+		settings?.habitQuickCreateFrequency === "monthly"
+			? settings.habitQuickCreateFrequency
+			: defaultHabitQuickCreateSettings.frequency;
+
+	const recoveryPolicy =
+		settings?.habitQuickCreateRecoveryPolicy === "skip" ||
+		settings?.habitQuickCreateRecoveryPolicy === "recover"
+			? settings.habitQuickCreateRecoveryPolicy
+			: defaultHabitQuickCreateSettings.recoveryPolicy;
+
+	const visibilityPreference =
+		settings?.habitQuickCreateVisibilityPreference === "default" ||
+		settings?.habitQuickCreateVisibilityPreference === "private"
+			? settings.habitQuickCreateVisibilityPreference
+			: defaultHabitQuickCreateSettings.visibilityPreference;
+
+	const colorRaw = settings?.habitQuickCreateColor?.trim();
+	const color = colorRaw && colorRaw.length > 0 ? colorRaw : defaultHabitQuickCreateSettings.color;
+
+	return {
+		habitQuickCreatePriority: priority,
+		habitQuickCreateDurationMinutes: durationMinutes,
+		habitQuickCreateFrequency: frequency,
+		habitQuickCreateRecoveryPolicy: recoveryPolicy,
+		habitQuickCreateVisibilityPreference: visibilityPreference,
+		habitQuickCreateColor: color,
+	};
 };
 
 const recurrenceFromLegacyFrequency = (frequency: string | undefined) => {
@@ -1043,6 +1114,97 @@ export const setTaskQuickCreateDefaults = mutation({
 				sendToUpNext: normalizedDefaults.taskQuickCreateSendToUpNext,
 				visibilityPreference: normalizedDefaults.taskQuickCreateVisibilityPreference,
 				color: normalizedDefaults.taskQuickCreateColor,
+			};
+		},
+	),
+});
+
+const habitQuickCreateDefaultsInputValidator = v.object({
+	priority: taskPriorityValidator,
+	durationMinutes: v.number(),
+	frequency: habitFrequencyValidator,
+	recoveryPolicy: habitRecoveryPolicyValidator,
+	visibilityPreference: taskVisibilityPreferenceValidator,
+	color: v.string(),
+});
+
+const habitQuickCreateDefaultsReturnValidator = v.object({
+	priority: taskPriorityValidator,
+	durationMinutes: v.number(),
+	frequency: habitFrequencyValidator,
+	recoveryPolicy: habitRecoveryPolicyValidator,
+	visibilityPreference: taskVisibilityPreferenceValidator,
+	color: v.string(),
+});
+
+export const setHabitQuickCreateDefaults = mutation({
+	args: {
+		defaults: habitQuickCreateDefaultsInputValidator,
+	},
+	returns: habitQuickCreateDefaultsReturnValidator,
+	handler: withMutationAuth(
+		async (
+			ctx,
+			args: {
+				defaults: {
+					priority: "low" | "medium" | "high" | "critical" | "blocker";
+					durationMinutes: number;
+					frequency: "daily" | "weekly" | "biweekly" | "monthly";
+					recoveryPolicy: "skip" | "recover";
+					visibilityPreference: "default" | "private";
+					color: string;
+				};
+			},
+		): Promise<{
+			priority: "low" | "medium" | "high" | "critical" | "blocker";
+			durationMinutes: number;
+			frequency: "daily" | "weekly" | "biweekly" | "monthly";
+			recoveryPolicy: "skip" | "recover";
+			visibilityPreference: "default" | "private";
+			color: string;
+		}> => {
+			await ensureSettingsForUser(ctx, ctx.userId);
+			const settings = await ctx.db
+				.query("userSettings")
+				.withIndex("by_userId", (q) => q.eq("userId", ctx.userId))
+				.unique();
+
+			const normalizedDefaults = normalizeHabitQuickCreateDefaults({
+				habitQuickCreatePriority: args.defaults.priority,
+				habitQuickCreateDurationMinutes: args.defaults.durationMinutes,
+				habitQuickCreateFrequency: args.defaults.frequency,
+				habitQuickCreateRecoveryPolicy: args.defaults.recoveryPolicy,
+				habitQuickCreateVisibilityPreference: args.defaults.visibilityPreference,
+				habitQuickCreateColor: args.defaults.color,
+			});
+
+			if (!settings) {
+				await ctx.db.insert("userSettings", {
+					userId: ctx.userId,
+					timezone: normalizeTimeZone(undefined),
+					timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
+					defaultTaskSchedulingMode: "fastest",
+					...normalizeTaskQuickCreateDefaults(null),
+					...normalizedDefaults,
+					schedulingHorizonDays: 75,
+					schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
+					schedulingStepMinutes: defaultSchedulingStepMinutes,
+					googleRefreshToken: undefined,
+					googleSyncToken: undefined,
+					googleCalendarSyncTokens: [],
+					googleConnectedCalendars: [],
+				});
+			} else {
+				await ctx.db.patch(settings._id, normalizedDefaults);
+			}
+
+			return {
+				priority: normalizedDefaults.habitQuickCreatePriority,
+				durationMinutes: normalizedDefaults.habitQuickCreateDurationMinutes,
+				frequency: normalizedDefaults.habitQuickCreateFrequency,
+				recoveryPolicy: normalizedDefaults.habitQuickCreateRecoveryPolicy,
+				visibilityPreference: normalizedDefaults.habitQuickCreateVisibilityPreference,
+				color: normalizedDefaults.habitQuickCreateColor,
 			};
 		},
 	),

@@ -153,8 +153,9 @@ function TimeGridEventComponent({ calendarEvent, timeZone, hour12 }: TimeGridEve
 		<ContextMenu>
 			<ContextMenuTrigger asChild>
 				<div
+					data-event-id={calendarEvent.id ? String(calendarEvent.id) : undefined}
 					className={cn(
-						"group relative grid gap-px leading-tight content-start rounded-[5px] h-full w-full pl-2 pr-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing transition-[filter] duration-200 hover:brightness-[1.12]",
+						"group relative grid gap-px leading-tight content-start rounded-[6px] h-full w-full pl-2 pr-1.5 py-1 overflow-hidden cursor-grab active:cursor-grabbing transition-[filter,box-shadow] duration-200 hover:brightness-[1.12]",
 						isFree && "bg-transparent",
 					)}
 					style={{ ...eventStyle, ...freeStyle }}
@@ -172,7 +173,7 @@ function TimeGridEventComponent({ calendarEvent, timeZone, hour12 }: TimeGridEve
 				>
 					<button
 						type="button"
-						className="absolute top-1 right-1 hidden h-5 w-5 items-center justify-center rounded-md border border-black/20 bg-black/35 text-white/85 backdrop-blur-sm transition hover:bg-black/55 group-hover:flex"
+						className="absolute top-1 right-1 hidden h-5 w-5 items-center justify-center rounded-md border border-white/10 bg-black/30 text-white/80 backdrop-blur-sm transition hover:bg-black/55 group-hover:flex"
 						onClick={(event) => {
 							event.stopPropagation();
 							openEditFromEvent(calendarEvent.id);
@@ -185,8 +186,8 @@ function TimeGridEventComponent({ calendarEvent, timeZone, hour12 }: TimeGridEve
 					<div className="flex items-center gap-1 min-w-0">
 						<span
 							className={cn(
-								"text-[0.74rem] font-semibold tracking-tight truncate",
-								compact && "text-[0.68rem]",
+								"font-[family-name:var(--font-outfit)] text-[0.72rem] font-semibold tracking-tight truncate",
+								compact && "text-[0.66rem]",
 								isFree && "opacity-60",
 							)}
 						>
@@ -197,8 +198,8 @@ function TimeGridEventComponent({ calendarEvent, timeZone, hour12 }: TimeGridEve
 					{!compact ? (
 						<div
 							className={cn(
-								"text-[0.62rem] font-normal opacity-50 truncate",
-								semiCompact && "text-[0.6rem]",
+								"font-[family-name:var(--font-cutive)] text-[0.54rem] font-normal tracking-[0.02em] opacity-45 truncate",
+								semiCompact && "text-[0.52rem]",
 								isFree && "opacity-35",
 							)}
 						>
@@ -206,7 +207,7 @@ function TimeGridEventComponent({ calendarEvent, timeZone, hour12 }: TimeGridEve
 						</div>
 					) : null}
 					{full && descriptionFirstLine ? (
-						<div className="text-[0.58rem] font-normal opacity-35 truncate mt-px">
+						<div className="text-[0.56rem] font-normal opacity-30 truncate mt-px">
 							{descriptionFirstLine}
 						</div>
 					) : null}
@@ -254,7 +255,7 @@ function TimeGridEventComponent({ calendarEvent, timeZone, hour12 }: TimeGridEve
 						aria-label="Resize event"
 						title="Resize event"
 					>
-						<span className="pointer-events-none absolute left-1/2 top-1/2 h-[2px] w-8 -translate-x-1/2 -translate-y-1/2 rounded-full bg-current opacity-20" />
+						<span className="pointer-events-none absolute left-1/2 top-1/2 h-[1.5px] w-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-current opacity-15" />
 					</button>
 				</div>
 			</ContextMenuTrigger>

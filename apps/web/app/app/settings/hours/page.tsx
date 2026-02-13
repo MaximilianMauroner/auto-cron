@@ -1,8 +1,8 @@
 "use client";
 
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
 	Dialog,
 	DialogContent,
@@ -19,15 +19,15 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { useUserPreferences } from "@/components/user-preferences-context";
 import {
 	useActionWithStatus,
 	useAuthenticatedQueryWithStatus,
 	useMutationWithStatus,
 } from "@/hooks/use-convex-status";
+import { cn } from "@/lib/utils";
 import type { HoursSetDTO } from "@auto-cron/types";
-import { Clock3, Copy, Plus, Save, Trash2 } from "lucide-react";
+import { Clock3, Copy, Minus, Plus, Save, Star, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../../../../convex/_generated/api";
 import type { Id } from "../../../../../../convex/_generated/dataModel";
@@ -92,7 +92,6 @@ const formatMinuteAsTime = (minute: number, hour12: boolean) =>
 
 const parseTimeToMinute = (value: string, fallback: number) => {
 	const trimmed = value.trim();
-	// Try 24h format: "HH:MM" or "H:MM"
 	const match24 = trimmed.match(/^(\d{1,2}):(\d{2})$/);
 	if (match24) {
 		const hours = Number.parseInt(match24[1] ?? "0", 10);
@@ -108,7 +107,6 @@ const parseTimeToMinute = (value: string, fallback: number) => {
 			return hours * 60 + minutes;
 		}
 	}
-	// Try 12h format: "HH:MM AM/PM" or "H:MM AM/PM"
 	const match12 = trimmed.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
 	if (match12) {
 		let hours = Number.parseInt(match12[1] ?? "0", 10);
@@ -174,7 +172,6 @@ export default function SettingsHoursPage() {
 		{},
 	);
 	const schedulingStepMinutes = schedulingDefaultsQuery.data?.schedulingStepMinutes ?? 15;
-	const schedulingStepSeconds = schedulingStepMinutes * 60;
 	const hoursSets = (hoursSetsQuery.data ?? []) as HoursSetDTO[];
 	const googleCalendars = (googleCalendarsQuery.data ?? []) as GoogleCalendarListItem[];
 
@@ -392,7 +389,6 @@ export default function SettingsHoursPage() {
 		}));
 		if (source.length === 0) return;
 
-		// Copy only to currently enabled days so disabled days remain untouched.
 		const enabledDays = new Set(
 			dayDefinitions
 				.filter(({ day: targetDay }) => (windowsByDay.get(targetDay) ?? []).length > 0)
@@ -506,297 +502,344 @@ export default function SettingsHoursPage() {
 		}
 	};
 
+	const activeDayCount = dayDefinitions.filter(
+		({ day }) => (windowsByDay.get(day) ?? []).length > 0,
+	).length;
+
 	return (
-		<div className="flex flex-col gap-5">
-			<div className="grid scroll-mt-24 gap-4 md:grid-cols-[1.3fr_1fr]" id="hours-settings">
-				<Card className="border-border/70 bg-card/70">
-					<CardHeader className="pb-2">
-						<CardDescription className="text-xs uppercase tracking-[0.14em]">
-							Scheduling
-						</CardDescription>
-						<CardTitle className="flex items-center gap-2 text-xl">
-							<Clock3 className="size-4 text-primary" />
-							Working Hours Sets
-						</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-3">
-						<p className="max-w-2xl text-sm text-muted-foreground">
-							Create reusable hours sets and assign them per task or habit. System sets are editable
-							but locked from deletion.
-						</p>
-						<div className="flex flex-wrap items-center gap-2">
-							<Button onClick={() => setIsCreateOpen(true)} disabled={isBusy} className="gap-1.5">
-								<Plus className="size-4" />
-								New hours set
-							</Button>
-							<Button
-								variant="outline"
-								onClick={() => void onSeedDefaultPlannerData()}
-								disabled={isBusy}
-								className="border-border/70 bg-background/60 text-foreground hover:bg-muted/60 hover:text-foreground"
-							>
-								Generate starter data
-							</Button>
-							<Button
-								variant="outline"
-								onClick={() => void bootstrapHoursSets({})}
-								disabled={isBusy}
-								className="border-border/70 bg-background/60 text-foreground hover:bg-muted/60 hover:text-foreground"
-							>
-								Re-run bootstrap
-							</Button>
-						</div>
-					</CardContent>
-				</Card>
+		<>
+			<div className="flex items-start justify-between gap-4">
+				<SettingsSectionHeader
+					sectionNumber="03"
+					sectionLabel="Hours"
+					title="Working Hours"
+					description="Create reusable hours sets and assign them per task or habit."
+				/>
+				<Button
+					size="sm"
+					className="mt-6 shrink-0 gap-1.5"
+					onClick={() => setIsCreateOpen(true)}
+					disabled={isBusy}
+				>
+					<Plus className="size-3.5" />
+					New set
+				</Button>
 			</div>
 
 			{errorMessage ? (
-				<div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+				<div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
 					{errorMessage}
 				</div>
 			) : null}
 			{successMessage ? (
-				<div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+				<div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
 					{successMessage}
 				</div>
 			) : null}
 
-			<div className="grid gap-4 lg:grid-cols-[320px_1fr]">
-				<Card className="border-border/70 bg-card/70">
-					<CardHeader className="pb-2">
-						<CardTitle className="text-base">Hours Sets</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-2">
-						{hoursSetsQuery.isPending ? (
-							<p className="text-sm text-muted-foreground">Loading sets...</p>
-						) : orderedHoursSets.length === 0 ? (
-							<p className="text-sm text-muted-foreground">No sets found yet.</p>
-						) : (
-							orderedHoursSets.map((hoursSet) => (
+			<div className="space-y-4">
+				{/* Set selector — list style like categories */}
+				{hoursSetsQuery.isPending ? (
+					<p className="text-sm text-muted-foreground">Loading hours sets...</p>
+				) : orderedHoursSets.length === 0 ? (
+					<div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border/60 py-16">
+						<div className="mb-4 rounded-full bg-muted/40 p-4">
+							<Clock3 className="size-8 text-muted-foreground/40" />
+						</div>
+						<p className="text-sm font-medium text-muted-foreground">No hours sets</p>
+						<p className="mt-1 text-xs text-muted-foreground/60">
+							Create one to define your working schedule
+						</p>
+						<Button
+							size="sm"
+							variant="outline"
+							className="mt-4 gap-1.5"
+							onClick={() => setIsCreateOpen(true)}
+						>
+							<Plus className="size-3.5" />
+							Create set
+						</Button>
+					</div>
+				) : (
+					<div className="space-y-1.5">
+						{orderedHoursSets.map((hoursSet) => {
+							const isSelected = selectedSetId === hoursSet._id;
+							const windowCount = hoursSet.windows.length;
+							const dayCount = new Set(hoursSet.windows.map((w) => w.day)).size;
+							return (
 								<button
 									key={hoursSet._id}
 									type="button"
-									className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition-colors ${
-										selectedSetId === hoursSet._id
-											? "border-primary/40 bg-primary/5"
-											: "border-border hover:bg-muted/40"
-									}`}
 									onClick={() => setSelectedSetId(hoursSet._id)}
+									className={cn(
+										"group flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors",
+										isSelected
+											? "border-primary/40 bg-primary/5"
+											: "border-border/50 hover:border-border/80 hover:bg-muted/20",
+									)}
 								>
-									<div className="min-w-0">
-										<p className="truncate text-sm font-medium">{hoursSet.name}</p>
-										<div className="mt-1 flex flex-wrap gap-1">
-											{hoursSet.isDefault ? <Badge variant="secondary">Default</Badge> : null}
-											{hoursSet.isSystem ? <Badge variant="outline">System</Badge> : null}
+									<Clock3 className="size-3.5 shrink-0 text-muted-foreground/60" />
+									<div className="min-w-0 flex-1">
+										<div className="flex items-center gap-2">
+											<p className="truncate text-sm font-medium">{hoursSet.name}</p>
+											{hoursSet.isDefault ? (
+												<Badge
+													variant="secondary"
+													className="shrink-0 gap-1 px-1.5 py-0 text-[10px]"
+												>
+													<Star className="size-2.5" />
+													Default
+												</Badge>
+											) : null}
+											{hoursSet.isSystem ? (
+												<Badge variant="outline" className="shrink-0 px-1.5 py-0 text-[10px]">
+													System
+												</Badge>
+											) : null}
+										</div>
+										<p className="mt-0.5 text-xs text-muted-foreground">
+											{dayCount} day{dayCount !== 1 ? "s" : ""} &middot; {windowCount} window
+											{windowCount !== 1 ? "s" : ""}
+										</p>
+									</div>
+								</button>
+							);
+						})}
+					</div>
+				)}
+
+				{/* Editor */}
+				{draft ? (
+					<div className="rounded-xl border border-border/60 p-5">
+						<p className="mb-4 font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+							Configure &mdash; {draft.name}
+						</p>
+
+						{/* Name + Calendar */}
+						<div className="grid gap-3 sm:grid-cols-2">
+							<div className="space-y-1.5">
+								<Label className="text-xs">Name</Label>
+								<Input
+									value={draft.name}
+									onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+								/>
+							</div>
+							<div className="space-y-1.5">
+								<Label className="text-xs">Default calendar</Label>
+								<Select
+									value={draft.defaultCalendarId ?? "__none__"}
+									onValueChange={(value) =>
+										setDraft({
+											...draft,
+											defaultCalendarId: value === "__none__" ? undefined : value,
+										})
+									}
+								>
+									<SelectTrigger>
+										<SelectValue placeholder="Select calendar" />
+									</SelectTrigger>
+									<SelectContent>
+										<SelectItem value="__none__">No default calendar</SelectItem>
+										{calendarOptions.map((calendar) => (
+											<SelectItem key={calendar.id} value={calendar.id}>
+												{calendar.primary ? `${calendar.name} (primary)` : calendar.name}
+											</SelectItem>
+										))}
+										{draft.defaultCalendarId &&
+										!calendarOptions.some((calendar) => calendar.id === draft.defaultCalendarId) ? (
+											<SelectItem value={draft.defaultCalendarId}>
+												{draft.defaultCalendarId} (unavailable)
+											</SelectItem>
+										) : null}
+									</SelectContent>
+								</Select>
+							</div>
+						</div>
+
+						{/* Day toggles */}
+						<div className="mt-5 border-t border-border/40 pt-4">
+							<div className="mb-3 flex items-center justify-between gap-2">
+								<p className="text-xs font-medium text-muted-foreground">
+									Active days
+									<span className="ml-1.5 text-foreground/60">{activeDayCount}/7</span>
+								</p>
+								<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.1em] text-muted-foreground/50">
+									{schedulingStepMinutes}m steps
+								</p>
+							</div>
+							<div className="flex flex-wrap gap-1.5">
+								{dayDefinitions.map(({ day, short }) => {
+									const enabled = (windowsByDay.get(day) ?? []).length > 0;
+									return (
+										<button
+											key={day}
+											type="button"
+											onClick={() => toggleDay(day)}
+											className={cn(
+												"h-8 min-w-8 rounded-md border px-2.5 text-xs font-medium transition-colors",
+												enabled
+													? "border-primary/40 bg-primary/10 text-primary"
+													: "border-border/60 bg-background text-muted-foreground/50 hover:border-border hover:text-muted-foreground",
+											)}
+										>
+											{short}
+										</button>
+									);
+								})}
+							</div>
+						</div>
+
+						{/* Day windows */}
+						<div className="mt-4 space-y-px">
+							{dayDefinitions.map(({ day, short, label }) => {
+								const dayWindows = windowsByDay.get(day) ?? [];
+								if (dayWindows.length === 0) return null;
+								return (
+									<div
+										key={day}
+										className="group/day rounded-md border border-transparent px-3 py-2.5 transition-colors hover:border-border/40 hover:bg-muted/10"
+									>
+										<div className="flex items-start gap-3">
+											{/* Day label */}
+											<div className="w-8 shrink-0 pt-1.5">
+												<p className="font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.1em] text-muted-foreground">
+													{short}
+												</p>
+											</div>
+
+											{/* Windows */}
+											<div className="flex-1 space-y-1.5">
+												{dayWindows.map((window, index) => (
+													<div
+														key={`${window.day}-${window.startMinute}-${window.endMinute}-${index}`}
+														className="flex items-center gap-2"
+													>
+														<Input
+															type="text"
+															inputMode="text"
+															value={formatMinuteAsTime(window.startMinute, hour12)}
+															onBlur={(event) =>
+																updateWindow(day, index, "startMinute", event.target.value)
+															}
+															onChange={(event) =>
+																updateWindow(day, index, "startMinute", event.target.value)
+															}
+															className="h-8 w-28 text-xs"
+														/>
+														<span className="text-[10px] text-muted-foreground/50">&ndash;</span>
+														<Input
+															type="text"
+															inputMode="text"
+															value={formatMinuteAsTime(window.endMinute, hour12)}
+															onBlur={(event) =>
+																updateWindow(day, index, "endMinute", event.target.value)
+															}
+															onChange={(event) =>
+																updateWindow(day, index, "endMinute", event.target.value)
+															}
+															className="h-8 w-28 text-xs"
+														/>
+														<button
+															type="button"
+															onClick={() => removeWindow(day, index)}
+															className="rounded-md p-1 text-muted-foreground/40 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+														>
+															<Minus className="size-3" />
+														</button>
+													</div>
+												))}
+											</div>
+
+											{/* Day actions */}
+											<div className="flex shrink-0 items-center gap-0.5 pt-1 opacity-0 transition-opacity group-hover/day:opacity-100">
+												<button
+													type="button"
+													onClick={() => addWindow(day)}
+													title={`Add window to ${label}`}
+													className="rounded-md p-1.5 text-muted-foreground/40 transition-colors hover:bg-muted/60 hover:text-foreground"
+												>
+													<Plus className="size-3" />
+												</button>
+												<button
+													type="button"
+													onClick={() => copyDayToAll(day)}
+													title={`Copy ${label} to all active days`}
+													className="rounded-md p-1.5 text-muted-foreground/40 transition-colors hover:bg-muted/60 hover:text-foreground"
+												>
+													<Copy className="size-3" />
+												</button>
+											</div>
 										</div>
 									</div>
-									<Clock3 className="size-4 text-muted-foreground" />
-								</button>
-							))
-						)}
-					</CardContent>
-				</Card>
+								);
+							})}
+						</div>
 
-				<Card className="border-border/70 bg-card/70">
-					<CardHeader className="pb-2">
-						<CardTitle className="flex items-center justify-between gap-3 text-base">
-							<span>{draft?.name ?? "Hours set"}</span>
+						{/* Actions */}
+						<div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-border/40 pt-4">
 							<div className="flex items-center gap-2">
-								{draft?.isDefault ? <Badge variant="secondary">Default</Badge> : null}
-								{draft?.isSystem ? <Badge variant="outline">System</Badge> : null}
-							</div>
-						</CardTitle>
-						<CardDescription>
-							Per-day windows use {schedulingStepMinutes}-minute steps. Multiple windows per day are
-							supported.
-						</CardDescription>
-					</CardHeader>
-					<CardContent className="space-y-4">
-						{!draft ? (
-							<p className="text-sm text-muted-foreground">Select a set to configure windows.</p>
-						) : (
-							<>
-								<div className="grid gap-3 md:grid-cols-2">
-									<div className="space-y-2">
-										<Label>Name</Label>
-										<Input
-											value={draft.name}
-											onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-										/>
-									</div>
-									<div className="space-y-2">
-										<Label>Default calendar id (optional)</Label>
-										<Select
-											value={draft.defaultCalendarId ?? "__none__"}
-											onValueChange={(value) =>
-												setDraft({
-													...draft,
-													defaultCalendarId: value === "__none__" ? undefined : value,
-												})
-											}
-										>
-											<SelectTrigger>
-												<SelectValue placeholder="Select calendar" />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="__none__">No default calendar</SelectItem>
-												{calendarOptions.map((calendar) => (
-													<SelectItem key={calendar.id} value={calendar.id}>
-														{calendar.primary ? `${calendar.name} (primary)` : calendar.name}
-													</SelectItem>
-												))}
-												{draft.defaultCalendarId &&
-												!calendarOptions.some(
-													(calendar) => calendar.id === draft.defaultCalendarId,
-												) ? (
-													<SelectItem value={draft.defaultCalendarId}>
-														{draft.defaultCalendarId} (unavailable)
-													</SelectItem>
-												) : null}
-											</SelectContent>
-										</Select>
-									</div>
-								</div>
-
-								<div className="flex flex-wrap gap-1.5">
-									{dayDefinitions.map(({ day, short }) => {
-										const enabled = (windowsByDay.get(day) ?? []).length > 0;
-										return (
-											<button
-												key={day}
-												type="button"
-												onClick={() => toggleDay(day)}
-												className={`h-10 min-w-10 rounded-full border px-3 text-sm font-medium transition-colors ${
-													enabled
-														? "border-primary/40 bg-primary/10 text-primary"
-														: "border-border bg-background text-muted-foreground"
-												}`}
-											>
-												{short}
-											</button>
-										);
-									})}
-								</div>
-
-								<Separator />
-
-								<div className="space-y-4">
-									{dayDefinitions.map(({ day, label }) => {
-										const dayWindows = windowsByDay.get(day) ?? [];
-										return (
-											<div key={day} className="space-y-2">
-												<div className="flex items-center justify-between gap-2">
-													<p className="w-32 text-sm font-medium">{label}</p>
-													<div className="flex items-center gap-1">
-														<Button
-															type="button"
-															variant="ghost"
-															size="sm"
-															className="h-8 gap-1 text-xs"
-															disabled={dayWindows.length === 0}
-															onClick={() => copyDayToAll(day)}
-														>
-															<Copy className="size-3.5" />
-															Copy to all
-														</Button>
-														<Button
-															type="button"
-															variant="ghost"
-															size="icon"
-															className="size-8"
-															onClick={() => addWindow(day)}
-														>
-															<Plus className="size-3.5" />
-														</Button>
-													</div>
-												</div>
-												{dayWindows.length === 0 ? (
-													<p className="text-xs text-muted-foreground">No windows configured.</p>
-												) : (
-													<div className="space-y-2">
-														{dayWindows.map((window, index) => (
-															<div
-																key={`${window.day}-${window.startMinute}-${window.endMinute}-${index}`}
-																className="flex items-center gap-2"
-															>
-																<Input
-																	type="text"
-																	inputMode="text"
-																	value={formatMinuteAsTime(window.startMinute, hour12)}
-																	onBlur={(event) =>
-																		updateWindow(day, index, "startMinute", event.target.value)
-																	}
-																	onChange={(event) =>
-																		updateWindow(day, index, "startMinute", event.target.value)
-																	}
-																	className="w-44"
-																/>
-																<span className="text-sm text-muted-foreground">to</span>
-																<Input
-																	type="text"
-																	inputMode="text"
-																	value={formatMinuteAsTime(window.endMinute, hour12)}
-																	onBlur={(event) =>
-																		updateWindow(day, index, "endMinute", event.target.value)
-																	}
-																	onChange={(event) =>
-																		updateWindow(day, index, "endMinute", event.target.value)
-																	}
-																	className="w-44"
-																/>
-																<Button
-																	type="button"
-																	variant="ghost"
-																	size="icon"
-																	className="size-8 text-rose-600"
-																	onClick={() => removeWindow(day, index)}
-																>
-																	<Trash2 className="size-3.5" />
-																</Button>
-															</div>
-														))}
-													</div>
-												)}
-											</div>
-										);
-									})}
-								</div>
-
-								<Separator />
-
-								<div className="flex flex-wrap items-center justify-between gap-2">
-									<div className="flex flex-wrap items-center gap-2">
-										<Button
-											type="button"
-											variant="outline"
-											onClick={onSetDefault}
-											disabled={isBusy || draft.isDefault}
-										>
-											Set as default
-										</Button>
-										<Button
-											type="button"
-											variant="outline"
-											onClick={onDeleteHoursSet}
-											disabled={isBusy || draft.isDefault || draft.isSystem}
-										>
-											Delete set
-										</Button>
-									</div>
+								{!draft.isDefault ? (
 									<Button
 										type="button"
-										onClick={onSaveHoursSet}
-										disabled={isBusy || !hasDraftChanges}
-										className="gap-1.5"
+										variant="ghost"
+										size="sm"
+										className="h-8 gap-1.5 px-2.5 text-xs"
+										onClick={() => void onSetDefault()}
+										disabled={isBusy}
 									>
-										<Save className="size-4" />
-										Save changes
+										<Star className="size-3" />
+										Set default
 									</Button>
-								</div>
-							</>
-						)}
-					</CardContent>
-				</Card>
+								) : null}
+								{!draft.isDefault && !draft.isSystem ? (
+									<Button
+										type="button"
+										variant="ghost"
+										size="sm"
+										className="h-8 gap-1.5 px-2.5 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-950/30"
+										onClick={() => void onDeleteHoursSet()}
+										disabled={isBusy}
+									>
+										<Trash2 className="size-3" />
+										Delete
+									</Button>
+								) : null}
+							</div>
+							<Button
+								type="button"
+								size="sm"
+								className="h-8 gap-1.5 px-3 text-xs"
+								onClick={() => void onSaveHoursSet()}
+								disabled={isBusy || !hasDraftChanges}
+							>
+								<Save className="size-3" />
+								{isUpdatingSet ? "Saving..." : "Save changes"}
+							</Button>
+						</div>
+					</div>
+				) : null}
+
+				{/* Utility */}
+				<div className="flex flex-wrap items-center gap-2 pt-2">
+					<Button
+						variant="outline"
+						size="sm"
+						className="h-8 text-xs"
+						onClick={() => void onSeedDefaultPlannerData()}
+						disabled={isBusy}
+					>
+						Generate starter data
+					</Button>
+					<Button
+						variant="outline"
+						size="sm"
+						className="h-8 text-xs"
+						onClick={() => void bootstrapHoursSets({})}
+						disabled={isBusy}
+					>
+						Re-run bootstrap
+					</Button>
+				</div>
 			</div>
 
 			<Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
@@ -804,24 +847,28 @@ export default function SettingsHoursPage() {
 					<DialogHeader>
 						<DialogTitle>Create hours set</DialogTitle>
 					</DialogHeader>
-					<div className="space-y-2">
-						<Label>Name</Label>
+					<div className="space-y-1.5">
+						<Label className="text-xs uppercase tracking-[0.1em]">Name</Label>
 						<Input
 							placeholder="e.g. Weekend deep work"
 							value={newSetName}
 							onChange={(event) => setNewSetName(event.target.value)}
+							onKeyDown={(event) => {
+								if (event.key === "Enter") void onCreateHoursSet();
+							}}
+							autoFocus
 						/>
 					</div>
 					<DialogFooter>
 						<Button variant="outline" onClick={() => setIsCreateOpen(false)}>
 							Cancel
 						</Button>
-						<Button onClick={onCreateHoursSet} disabled={isBusy}>
-							Create
+						<Button onClick={() => void onCreateHoursSet()} disabled={isBusy}>
+							{isCreatingSet ? "Creating..." : "Create"}
 						</Button>
 					</DialogFooter>
 				</DialogContent>
 			</Dialog>
-		</div>
+		</>
 	);
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { Input } from "@/components/ui/input";
 import {
 	Select,
@@ -15,7 +15,7 @@ import {
 } from "@/components/user-preferences-context";
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
 import { cn } from "@/lib/utils";
-import { Check, Globe2, Pencil } from "lucide-react";
+import { Check, Globe, Hash, Pencil } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
 
@@ -216,316 +216,189 @@ export default function GeneralSettingsPage() {
 		[persistTimeFormatPreference, flashSaved],
 	);
 
+	const rows: {
+		key: EditingRow & string;
+		label: string;
+		icon: React.ReactNode;
+		displayValue: string;
+		editor: React.ReactNode;
+	}[] = [
+		{
+			key: "timezone",
+			label: "Timezone",
+			icon: <Globe className="size-4 text-muted-foreground/60" />,
+			displayValue: timezone,
+			editor: (
+				<div className="flex items-center gap-2">
+					<Input
+						list="tz-general-options"
+						value={timezoneDraft}
+						onChange={(e) => setTimezoneDraft(e.target.value)}
+						onKeyDown={(e) => {
+							if (e.key === "Enter") void saveTimezone();
+							if (e.key === "Escape") setEditing(null);
+						}}
+						placeholder="e.g. America/New_York"
+						className="max-w-[260px]"
+						autoFocus
+					/>
+					<datalist id="tz-general-options">
+						{timeZoneOptions.map((zone) => (
+							<option key={zone} value={zone} />
+						))}
+					</datalist>
+				</div>
+			),
+		},
+		{
+			key: "horizon",
+			label: "Scheduling window",
+			icon: <Hash className="size-4 text-muted-foreground/60" />,
+			displayValue: formatHorizon(schedulingHorizonDays),
+			editor: (
+				<Select
+					value={String(schedulingHorizonDays)}
+					onValueChange={(value) => void saveHorizon(Number(value))}
+				>
+					<SelectTrigger className="max-w-[180px]">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						{horizonOptions.map((opt) => (
+							<SelectItem key={opt.days} value={String(opt.days)}>
+								{opt.label}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			),
+		},
+		{
+			key: "weekStart",
+			label: "Start of week",
+			icon: <Hash className="size-4 text-muted-foreground/60" />,
+			displayValue: weekDayLabels[weekStartsOn] ?? "Monday",
+			editor: (
+				<Select
+					value={String(weekStartsOn)}
+					onValueChange={(value) => void saveWeekStart(Number(value) as 0 | 1 | 2 | 3 | 4 | 5 | 6)}
+				>
+					<SelectTrigger className="max-w-[180px]">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						{[0, 1, 2, 3, 4, 5, 6].map((day) => (
+							<SelectItem key={day} value={String(day)}>
+								{weekDayLabels[day]}
+							</SelectItem>
+						))}
+					</SelectContent>
+				</Select>
+			),
+		},
+		{
+			key: "dateFormat",
+			label: "Date format",
+			icon: <Hash className="size-4 text-muted-foreground/60" />,
+			displayValue: dateFormatExamples[dateFormat] ?? dateFormat,
+			editor: (
+				<Select
+					value={dateFormat}
+					onValueChange={(value) =>
+						void saveDateFormat(value as "MM/DD/YYYY" | "DD/MM/YYYY" | "YYYY-MM-DD")
+					}
+				>
+					<SelectTrigger className="max-w-[180px]">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
+						<SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
+						<SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
+					</SelectContent>
+				</Select>
+			),
+		},
+		{
+			key: "timeFormat",
+			label: "Time format",
+			icon: <Hash className="size-4 text-muted-foreground/60" />,
+			displayValue: timeFormatExamples[timeFormatPreference] ?? timeFormatPreference,
+			editor: (
+				<Select
+					value={timeFormatPreference}
+					onValueChange={(value) => void saveTimeFormat(value as "12h" | "24h")}
+				>
+					<SelectTrigger className="max-w-[180px]">
+						<SelectValue />
+					</SelectTrigger>
+					<SelectContent>
+						<SelectItem value="12h">12-hour</SelectItem>
+						<SelectItem value="24h">24-hour</SelectItem>
+					</SelectContent>
+				</Select>
+			),
+		},
+	];
+
 	return (
-		<div className="mx-auto w-full max-w-2xl">
-			<Card className="border-border/70 bg-card/70">
-				<CardHeader>
-					<CardDescription className="text-xs uppercase tracking-[0.14em]">
-						Preferences
-					</CardDescription>
-					<CardTitle className="flex items-center gap-2 text-xl">
-						<Globe2 className="size-4 text-primary" />
-						Calendar & Display
-					</CardTitle>
-				</CardHeader>
-				<CardContent className="p-0">
-					{/* Timezone */}
-					<div
-						className={cn(
-							"flex items-center justify-between gap-4 px-6 py-5 transition-colors",
-							savedRow === "timezone" && "bg-emerald-500/5",
-						)}
-					>
-						<div className="min-w-0 flex-1">
-							<p className="text-base font-semibold">Timezone</p>
-							{editing === "timezone" ? (
-								<div className="mt-2 flex items-center gap-2">
-									<Input
-										list="tz-general-options"
-										value={timezoneDraft}
-										onChange={(e) => setTimezoneDraft(e.target.value)}
-										onKeyDown={(e) => {
-											if (e.key === "Enter") void saveTimezone();
-											if (e.key === "Escape") setEditing(null);
-										}}
-										placeholder="e.g. America/New_York"
-										className="max-w-[280px]"
-										autoFocus
-									/>
-									<datalist id="tz-general-options">
-										{timeZoneOptions.map((zone) => (
-											<option key={zone} value={zone} />
-										))}
-									</datalist>
-								</div>
-							) : (
-								<p
-									className={cn(
-										"text-sm text-muted-foreground transition-colors",
-										savedRow === "timezone" && "text-emerald-600 dark:text-emerald-400",
+		<>
+			<SettingsSectionHeader
+				sectionNumber="01"
+				sectionLabel="Display"
+				title="Calendar & Display"
+				description="Configure timezone, date formats, scheduling window, and display preferences."
+			/>
+			<div className="overflow-hidden rounded-xl border border-border/60">
+				{rows.map((row, i) => {
+					const isEditing = editing === row.key;
+					const isSaved = savedRow === row.key;
+					return (
+						<div key={row.key}>
+							{i > 0 && <div className="border-t border-border/40" />}
+							<div
+								className={cn(
+									"group flex items-center gap-4 px-5 py-4 transition-colors duration-300",
+									isSaved && "bg-accent/5",
+								)}
+							>
+								{row.icon}
+								<div className="min-w-0 flex-1">
+									<p className="text-sm font-medium text-foreground">{row.label}</p>
+									{isEditing ? (
+										<div className="mt-2">{row.editor}</div>
+									) : (
+										<p
+											className={cn(
+												"mt-0.5 text-[13px] text-muted-foreground transition-colors duration-300",
+												isSaved && "text-accent",
+											)}
+										>
+											{row.displayValue}
+										</p>
 									)}
-								>
-									{timezone}
-								</p>
-							)}
-						</div>
-						<button
-							type="button"
-							onClick={() => {
-								if (editing === "timezone") {
-									void saveTimezone();
-								} else {
-									setTimezoneDraft(timezone);
-									setEditing("timezone");
-								}
-							}}
-							className="shrink-0 rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted/60 hover:text-foreground"
-							aria-label={editing === "timezone" ? "Save timezone" : "Edit timezone"}
-						>
-							{editing === "timezone" ? (
-								<Check className="size-4" />
-							) : (
-								<Pencil className="size-4" />
-							)}
-						</button>
-					</div>
-
-					<div className="border-t border-border/60" />
-
-					{/* Scheduling window */}
-					<div
-						className={cn(
-							"flex items-center justify-between gap-4 px-6 py-5 transition-colors",
-							savedRow === "horizon" && "bg-emerald-500/5",
-						)}
-					>
-						<div className="min-w-0 flex-1">
-							<p className="text-base font-semibold">Scheduling window</p>
-							{editing === "horizon" ? (
-								<div className="mt-2">
-									<Select
-										value={String(schedulingHorizonDays)}
-										onValueChange={(value) => void saveHorizon(Number(value))}
-									>
-										<SelectTrigger className="max-w-[200px]">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{horizonOptions.map((opt) => (
-												<SelectItem key={opt.days} value={String(opt.days)}>
-													{opt.label}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
 								</div>
-							) : (
-								<p
-									className={cn(
-										"text-sm text-muted-foreground transition-colors",
-										savedRow === "horizon" && "text-emerald-600 dark:text-emerald-400",
-									)}
-								>
-									{formatHorizon(schedulingHorizonDays)}
-								</p>
-							)}
-						</div>
-						<button
-							type="button"
-							onClick={() => {
-								if (editing === "horizon") {
-									setEditing(null);
-								} else {
-									setEditing("horizon");
-								}
-							}}
-							className="shrink-0 rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted/60 hover:text-foreground"
-							aria-label={editing === "horizon" ? "Close" : "Edit scheduling window"}
-						>
-							{editing === "horizon" ? <Check className="size-4" /> : <Pencil className="size-4" />}
-						</button>
-					</div>
-
-					<div className="border-t border-border/60" />
-
-					{/* Start of week */}
-					<div
-						className={cn(
-							"flex items-center justify-between gap-4 px-6 py-5 transition-colors",
-							savedRow === "weekStart" && "bg-emerald-500/5",
-						)}
-					>
-						<div className="min-w-0 flex-1">
-							<p className="text-base font-semibold">Start of week</p>
-							{editing === "weekStart" ? (
-								<div className="mt-2">
-									<Select
-										value={String(weekStartsOn)}
-										onValueChange={(value) =>
-											void saveWeekStart(Number(value) as 0 | 1 | 2 | 3 | 4 | 5 | 6)
+								<button
+									type="button"
+									onClick={() => {
+										if (isEditing) {
+											if (row.key === "timezone") void saveTimezone();
+											else setEditing(null);
+										} else {
+											if (row.key === "timezone") setTimezoneDraft(timezone);
+											setEditing(row.key);
 										}
-									>
-										<SelectTrigger className="max-w-[200px]">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{[0, 1, 2, 3, 4, 5, 6].map((day) => (
-												<SelectItem key={day} value={String(day)}>
-													{weekDayLabels[day]}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
-							) : (
-								<p
-									className={cn(
-										"text-sm text-muted-foreground transition-colors",
-										savedRow === "weekStart" && "text-emerald-600 dark:text-emerald-400",
-									)}
+									}}
+									className="shrink-0 rounded-md p-1.5 text-muted-foreground/40 transition-colors hover:bg-muted/60 hover:text-foreground"
+									aria-label={isEditing ? `Save ${row.label}` : `Edit ${row.label}`}
 								>
-									{weekDayLabels[weekStartsOn]}
-								</p>
-							)}
+									{isEditing ? <Check className="size-4" /> : <Pencil className="size-3.5" />}
+								</button>
+							</div>
 						</div>
-						<button
-							type="button"
-							onClick={() => {
-								if (editing === "weekStart") {
-									setEditing(null);
-								} else {
-									setEditing("weekStart");
-								}
-							}}
-							className="shrink-0 rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted/60 hover:text-foreground"
-							aria-label={editing === "weekStart" ? "Close" : "Edit start of week"}
-						>
-							{editing === "weekStart" ? (
-								<Check className="size-4" />
-							) : (
-								<Pencil className="size-4" />
-							)}
-						</button>
-					</div>
-
-					<div className="border-t border-border/60" />
-
-					{/* Date format */}
-					<div
-						className={cn(
-							"flex items-center justify-between gap-4 px-6 py-5 transition-colors",
-							savedRow === "dateFormat" && "bg-emerald-500/5",
-						)}
-					>
-						<div className="min-w-0 flex-1">
-							<p className="text-base font-semibold">Date format</p>
-							{editing === "dateFormat" ? (
-								<div className="mt-2">
-									<Select
-										value={dateFormat}
-										onValueChange={(value) =>
-											void saveDateFormat(value as "MM/DD/YYYY" | "DD/MM/YYYY" | "YYYY-MM-DD")
-										}
-									>
-										<SelectTrigger className="max-w-[200px]">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="MM/DD/YYYY">MM/DD/YYYY</SelectItem>
-											<SelectItem value="DD/MM/YYYY">DD/MM/YYYY</SelectItem>
-											<SelectItem value="YYYY-MM-DD">YYYY-MM-DD</SelectItem>
-										</SelectContent>
-									</Select>
-								</div>
-							) : (
-								<p
-									className={cn(
-										"text-sm text-muted-foreground transition-colors",
-										savedRow === "dateFormat" && "text-emerald-600 dark:text-emerald-400",
-									)}
-								>
-									{dateFormatExamples[dateFormat] ?? dateFormat}
-								</p>
-							)}
-						</div>
-						<button
-							type="button"
-							onClick={() => {
-								if (editing === "dateFormat") {
-									setEditing(null);
-								} else {
-									setEditing("dateFormat");
-								}
-							}}
-							className="shrink-0 rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted/60 hover:text-foreground"
-							aria-label={editing === "dateFormat" ? "Close" : "Edit date format"}
-						>
-							{editing === "dateFormat" ? (
-								<Check className="size-4" />
-							) : (
-								<Pencil className="size-4" />
-							)}
-						</button>
-					</div>
-
-					<div className="border-t border-border/60" />
-
-					{/* Time format */}
-					<div
-						className={cn(
-							"flex items-center justify-between gap-4 px-6 py-5 transition-colors",
-							savedRow === "timeFormat" && "bg-emerald-500/5",
-						)}
-					>
-						<div className="min-w-0 flex-1">
-							<p className="text-base font-semibold">Time format</p>
-							{editing === "timeFormat" ? (
-								<div className="mt-2">
-									<Select
-										value={timeFormatPreference}
-										onValueChange={(value) => void saveTimeFormat(value as "12h" | "24h")}
-									>
-										<SelectTrigger className="max-w-[200px]">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											<SelectItem value="12h">12-hour</SelectItem>
-											<SelectItem value="24h">24-hour</SelectItem>
-										</SelectContent>
-									</Select>
-								</div>
-							) : (
-								<p
-									className={cn(
-										"text-sm text-muted-foreground transition-colors",
-										savedRow === "timeFormat" && "text-emerald-600 dark:text-emerald-400",
-									)}
-								>
-									{timeFormatExamples[timeFormatPreference] ?? timeFormatPreference}
-								</p>
-							)}
-						</div>
-						<button
-							type="button"
-							onClick={() => {
-								if (editing === "timeFormat") {
-									setEditing(null);
-								} else {
-									setEditing("timeFormat");
-								}
-							}}
-							className="shrink-0 rounded-md p-1.5 text-muted-foreground/50 transition-colors hover:bg-muted/60 hover:text-foreground"
-							aria-label={editing === "timeFormat" ? "Close" : "Edit time format"}
-						>
-							{editing === "timeFormat" ? (
-								<Check className="size-4" />
-							) : (
-								<Pencil className="size-4" />
-							)}
-						</button>
-					</div>
-				</CardContent>
-			</Card>
-		</div>
+					);
+				})}
+			</div>
+		</>
 	);
 }

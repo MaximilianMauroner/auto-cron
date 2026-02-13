@@ -2,7 +2,14 @@
 
 import { CategoryPicker } from "@/components/category-picker";
 import { Button } from "@/components/ui/button";
+import { ColorPaletteDropdown } from "@/components/ui/color-palette";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { DurationInput } from "@/components/ui/duration-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,6 +20,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
@@ -22,7 +30,7 @@ import {
 	parseDurationToMinutes,
 } from "@/lib/duration";
 import type { CalendarEventDTO, Priority, TaskStatus } from "@auto-cron/types";
-import { Pin, PinOff, Trash2 } from "lucide-react";
+import { MoreVertical, Pin, PinOff, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -170,129 +178,158 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 		<Sheet open={open} onOpenChange={onOpenChange}>
 			<SheetContent side="right" className="w-80 p-0 sm:max-w-md" showCloseButton={false}>
 				<SheetHeader className="border-b border-border/70 px-5 py-4">
-					<SheetTitle className="text-lg">Edit task</SheetTitle>
+					<SheetTitle className="flex items-center gap-2 text-lg">
+						<span className="size-2.5 rounded-full" style={{ backgroundColor: color }} />
+						Edit task
+					</SheetTitle>
 				</SheetHeader>
 				{task ? (
 					<>
 						<div className="max-h-[calc(100dvh-140px)] space-y-4 overflow-y-auto px-5 py-4">
-							<div className="space-y-1.5">
-								<Label htmlFor="task-edit-title" className="text-xs uppercase tracking-[0.1em]">
-									Title
-								</Label>
-								<Input
-									id="task-edit-title"
-									value={title}
-									onChange={(e) => {
-										setTitle(e.target.value);
-										if (errorMessage) setErrorMessage(null);
-									}}
-									placeholder="Task name"
-								/>
-							</div>
-
-							<div className="grid grid-cols-2 gap-3">
+							{/* ── Section 1: Identity ── */}
+							<div className="space-y-3">
 								<div className="space-y-1.5">
-									<Label className="text-xs uppercase tracking-[0.1em]">Status</Label>
-									<Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
-										<SelectTrigger>
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{(["backlog", "queued", "scheduled", "in_progress", "done"] as const).map(
-												(s) => (
-													<SelectItem key={s} value={s}>
-														{statusLabels[s]}
-													</SelectItem>
-												),
-											)}
-										</SelectContent>
-									</Select>
-								</div>
-								<div className="space-y-1.5">
-									<Label className="text-xs uppercase tracking-[0.1em]">Priority</Label>
-									<Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
-										<SelectTrigger>
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{(["low", "medium", "high", "critical", "blocker"] as const).map((p) => (
-												<SelectItem key={p} value={p}>
-													{priorityLabels[p]}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
-								</div>
-							</div>
-
-							<div className="grid grid-cols-2 gap-3">
-								<div className="space-y-1.5">
-									<Label className="text-xs uppercase tracking-[0.1em]">Time needed</Label>
-									<DurationInput
-										value={estimatedMinutes}
-										onChange={setEstimatedMinutes}
-										placeholder="e.g. 30 mins"
+									<Label htmlFor="task-edit-title" className="text-xs text-muted-foreground">
+										Title
+									</Label>
+									<Input
+										id="task-edit-title"
+										value={title}
+										onChange={(e) => {
+											setTitle(e.target.value);
+											if (errorMessage) setErrorMessage(null);
+										}}
+										placeholder="Task name"
 									/>
 								</div>
 								<div className="space-y-1.5">
-									<Label className="text-xs uppercase tracking-[0.1em]">Color</Label>
-									<div className="flex items-center gap-2">
-										<input
-											type="color"
-											value={color}
-											onChange={(e) => setColor(e.target.value)}
-											className="h-9 w-9 cursor-pointer rounded border border-border bg-transparent p-0.5"
-										/>
-										<span className="text-xs text-muted-foreground">{color}</span>
+									<Label className="text-xs text-muted-foreground">Description</Label>
+									<Textarea
+										value={description}
+										onChange={(e) => setDescription(e.target.value)}
+										placeholder="Optional description"
+										rows={3}
+									/>
+								</div>
+							</div>
+
+							<Separator className="bg-border/40" />
+
+							{/* ── Section 2: Classification ── */}
+							<div className="space-y-3">
+								<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+									Classification
+								</p>
+								<div className="grid grid-cols-2 gap-3">
+									<div className="space-y-1.5">
+										<Label className="text-xs text-muted-foreground">Status</Label>
+										<Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
+											<SelectTrigger>
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												{(["backlog", "queued", "scheduled", "in_progress", "done"] as const).map(
+													(s) => (
+														<SelectItem key={s} value={s}>
+															{statusLabels[s]}
+														</SelectItem>
+													),
+												)}
+											</SelectContent>
+										</Select>
+									</div>
+									<div className="space-y-1.5">
+										<Label className="text-xs text-muted-foreground">Priority</Label>
+										<Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
+											<SelectTrigger>
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												{(["low", "medium", "high", "critical", "blocker"] as const).map((p) => (
+													<SelectItem key={p} value={p}>
+														{priorityLabels[p]}
+													</SelectItem>
+												))}
+											</SelectContent>
+										</Select>
+									</div>
+								</div>
+								<div className="grid grid-cols-2 gap-3">
+									<div className="space-y-1.5">
+										<Label className="text-xs text-muted-foreground">Category</Label>
+										<CategoryPicker value={categoryId} onValueChange={setCategoryId} />
+									</div>
+									<div className="space-y-1.5">
+										<Label className="text-xs text-muted-foreground">Color</Label>
+										<ColorPaletteDropdown value={color} onChange={setColor} />
 									</div>
 								</div>
 							</div>
 
-							<div className="space-y-1.5">
-								<Label className="text-xs uppercase tracking-[0.1em]">Category</Label>
-								<CategoryPicker value={categoryId} onValueChange={setCategoryId} />
+							<Separator className="bg-border/40" />
+
+							{/* ── Section 3: Timing ── */}
+							<div className="space-y-3">
+								<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+									Timing
+								</p>
+								<div className="grid grid-cols-2 gap-3">
+									<div className="space-y-1.5">
+										<Label className="text-xs text-muted-foreground">Time needed</Label>
+										<DurationInput
+											value={estimatedMinutes}
+											onChange={setEstimatedMinutes}
+											placeholder="e.g. 30 mins"
+										/>
+									</div>
+									<div className="space-y-1.5">
+										<Label className="text-xs text-muted-foreground">Location</Label>
+										<Input
+											value={location}
+											onChange={(e) => setLocation(e.target.value)}
+											placeholder="Optional"
+										/>
+									</div>
+								</div>
+								<div className="space-y-1.5">
+									<Label className="text-xs text-muted-foreground">Deadline</Label>
+									<DateTimePicker
+										value={deadline}
+										onChange={setDeadline}
+										placeholder="No deadline"
+									/>
+								</div>
+								<div className="space-y-1.5">
+									<Label className="text-xs text-muted-foreground">Schedule after</Label>
+									<DateTimePicker
+										value={scheduleAfter}
+										onChange={setScheduleAfter}
+										placeholder="No constraint"
+									/>
+								</div>
 							</div>
 
-							<div className="space-y-1.5">
-								<Label className="text-xs uppercase tracking-[0.1em]">Deadline</Label>
-								<DateTimePicker value={deadline} onChange={setDeadline} placeholder="No deadline" />
-							</div>
+							<Separator className="bg-border/40" />
 
-							<div className="space-y-1.5">
-								<Label className="text-xs uppercase tracking-[0.1em]">Schedule after</Label>
-								<DateTimePicker
-									value={scheduleAfter}
-									onChange={setScheduleAfter}
-									placeholder="No constraint"
-								/>
-							</div>
-
-							<div className="space-y-1.5">
-								<Label className="text-xs uppercase tracking-[0.1em]">Location</Label>
-								<Input
-									value={location}
-									onChange={(e) => setLocation(e.target.value)}
-									placeholder="Optional location"
-								/>
-							</div>
-
-							{/* Scheduling progress + pinning */}
+							{/* ── Section 4: Schedule ── */}
 							{(() => {
 								const total = task.estimatedMinutes;
 								const remaining = Math.max(0, total - scheduledMinutes);
 								const percent =
 									total > 0 ? Math.min(100, Math.round((scheduledMinutes / total) * 100)) : 0;
 								return (
-									<div className="space-y-1.5">
-										<Label className="text-xs uppercase tracking-[0.1em]">Schedule</Label>
+									<div className="space-y-3">
+										<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+											Schedule
+										</p>
 										<div className="rounded-lg border border-border/70 px-3 py-2.5 space-y-2.5">
 											<div>
-												<div className="flex items-center justify-between text-[0.72rem]">
+												<div className="flex items-center justify-between text-xs">
 													<span className="text-muted-foreground">
 														{formatDurationCompact(scheduledMinutes)} /{" "}
 														{formatDurationCompact(total)} scheduled
 													</span>
-													<span className="text-muted-foreground/80 text-[0.66rem]">
+													<span className="text-xs text-muted-foreground/80">
 														{remaining > 0
 															? `${formatDurationCompact(remaining)} left`
 															: "Fully scheduled"}
@@ -310,85 +347,85 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 												</div>
 											</div>
 
-											{/* Pinning controls */}
-											<div className="flex items-center gap-2 text-[0.72rem]">
-												{pinnedCount > 0 ? (
-													<Pin className="size-3.5 text-amber-600" />
-												) : (
-													<PinOff className="size-3.5 text-muted-foreground" />
-												)}
-												<span className="text-muted-foreground">
-													{totalEvents === 0
-														? "No scheduled events"
-														: `${pinnedCount} of ${totalEvents} event${totalEvents !== 1 ? "s" : ""} pinned`}
-												</span>
-											</div>
-											{totalEvents > 0 ? (
-												<div className="flex gap-2">
-													<Button
-														type="button"
-														variant="outline"
-														size="sm"
-														className="h-7 gap-1.5 text-[0.7rem]"
-														onClick={() =>
-															void pinAllTaskEvents({
-																taskId: task._id,
-																pinned: true,
-															})
-														}
-														disabled={pinnedCount === totalEvents}
-													>
-														<Pin className="size-3" />
-														Pin all
-													</Button>
-													<Button
-														type="button"
-														variant="outline"
-														size="sm"
-														className="h-7 gap-1.5 text-[0.7rem]"
-														onClick={() =>
-															void pinAllTaskEvents({
-																taskId: task._id,
-																pinned: false,
-															})
-														}
-														disabled={pinnedCount === 0}
-													>
-														<PinOff className="size-3" />
-														Unpin all
-													</Button>
+											{/* Pin status + buttons on same row */}
+											<div className="flex items-center justify-between">
+												<div className="flex items-center gap-2 text-xs">
+													{pinnedCount > 0 ? (
+														<Pin className="size-3.5 text-amber-600" />
+													) : (
+														<PinOff className="size-3.5 text-muted-foreground" />
+													)}
+													<span className="text-muted-foreground">
+														{totalEvents === 0
+															? "No scheduled events"
+															: `${pinnedCount} of ${totalEvents} event${totalEvents !== 1 ? "s" : ""} pinned`}
+													</span>
 												</div>
-											) : null}
+												{totalEvents > 0 ? (
+													<div className="flex gap-1.5">
+														<Button
+															type="button"
+															variant="outline"
+															size="sm"
+															className="h-7 gap-1.5 text-[0.7rem]"
+															onClick={() =>
+																void pinAllTaskEvents({
+																	taskId: task._id,
+																	pinned: true,
+																})
+															}
+															disabled={pinnedCount === totalEvents}
+														>
+															<Pin className="size-3" />
+															Pin all
+														</Button>
+														<Button
+															type="button"
+															variant="outline"
+															size="sm"
+															className="h-7 gap-1.5 text-[0.7rem]"
+															onClick={() =>
+																void pinAllTaskEvents({
+																	taskId: task._id,
+																	pinned: false,
+																})
+															}
+															disabled={pinnedCount === 0}
+														>
+															<PinOff className="size-3" />
+															Unpin all
+														</Button>
+													</div>
+												) : null}
+											</div>
 										</div>
 									</div>
 								);
 							})()}
 
-							<div className="space-y-1.5">
-								<Label className="text-xs uppercase tracking-[0.1em]">Description</Label>
-								<Textarea
-									value={description}
-									onChange={(e) => setDescription(e.target.value)}
-									placeholder="Optional description"
-									rows={3}
-								/>
-							</div>
-
 							{errorMessage ? (
 								<p className="text-xs text-rose-600 dark:text-rose-400">{errorMessage}</p>
 							) : null}
 						</div>
-						<SheetFooter className="border-t border-border/70 px-5 py-3">
-							<Button
-								type="button"
-								variant="destructive"
-								size="sm"
-								onClick={() => void onDelete()}
-								className="mr-auto gap-1.5"
-							>
-								<Trash2 className="size-3.5" />
-								Delete
-							</Button>
+						<SheetFooter className="flex-row items-center border-t border-border/70 px-5 py-3">
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<Button type="button" variant="ghost" size="icon" className="mr-auto size-8">
+										<MoreVertical className="size-4" />
+										<span className="sr-only">More actions</span>
+									</Button>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent align="start">
+									<DropdownMenuItem
+										variant="destructive"
+										onClick={() => void onDelete()}
+										className="gap-2"
+									>
+										<Trash2 className="size-3.5" />
+										Delete task
+									</DropdownMenuItem>
+								</DropdownMenuContent>
+							</DropdownMenu>
 							<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
 								Cancel
 							</Button>
