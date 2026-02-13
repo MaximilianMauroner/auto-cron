@@ -21,6 +21,8 @@ export const enqueueSchedulingRunFromMutation = async (
 ): Promise<{ enqueued: boolean; runId: Id<"schedulingRuns"> }> => {
 	const now = Date.now();
 
+	// We only need to know if *any* pending run exists to avoid creating a duplicate.
+	// The exact run returned doesn't matter — callers just get "already pending, reuse this ID".
 	const latestPending = (
 		await ctx.db
 			.query("schedulingRuns")

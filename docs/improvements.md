@@ -77,3 +77,9 @@ Potential improvements spotted during development that were out of scope for the
 - **Spotted during**: Query optimization audit
 - **Description**: Several hot-path queries use unbounded `.collect()` which reads all matching documents into memory. Key examples: `getSchedulingInputForUser` collects all user tasks/habits/hoursSets, `performUpsertSyncedEventsForUser` reset flow collects all user events, and `applySchedulingBlocks` collects all events in the scheduling horizon. For users with large datasets, these can become expensive. Consider adding `.take(limit)` guards or paginated processing where feasible.
 - **Priority**: low
+
+### Extract shared normalize/dedupe helpers to reduce duplication
+
+- **Spotted during**: Query optimization audit (PR review)
+- **Description**: `normalizeAndDedupeEventsInRange` in `convex/calendar/internal.ts` largely duplicates logic from the standalone `normalizeGoogleEventsInRange` and `dedupeUserCalendarEventsInRange` mutations. With three separate implementations, future fixes to normalization or dedupe behavior can easily diverge. Extract shared helper functions (e.g., normalize over an in-memory event list, then dedupe) and reuse them from all three mutations to keep behavior consistent.
+- **Priority**: medium
