@@ -64,6 +64,8 @@ export default defineSchema({
 		schedulingHorizonDays: v.number(), // default: 75
 		schedulingDowntimeMinutes: v.optional(v.number()),
 		schedulingStepMinutes: v.optional(v.union(v.literal(15), v.literal(30), v.literal(60))),
+		schedulingModelVersion: v.optional(v.number()),
+		hoursBootstrapped: v.optional(v.boolean()),
 	})
 		.index("by_userId", ["userId"])
 		.index("by_googleRefreshToken_userId", ["googleRefreshToken", "userId"]),
@@ -253,7 +255,8 @@ export default defineSchema({
 		.index("by_userId_googleEventId", ["userId", "googleEventId"])
 		.index("by_userId_calendarId_googleEventId", ["userId", "calendarId", "googleEventId"])
 		.index("by_userId_recurringEventId", ["userId", "recurringEventId"])
-		.index("by_userId_seriesId_occurrenceStart", ["userId", "seriesId", "occurrenceStart"]),
+		.index("by_userId_seriesId_occurrenceStart", ["userId", "seriesId", "occurrenceStart"])
+		.index("by_userId_source_sourceId", ["userId", "source", "sourceId"]),
 
 	calendarEventSeries: defineTable({
 		userId: v.string(),
