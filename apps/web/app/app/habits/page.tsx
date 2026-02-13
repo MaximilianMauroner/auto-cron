@@ -2,6 +2,7 @@
 
 import PaywallDialog from "@/components/autumn/paywall-dialog";
 import { CategoryPicker } from "@/components/category-picker";
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import {
 	Accordion,
 	AccordionContent,
@@ -10,7 +11,6 @@ import {
 } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import {
@@ -32,7 +32,6 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { useUserPreferences } from "@/components/user-preferences-context";
@@ -46,21 +45,8 @@ import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duratio
 import { cn } from "@/lib/utils";
 import type { HabitDTO, HabitFrequency, HabitPriority, HoursSetDTO } from "@auto-cron/types";
 
-import {
-	Calendar,
-	CalendarDays,
-	Clock3,
-	Flame,
-	MapPin,
-	Plus,
-	Repeat2,
-	Search,
-	Shield,
-	Sparkles,
-	Timer,
-	Waves,
-} from "lucide-react";
-import { type ComponentType, useEffect, useMemo, useState } from "react";
+import { Plus, Search } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
@@ -703,16 +689,6 @@ export default function HabitsPage() {
 		});
 	}, [templateCategory, templateQuery]);
 
-	const hoursSetNameById = useMemo(() => {
-		return new Map(hoursSets.map((hoursSet) => [hoursSet._id, hoursSet.name] as const));
-	}, [hoursSets]);
-
-	const calendarNameById = useMemo(() => {
-		return new Map(
-			editableGoogleCalendars.map((calendar) => [calendar.id, calendar.name] as const),
-		);
-	}, [editableGoogleCalendars]);
-
 	const applyBillingAwareError = (error: unknown) => {
 		const payload = getConvexErrorPayload(error);
 		if (payload?.code === "FEATURE_LIMIT_REACHED" && payload.featureId === "habits") {
@@ -923,80 +899,80 @@ export default function HabitsPage() {
 	return (
 		<div className="h-full min-h-0 overflow-auto p-4 md:p-6 lg:p-8">
 			<div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-				<Card className="border-border/60 bg-card/80">
-					<CardContent className="space-y-4 p-4 md:p-5">
-						<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-							<div className="inline-flex w-full rounded-xl border border-border/70 bg-background/60 p-1 md:w-auto">
-								<button
-									type="button"
-									onClick={() => setActiveTab("all")}
-									className={cn(
-										"rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-										activeTab === "all"
-											? "bg-primary text-primary-foreground"
-											: "text-muted-foreground hover:text-foreground",
-									)}
-								>
-									All habits
-								</button>
-								<button
-									type="button"
-									onClick={() => setActiveTab("templates")}
-									className={cn(
-										"rounded-lg px-4 py-2 text-sm font-medium transition-colors",
-										activeTab === "templates"
-											? "bg-primary text-primary-foreground"
-											: "text-muted-foreground hover:text-foreground",
-									)}
-								>
-									Templates
-								</button>
-							</div>
-							<Button
-								onClick={() => setIsCreateOpen(true)}
-								disabled={busy}
-								className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90 shadow-[0_2px_8px_-2px_rgba(252,163,17,0.2)]"
-							>
-								<Plus className="size-4" />
-								New habit
-							</Button>
-						</div>
-						{activeTab === "templates" ? (
-							<div className="space-y-3 border-t border-border/70 pt-4">
-								<div className="flex flex-wrap gap-2">
-									{templateCategories.map((category) => (
-										<button
-											key={category}
-											type="button"
-											onClick={() => setTemplateCategory(category)}
-											className={cn(
-												"rounded-full border px-3 py-1.5 text-sm transition-colors",
-												templateCategory === category
-													? "border-primary/60 bg-primary/10 text-primary"
-													: "border-border/70 bg-background/50 text-muted-foreground hover:text-foreground",
-											)}
-										>
-											{category}
-										</button>
-									))}
-								</div>
-								<div className="relative max-w-sm">
-									<Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-									<Input
-										value={templateQuery}
-										onChange={(event) => setTemplateQuery(event.target.value)}
-										placeholder="Search templates"
-										className="pl-9"
-									/>
-								</div>
-							</div>
-						) : (
-							<p className="text-sm text-muted-foreground">
-								Configure habits with advanced scheduling controls, then tune details in the editor.
-							</p>
+				<div className="flex items-start justify-between gap-4">
+					<SettingsSectionHeader
+						sectionNumber="02"
+						sectionLabel="Routines"
+						title="Habits"
+						description="Configure recurring routines with scheduling controls, then let the engine place them."
+					/>
+					<Button
+						onClick={() => setIsCreateOpen(true)}
+						disabled={busy}
+						className="mt-6 shrink-0 gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90 shadow-[0_2px_8px_-2px_rgba(252,163,17,0.2)]"
+					>
+						<Plus className="size-4" />
+						New habit
+					</Button>
+				</div>
+
+				<div className="flex items-center gap-6 border-b border-border/60">
+					<button
+						type="button"
+						className={cn(
+							"pb-2.5 text-sm font-medium transition-colors",
+							activeTab === "all"
+								? "border-b-2 border-accent text-foreground"
+								: "text-muted-foreground hover:text-foreground",
 						)}
-					</CardContent>
-				</Card>
+						onClick={() => setActiveTab("all")}
+					>
+						All habits
+					</button>
+					<button
+						type="button"
+						className={cn(
+							"pb-2.5 text-sm font-medium transition-colors",
+							activeTab === "templates"
+								? "border-b-2 border-accent text-foreground"
+								: "text-muted-foreground hover:text-foreground",
+						)}
+						onClick={() => setActiveTab("templates")}
+					>
+						Templates
+					</button>
+				</div>
+
+				{activeTab === "templates" ? (
+					<div className="space-y-3">
+						<div className="flex flex-wrap gap-2">
+							{templateCategories.map((category) => (
+								<button
+									key={category}
+									type="button"
+									onClick={() => setTemplateCategory(category)}
+									className={cn(
+										"rounded-full px-3 py-1.5 font-[family-name:var(--font-cutive)] text-[11px] uppercase tracking-[0.1em] transition-colors",
+										templateCategory === category
+											? "bg-accent/20 text-foreground ring-1 ring-accent/40"
+											: "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+									)}
+								>
+									{category}
+								</button>
+							))}
+						</div>
+						<div className="relative max-w-sm">
+							<Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+							<Input
+								value={templateQuery}
+								onChange={(event) => setTemplateQuery(event.target.value)}
+								placeholder="Search templates"
+								className="pl-9"
+							/>
+						</div>
+					</div>
+				) : null}
 
 				{errorMessage ? (
 					<div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
@@ -1006,35 +982,29 @@ export default function HabitsPage() {
 
 				{activeTab === "templates" ? (
 					<div className="space-y-5">
-						<Card className="overflow-hidden border-border/70 bg-gradient-to-r from-primary/8 via-accent/6 to-primary/4">
-							<CardContent className="flex flex-col items-center gap-3 px-6 py-12 text-center">
-								<div className="rounded-full border border-primary/30 bg-primary/10 p-3">
-									<Sparkles className="size-6 text-primary" />
-								</div>
-								<div className="space-y-1">
-									<p className="text-2xl font-semibold uppercase tracking-[0.04em]">
-										Team Habit Templates
-									</p>
-									<p className="max-w-2xl text-sm text-muted-foreground">
-										Start from proven routines, then customize every detail before saving.
-									</p>
-								</div>
-								<Button
-									onClick={() => setIsCreateOpen(true)}
-									className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90 shadow-[0_2px_8px_-2px_rgba(252,163,17,0.2)]"
-								>
-									<Plus className="size-4" />
-									Create from scratch
-								</Button>
-							</CardContent>
-						</Card>
+						<div className="rounded-xl border border-border/60 px-8 py-12 text-center">
+							<p className="font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+								Template Library
+							</p>
+							<h2 className="mt-2 font-[family-name:var(--font-outfit)] text-2xl font-semibold tracking-tight">
+								Start from proven routines
+							</h2>
+							<p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+								Pick a template, customize every detail, then save.
+							</p>
+							<Button
+								className="mt-5 gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90"
+								onClick={() => setIsCreateOpen(true)}
+							>
+								<Plus className="size-4" /> Create from scratch
+							</Button>
+						</div>
 
 						<div className="space-y-3">
 							<div className="flex items-center justify-between">
-								<p className="text-lg font-semibold uppercase tracking-[0.04em]">
-									Template library
+								<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+									{filteredTemplates.length} templates
 								</p>
-								<Badge variant="secondary">{filteredTemplates.length} templates</Badge>
 							</div>
 							{filteredTemplates.length === 0 ? (
 								<Empty className="border-border/70 bg-card/40">
@@ -1059,45 +1029,56 @@ export default function HabitsPage() {
 				) : (
 					<>
 						<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-							<MetricTile label="Total" value={habits.length} icon={Sparkles} />
-							<MetricTile label="Active" value={activeHabits.length} icon={Flame} />
-							<MetricTile label="Paused" value={pausedHabits.length} icon={Waves} />
+							<MetricTile label="Total" value={habits.length} />
+							<MetricTile label="Active" value={activeHabits.length} />
+							<MetricTile label="Paused" value={pausedHabits.length} />
 							<MetricTile
 								label="Planned mins"
 								value={activeHabits.reduce((sum, habit) => sum + habit.durationMinutes, 0)}
-								icon={Timer}
 							/>
 						</div>
 
 						{habitsQuery.isPending ? (
 							<div className="grid gap-4 md:grid-cols-2">
 								{["habit-skeleton-left", "habit-skeleton-right"].map((key) => (
-									<Card key={key} className="h-72 animate-pulse bg-muted/30" />
+									<div key={key} className="h-72 animate-pulse rounded-xl bg-muted/30" />
 								))}
 							</div>
 						) : habits.length === 0 ? (
-							<Empty className="border-border/70 bg-card/40">
+							<Empty className="border-border/60 bg-card/40">
 								<EmptyHeader>
-									<EmptyTitle>No habits configured</EmptyTitle>
+									<EmptyTitle className="font-[family-name:var(--font-outfit)]">
+										No habits configured
+									</EmptyTitle>
 									<EmptyDescription>
 										Create your first habit with full scheduling controls.
 									</EmptyDescription>
 								</EmptyHeader>
-								<Button onClick={() => setIsCreateOpen(true)} className="gap-1.5">
+								<Button
+									onClick={() => setIsCreateOpen(true)}
+									className="gap-1.5 bg-accent text-accent-foreground hover:bg-accent/90"
+								>
 									<Plus className="size-4" />
 									Create habit
 								</Button>
 							</Empty>
 						) : (
-							<div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
-								<Card className="border-border/70 bg-card/70">
-									<CardHeader className="pb-2">
-										<CardTitle className="flex items-center justify-between text-base">
-											<span>Active routines</span>
-											<Badge variant="secondary">{activeHabits.length}</Badge>
-										</CardTitle>
-									</CardHeader>
-									<CardContent className="space-y-2">
+							<div className="grid gap-6 lg:grid-cols-[1.35fr_1fr]">
+								{/* Active routines column */}
+								<div>
+									<div className="mb-4">
+										<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+											02 / Active Routines
+										</p>
+										<div className="mt-2 flex items-center justify-between">
+											<h2 className="text-lg font-semibold">Active routines</h2>
+											<span className="text-xs tabular-nums text-muted-foreground">
+												{activeHabits.length}
+											</span>
+										</div>
+										<div className="mt-2 h-px bg-border/60" />
+									</div>
+									<div className="space-y-2">
 										{activeHabits.length === 0 ? (
 											<p className="text-sm text-muted-foreground">No active habits.</p>
 										) : (
@@ -1106,14 +1087,6 @@ export default function HabitsPage() {
 													key={habit._id}
 													habit={habit}
 													categories={categories}
-													hoursSetName={
-														habit.hoursSetId ? hoursSetNameById.get(habit.hoursSetId) : undefined
-													}
-													calendarName={
-														habit.preferredCalendarId
-															? calendarNameById.get(habit.preferredCalendarId)
-															: undefined
-													}
 													onEdit={() => openEdit(habit)}
 													onDelete={() => deleteHabit({ id: asHabitId(habit._id) })}
 													onToggle={(isActive) =>
@@ -1123,57 +1096,62 @@ export default function HabitsPage() {
 												/>
 											))
 										)}
-									</CardContent>
-								</Card>
+									</div>
+								</div>
 
-								<Card className="border-border/70 bg-card/70">
-									<CardHeader className="pb-2">
-										<CardTitle className="flex items-center justify-between text-base">
-											<span>Paused routines</span>
-											<Badge variant="outline">{pausedHabits.length}</Badge>
-										</CardTitle>
-									</CardHeader>
-									<CardContent className="space-y-2">
+								{/* Paused routines column */}
+								<div>
+									<div className="mb-4">
+										<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+											03 / Paused
+										</p>
+										<div className="mt-2 flex items-center justify-between">
+											<h2 className="text-lg font-semibold">Paused routines</h2>
+											<span className="text-xs tabular-nums text-muted-foreground">
+												{pausedHabits.length}
+											</span>
+										</div>
+										<div className="mt-2 h-px bg-border/60" />
+									</div>
+									<div className="space-y-2">
 										{pausedHabits.length === 0 ? (
 											<p className="text-sm text-muted-foreground">No paused habits.</p>
 										) : (
 											pausedHabits.map((habit) => (
 												<div
 													key={habit._id}
-													className="rounded-lg border border-border/70 bg-background/70 p-3"
+													className="flex items-center justify-between rounded-lg border border-border/50 bg-card/30 px-4 py-3 opacity-70"
 												>
-													<div className="flex items-start justify-between gap-2">
-														<div className="min-w-0">
-															<p className="truncate text-sm font-semibold">{habit.title}</p>
-															<p className="text-xs text-muted-foreground">
-																{
-																	frequencyLabels[
-																		habit.frequency ??
-																			frequencyFromRecurrenceRule(habit.recurrenceRule)
-																	]
-																}{" "}
-																/ {habit.durationMinutes}m
-															</p>
-														</div>
-														<Button
-															size="sm"
-															variant="outline"
-															disabled={busy}
-															onClick={() =>
-																toggleHabitActive({
-																	id: asHabitId(habit._id),
-																	isActive: true,
-																})
-															}
-														>
-															Resume
-														</Button>
+													<div className="min-w-0">
+														<p className="truncate text-sm font-medium">{habit.title}</p>
+														<p className="text-[11px] text-muted-foreground">
+															{
+																frequencyLabels[
+																	habit.frequency ??
+																		frequencyFromRecurrenceRule(habit.recurrenceRule)
+																]
+															}{" "}
+															/ {habit.durationMinutes}m
+														</p>
 													</div>
+													<Button
+														size="sm"
+														variant="outline"
+														disabled={busy}
+														onClick={() =>
+															toggleHabitActive({
+																id: asHabitId(habit._id),
+																isActive: true,
+															})
+														}
+													>
+														Resume
+													</Button>
 												</div>
 											))
 										)}
-									</CardContent>
-								</Card>
+									</div>
+								</div>
 							</div>
 						)}
 					</>
@@ -1214,22 +1192,15 @@ export default function HabitsPage() {
 	);
 }
 
-function MetricTile({
-	label,
-	value,
-	icon: Icon,
-}: {
-	label: string;
-	value: string | number;
-	icon: ComponentType<{ className?: string }>;
-}) {
+function MetricTile({ label, value }: { label: string; value: string | number }) {
 	return (
-		<div className="rounded-lg border border-border/70 bg-background/50 p-3 transition-colors hover:border-primary/30">
-			<div className="flex items-center justify-between text-muted-foreground">
-				<span className="text-xs uppercase tracking-[0.08em]">{label}</span>
-				<Icon className="size-3.5" />
-			</div>
-			<div className="mt-1.5 text-xl font-semibold">{value}</div>
+		<div className="rounded-xl border border-border/60 p-4">
+			<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+				{label}
+			</p>
+			<p className="mt-2 font-[family-name:var(--font-outfit)] text-3xl font-bold tabular-nums">
+				{value}
+			</p>
 		</div>
 	);
 }
@@ -1242,38 +1213,42 @@ function TemplateCard({
 	onUse: () => void;
 }) {
 	return (
-		<Card className="group relative overflow-hidden border-border/70 bg-card/60">
+		<div className="group relative overflow-hidden rounded-xl border border-border/60 bg-card/60 p-4">
 			<div
 				className="pointer-events-none absolute inset-x-0 top-0 h-1"
 				style={{ backgroundColor: template.color }}
 			/>
-			<CardHeader className="space-y-2 pb-1">
+			<div className="space-y-2 pt-1">
 				<div className="flex items-start justify-between gap-3">
 					<div className="space-y-1">
-						<CardDescription className="text-xs uppercase tracking-[0.14em]">
+						<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
 							{template.category}
-						</CardDescription>
-						<CardTitle className="text-lg">
-							<span className="mr-2" role="img" aria-label={`${template.name} icon`}>
+						</p>
+						<p className="text-base font-semibold">
+							<span className="mr-1.5" role="img" aria-label={`${template.name} icon`}>
 								{template.emoji}
 							</span>
 							{template.name}
-						</CardTitle>
+						</p>
 					</div>
-					<Badge variant="outline">{priorityLabels[template.priority]}</Badge>
+					<Badge variant="outline" className="text-[11px]">
+						{priorityLabels[template.priority]}
+					</Badge>
 				</div>
-			</CardHeader>
-			<CardContent className="space-y-3">
+			</div>
+			<div className="mt-3 space-y-3">
 				<p className="line-clamp-2 text-sm text-muted-foreground">{template.description}</p>
-				<div className="rounded-md border border-border/70 bg-background/60 px-2.5 py-2 text-xs text-muted-foreground">
+				<p className="font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.1em] text-muted-foreground/70">
 					{formatTemplateCadence(template)}
-				</div>
+				</p>
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex flex-wrap items-center gap-1.5">
-						<Badge variant="secondary">
+						<Badge variant="secondary" className="text-[11px]">
 							{template.habitCategory.charAt(0).toUpperCase() + template.habitCategory.slice(1)}
 						</Badge>
-						<Badge variant="outline">{defenseModeLabels[template.timeDefenseMode]}</Badge>
+						<Badge variant="outline" className="text-[11px]">
+							{defenseModeLabels[template.timeDefenseMode]}
+						</Badge>
 					</div>
 					<Button
 						size="sm"
@@ -1283,16 +1258,14 @@ function TemplateCard({
 						Use template
 					</Button>
 				</div>
-			</CardContent>
-		</Card>
+			</div>
+		</div>
 	);
 }
 
 function HabitCard({
 	habit,
 	categories,
-	hoursSetName,
-	calendarName,
 	onEdit,
 	onDelete,
 	onToggle,
@@ -1300,57 +1273,57 @@ function HabitCard({
 }: {
 	habit: HabitDTO;
 	categories: { _id: string; name: string }[];
-	hoursSetName?: string;
-	calendarName?: string;
 	onEdit: () => void;
 	onDelete: () => void;
 	onToggle: (isActive: boolean) => void;
 	isBusy: boolean;
 }) {
 	const { hour12 } = useUserPreferences();
+	const categoryName =
+		categories.find((c: { _id: string; name: string }) => c._id === habit.categoryId)?.name ??
+		"Uncategorized";
+	const freq =
+		frequencyLabels[habit.frequency ?? frequencyFromRecurrenceRule(habit.recurrenceRule)];
+
 	return (
-		<div className="rounded-lg border border-border/70 bg-background/70 p-3 shadow-sm">
+		<div
+			className="group rounded-xl border border-border/60 bg-card/60 p-4 transition-colors hover:border-border hover:bg-card/90"
+			style={{
+				borderLeftWidth: 3,
+				borderLeftColor: habit.effectiveColor ?? habit.color ?? "#f59e0b",
+			}}
+		>
 			<div className="flex items-start justify-between gap-3">
-				<div className="min-w-0 space-y-1">
-					<p className="truncate text-sm font-semibold inline-flex items-center gap-2">
-						<span
-							className="size-2.5 rounded-full border border-border/70"
-							style={{ backgroundColor: habit.effectiveColor ?? habit.color ?? "#f59e0b" }}
-						/>
-						{habit.title}
-					</p>
-					<p className="line-clamp-2 text-xs text-muted-foreground">
-						{habit.description || "No description"}
-					</p>
+				<div className="min-w-0">
+					<p className="truncate text-sm font-semibold">{habit.title}</p>
+					{habit.description && (
+						<p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{habit.description}</p>
+					)}
 				</div>
 				<Switch checked={habit.isActive} disabled={isBusy} onCheckedChange={onToggle} />
 			</div>
-			<div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-				<Badge variant="outline">
-					{categories.find((c: { _id: string; name: string }) => c._id === habit.categoryId)
-						?.name ?? "Uncategorized"}
+
+			<div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+				<Badge variant="outline" className="text-[11px]">
+					{categoryName}
 				</Badge>
-				<Badge className={priorityClass[habit.priority ?? "medium"]}>
-					{priorityLabels[habit.priority ?? "medium"]}
-				</Badge>
-				<Badge variant="secondary">{habit.durationMinutes}m</Badge>
-				{hoursSetName ? <Badge variant="outline">{hoursSetName}</Badge> : null}
-				{calendarName ? <Badge variant="outline">{calendarName}</Badge> : null}
+				<span>{freq}</span>
+				<span>{habit.durationMinutes}m</span>
+				{habit.idealTime && <span>at {formatTimeString(habit.idealTime, hour12)}</span>}
 			</div>
-			<div className="mt-2 text-xs text-muted-foreground">
-				{habit.idealTime
-					? `Ideal time ${formatTimeString(habit.idealTime, hour12)}`
-					: formatWindow(habit.preferredWindowStart, habit.preferredWindowEnd, hour12)}{" "}
-				| {formatDays(habit.preferredDays)}
-				{habit.startDate ? ` | Starts ${formatDate(habit.startDate, hour12)}` : ""}
-				{habit.endDate ? ` | Ends ${formatDate(habit.endDate, hour12)}` : ""}
-			</div>
-			<div className="mt-2 flex items-center justify-end gap-1">
+
+			{habit.preferredDays && habit.preferredDays.length > 0 && (
+				<div className="mt-2 font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.12em] text-muted-foreground/60">
+					{formatDays(habit.preferredDays)}
+				</div>
+			)}
+
+			<div className="mt-3 flex items-center justify-end gap-1 border-t border-border/30 pt-2.5">
 				<Button
 					size="sm"
 					variant="ghost"
-					disabled={isBusy}
 					onClick={onEdit}
+					disabled={isBusy}
 					className="h-7 px-2 text-xs"
 				>
 					Edit
@@ -1358,9 +1331,9 @@ function HabitCard({
 				<Button
 					size="sm"
 					variant="ghost"
-					disabled={isBusy}
 					onClick={onDelete}
-					className="h-7 px-2 text-xs text-rose-600 hover:text-rose-600"
+					disabled={isBusy}
+					className="h-7 px-2 text-xs text-destructive"
 				>
 					Delete
 				</Button>
@@ -1414,41 +1387,64 @@ function HabitDialog({
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
-				<DialogHeader>
-					<DialogTitle className="flex items-center gap-2 text-lg">
-						<Repeat2 className="size-4 text-primary" />
-						{title}
+				{/* ── Header ── */}
+				<DialogHeader className="space-y-1">
+					<div className="flex items-center gap-2.5">
+						<span
+							className="size-2.5 rounded-full ring-2 ring-offset-1 ring-offset-background"
+							style={{
+								backgroundColor: value.color || "#f59e0b",
+								boxShadow: `0 0 8px ${value.color || "#f59e0b"}30`,
+								// biome-ignore lint/suspicious/noExplicitAny: ring color via style
+								["--tw-ring-color" as any]: `${value.color || "#f59e0b"}40`,
+							}}
+						/>
+						<p className="font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+							{title}
+						</p>
+					</div>
+					<DialogTitle className="font-[family-name:var(--font-outfit)] text-xl font-semibold tracking-tight">
+						{value.title || "New habit"}
 					</DialogTitle>
 				</DialogHeader>
 
 				<div className="space-y-4">
 					<Accordion type="multiple" defaultValue={["details", "scheduling", "options"]}>
-						<AccordionItem value="details" className="rounded-xl border border-border/70 px-4">
+						{/* ── Section 1: Details ── */}
+						<AccordionItem value="details" className="rounded-xl border border-border/50 px-5">
 							<AccordionTrigger className="py-4">
 								<div className="text-left">
-									<p className="text-2xl font-semibold tracking-tight">Habit details</p>
-									<p className="text-base font-normal text-muted-foreground">
+									<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+										01 / Details
+									</p>
+									<p className="mt-1 font-[family-name:var(--font-outfit)] text-lg font-semibold tracking-tight">
+										Habit details
+									</p>
+									<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-normal text-muted-foreground">
 										Name, priority, and general settings
 									</p>
 								</div>
 							</AccordionTrigger>
-							<AccordionContent className="space-y-6 pb-4">
-								<div className="space-y-2">
-									<Label>Habit name</Label>
-									<div className="flex items-center gap-2 rounded-lg border border-primary/60 px-3 py-2">
-										<span className="text-2xl">🙂</span>
-										<Input
-											value={value.title}
-											onChange={(event) => onChange({ ...value, title: event.target.value })}
-											placeholder="Enter a Habit name..."
-											className="border-0 px-0 text-lg shadow-none focus-visible:ring-0"
-										/>
-									</div>
+							<AccordionContent className="space-y-5 pb-5">
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Habit name
+									</Label>
+									<Input
+										value={value.title}
+										onChange={(event) => onChange({ ...value, title: event.target.value })}
+										placeholder="Enter a habit name…"
+										className="border-0 border-b border-border/50 bg-transparent px-0 font-[family-name:var(--font-outfit)] text-[0.9rem] font-medium shadow-none ring-0 transition-colors placeholder:text-muted-foreground/40 focus-visible:border-accent focus-visible:ring-0"
+									/>
 								</div>
 
+								<div className="h-px bg-border/30" />
+
 								<div className="grid gap-4 md:grid-cols-2">
-									<div className="space-y-2">
-										<Label>Priority</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Priority
+										</Label>
 										<Select
 											value={value.priority}
 											onValueChange={(priority) =>
@@ -1468,8 +1464,10 @@ function HabitDialog({
 										</Select>
 									</div>
 
-									<div className="space-y-2">
-										<Label>Calendar to schedule events on</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Calendar
+										</Label>
 										<Select
 											value={value.preferredCalendarId || undefined}
 											onValueChange={(preferredCalendarId) =>
@@ -1491,19 +1489,21 @@ function HabitDialog({
 								</div>
 
 								<div className="grid gap-4 md:grid-cols-[180px_1fr]">
-									<div className="space-y-2">
-										<Label>Color</Label>
-										<div className="flex flex-wrap gap-2 rounded-lg border border-border p-2">
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Color
+										</Label>
+										<div className="flex flex-wrap gap-2 rounded-lg border border-border/40 p-2">
 											{habitColors.map((color) => (
 												<button
 													key={color}
 													type="button"
 													aria-label={`Select ${color}`}
 													className={cn(
-														"size-6 rounded-full border transition-transform hover:scale-105",
+														"size-6 rounded-full border transition-transform hover:scale-110",
 														value.color === color
-															? "border-foreground ring-2 ring-foreground/20"
-															: "border-border",
+															? "border-foreground ring-2 ring-foreground/20 scale-110"
+															: "border-border/50",
 													)}
 													style={{ backgroundColor: color }}
 													onClick={() => onChange({ ...value, color })}
@@ -1511,8 +1511,10 @@ function HabitDialog({
 											))}
 										</div>
 									</div>
-									<div className="space-y-2">
-										<Label>Category</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Category
+										</Label>
 										<CategoryPicker
 											value={value.categoryId}
 											onValueChange={(id) => onChange({ ...value, categoryId: id })}
@@ -1520,43 +1522,58 @@ function HabitDialog({
 									</div>
 								</div>
 
-								<div className="space-y-2">
-									<Label>Notes</Label>
+								<div className="h-px bg-border/30" />
+
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Notes
+									</Label>
 									<Textarea
 										value={value.description}
 										onChange={(event) => onChange({ ...value, description: event.target.value })}
-										placeholder="Add notes..."
-										className="min-h-24"
+										placeholder="Add notes…"
+										className="min-h-24 font-[family-name:var(--font-outfit)] text-[0.82rem]"
 									/>
 								</div>
 
-								<div className="space-y-2">
-									<Label>Location</Label>
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Location
+									</Label>
 									<Input
 										value={value.location}
 										onChange={(event) => onChange({ ...value, location: event.target.value })}
 										placeholder="Add location"
+										className="font-[family-name:var(--font-outfit)] text-[0.82rem]"
 									/>
 								</div>
 							</AccordionContent>
 						</AccordionItem>
 
+						{/* ── Section 2: Scheduling ── */}
 						<AccordionItem
 							value="scheduling"
-							className="mt-4 rounded-xl border border-border/70 px-4"
+							className="mt-4 rounded-xl border border-border/50 px-5"
 						>
 							<AccordionTrigger className="py-4">
 								<div className="text-left">
-									<p className="text-2xl font-semibold tracking-tight">Scheduling</p>
-									<p className="text-base font-normal text-muted-foreground">
+									<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+										02 / Scheduling
+									</p>
+									<p className="mt-1 font-[family-name:var(--font-outfit)] text-lg font-semibold tracking-tight">
+										Scheduling
+									</p>
+									<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-normal text-muted-foreground">
 										Hours, duration, and scheduling preferences
 									</p>
 								</div>
 							</AccordionTrigger>
-							<AccordionContent className="space-y-6 pb-4">
+							<AccordionContent className="space-y-5 pb-5">
 								<div className="grid gap-4 md:grid-cols-[minmax(260px,1fr)_auto] md:items-end">
-									<div className="space-y-2">
-										<Label>Hours</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Hours
+										</Label>
 										<Select
 											value={value.hoursSetId || undefined}
 											onValueChange={(hoursSetId) => onChange({ ...value, hoursSetId })}
@@ -1574,21 +1591,29 @@ function HabitDialog({
 											</SelectContent>
 										</Select>
 									</div>
-									<Button variant="link" className="justify-start px-0" asChild>
+									<Button
+										variant="link"
+										className="justify-start px-0 font-[family-name:var(--font-outfit)] text-[0.76rem]"
+										asChild
+									>
 										<a href="/app/settings/hours">Edit your Working Hours</a>
 									</Button>
 								</div>
 
-								<div className="space-y-3">
-									<p className="text-sm font-semibold">
-										Eligible days based on the Hours selected above
+								<div className="space-y-2">
+									<p className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Eligible days based on Hours selection
 									</p>
 									<EligibleHoursGrid hoursSet={selectedHoursSet} />
 								</div>
 
+								<div className="h-px bg-border/30" />
+
 								<div className="grid gap-4 md:grid-cols-[1fr_140px_auto] md:items-end">
-									<div className="space-y-2">
-										<Label>Repeat</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Repeat
+										</Label>
 										<Select
 											value={value.frequency}
 											onValueChange={(frequency) =>
@@ -1607,8 +1632,10 @@ function HabitDialog({
 											</SelectContent>
 										</Select>
 									</div>
-									<div className="space-y-2">
-										<Label>Count</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Count
+										</Label>
 										<Input
 											type="number"
 											min={1}
@@ -1619,14 +1646,16 @@ function HabitDialog({
 											}
 										/>
 									</div>
-									<p className="pb-2 text-sm text-muted-foreground">
+									<p className="pb-2 font-[family-name:var(--font-outfit)] text-[0.76rem] text-muted-foreground">
 										time{value.repeatsPerPeriod === "1" ? "" : "s"} a{" "}
 										{value.frequency === "daily" ? "day" : "week"}
 									</p>
 								</div>
 
-								<div className="space-y-2">
-									<Label>Ideal days</Label>
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Ideal days
+									</Label>
 									<div className="flex flex-wrap gap-1.5">
 										{dayOptions.map((day) => {
 											const selected = value.preferredDays.includes(day.value);
@@ -1636,7 +1665,10 @@ function HabitDialog({
 													type="button"
 													size="sm"
 													variant={selected ? "default" : "outline"}
-													className="h-9 min-w-9 rounded-full px-3"
+													className={cn(
+														"h-9 min-w-9 rounded-full px-3 font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium",
+														selected && "bg-accent text-accent-foreground hover:bg-accent/90",
+													)}
 													onClick={() => toggleDay(day.value)}
 												>
 													{day.short}
@@ -1646,30 +1678,37 @@ function HabitDialog({
 									</div>
 								</div>
 
+								<div className="h-px bg-border/30" />
+
 								<div className="grid gap-4 md:grid-cols-3">
-									<div className="space-y-2">
-										<Label>Ideal time</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Ideal time
+										</Label>
 										<Input
 											type="time"
 											value={value.idealTime}
 											onChange={(event) => onChange({ ...value, idealTime: event.target.value })}
 										/>
 									</div>
-									<div className="space-y-2">
-										<Label>Minimum duration</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Minimum duration
+										</Label>
 										<div className="flex items-center gap-2">
 											<DurationInput
 												value={value.minDurationMinutes}
 												onChange={(minDurationMinutes) =>
 													onChange({ ...value, minDurationMinutes })
 												}
-												placeholder="e.g. 30 mins"
+												placeholder="e.g. 30m"
 												className="min-w-0"
 											/>
 											<Button
 												type="button"
 												size="icon"
 												variant="outline"
+												className="size-9 shrink-0"
 												onClick={() => stepDuration("minDurationMinutes", -15)}
 											>
 												-
@@ -1678,27 +1717,31 @@ function HabitDialog({
 												type="button"
 												size="icon"
 												variant="outline"
+												className="size-9 shrink-0"
 												onClick={() => stepDuration("minDurationMinutes", 15)}
 											>
 												+
 											</Button>
 										</div>
 									</div>
-									<div className="space-y-2">
-										<Label>Maximum duration</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Maximum duration
+										</Label>
 										<div className="flex items-center gap-2">
 											<DurationInput
 												value={value.maxDurationMinutes}
 												onChange={(maxDurationMinutes) =>
 													onChange({ ...value, maxDurationMinutes })
 												}
-												placeholder="e.g. 2 hrs"
+												placeholder="e.g. 2h"
 												className="min-w-0"
 											/>
 											<Button
 												type="button"
 												size="icon"
 												variant="outline"
+												className="size-9 shrink-0"
 												onClick={() => stepDuration("maxDurationMinutes", -15)}
 											>
 												-
@@ -1707,6 +1750,7 @@ function HabitDialog({
 												type="button"
 												size="icon"
 												variant="outline"
+												className="size-9 shrink-0"
 												onClick={() => stepDuration("maxDurationMinutes", 15)}
 											>
 												+
@@ -1716,8 +1760,10 @@ function HabitDialog({
 								</div>
 
 								<div className="grid gap-4 md:grid-cols-2">
-									<div className="space-y-2">
-										<Label>Start date</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Start date
+										</Label>
 										<DateTimePicker
 											value={value.startDate}
 											onChange={(startDate) => onChange({ ...value, startDate })}
@@ -1725,8 +1771,10 @@ function HabitDialog({
 											minuteStep={15}
 										/>
 									</div>
-									<div className="space-y-2">
-										<Label>End date</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											End date
+										</Label>
 										<DateTimePicker
 											value={value.endDate}
 											onChange={(endDate) => onChange({ ...value, endDate })}
@@ -1738,43 +1786,56 @@ function HabitDialog({
 							</AccordionContent>
 						</AccordionItem>
 
-						<AccordionItem value="options" className="mt-4 rounded-xl border border-border/70 px-4">
+						{/* ── Section 3: Options ── */}
+						<AccordionItem value="options" className="mt-4 rounded-xl border border-border/50 px-5">
 							<AccordionTrigger className="py-4">
 								<div className="text-left">
-									<p className="text-2xl font-semibold tracking-tight">Other options</p>
-									<p className="text-base font-normal text-muted-foreground">
+									<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+										03 / Options
+									</p>
+									<p className="mt-1 font-[family-name:var(--font-outfit)] text-lg font-semibold tracking-tight">
+										Other options
+									</p>
+									<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-normal text-muted-foreground">
 										Reminders, visibility, time defense, and delivery rules
 									</p>
 								</div>
 							</AccordionTrigger>
-							<AccordionContent className="space-y-6 pb-4">
-								<div className="space-y-2">
-									<Label>Reminders</Label>
+							<AccordionContent className="space-y-5 pb-5">
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Reminders
+									</Label>
 									<RadioGroup
 										value={value.reminderMode}
 										onValueChange={(reminderMode) =>
 											onChange({ ...value, reminderMode: reminderMode as HabitReminderMode })
 										}
-										className="rounded-lg border border-border/70"
+										className="rounded-lg border border-border/40"
 									>
 										{Object.entries(reminderModeLabels).map(([mode, label]) => (
 											<div
 												key={mode}
 												className={cn(
-													"flex cursor-pointer items-center gap-3 border-b border-border/70 px-3 py-3 last:border-b-0",
-													value.reminderMode === mode && "bg-muted/50",
+													"flex cursor-pointer items-center gap-3 border-b border-border/40 px-3.5 py-3 last:border-b-0",
+													value.reminderMode === mode && "bg-muted/40",
 												)}
 											>
 												<RadioGroupItem value={mode} id={`habit-reminder-${mode}`} />
-												<Label htmlFor={`habit-reminder-${mode}`} className="cursor-pointer">
+												<Label
+													htmlFor={`habit-reminder-${mode}`}
+													className="cursor-pointer font-[family-name:var(--font-outfit)] text-[0.82rem]"
+												>
 													{label}
 												</Label>
 											</div>
 										))}
 									</RadioGroup>
 									{value.reminderMode === "custom" ? (
-										<div className="pt-2">
-											<Label>Custom reminder minutes</Label>
+										<div className="space-y-1.5 pt-2">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Custom reminder minutes
+											</Label>
 											<Input
 												type="number"
 												min={1}
@@ -1788,8 +1849,12 @@ function HabitDialog({
 									) : null}
 								</div>
 
-								<div className="space-y-2">
-									<Label>If your Habit can&apos;t be scheduled</Label>
+								<div className="h-px bg-border/30" />
+
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										If your habit can&apos;t be scheduled
+									</Label>
 									<RadioGroup
 										value={value.unscheduledBehavior}
 										onValueChange={(unscheduledBehavior) =>
@@ -1798,18 +1863,21 @@ function HabitDialog({
 												unscheduledBehavior: unscheduledBehavior as HabitUnscheduledBehavior,
 											})
 										}
-										className="rounded-lg border border-border/70"
+										className="rounded-lg border border-border/40"
 									>
 										{Object.entries(unscheduledLabels).map(([mode, label]) => (
 											<div
 												key={mode}
 												className={cn(
-													"flex cursor-pointer items-center gap-3 border-b border-border/70 px-3 py-3 last:border-b-0",
-													value.unscheduledBehavior === mode && "bg-muted/50",
+													"flex cursor-pointer items-center gap-3 border-b border-border/40 px-3.5 py-3 last:border-b-0",
+													value.unscheduledBehavior === mode && "bg-muted/40",
 												)}
 											>
 												<RadioGroupItem value={mode} id={`habit-unscheduled-${mode}`} />
-												<Label htmlFor={`habit-unscheduled-${mode}`} className="cursor-pointer">
+												<Label
+													htmlFor={`habit-unscheduled-${mode}`}
+													className="cursor-pointer font-[family-name:var(--font-outfit)] text-[0.82rem]"
+												>
 													{label}
 												</Label>
 											</div>
@@ -1817,9 +1885,13 @@ function HabitDialog({
 									</RadioGroup>
 								</div>
 
-								<div className="space-y-2">
-									<Label>Recovery policy</Label>
-									<p className="text-sm text-muted-foreground">
+								<div className="h-px bg-border/30" />
+
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Recovery policy
+									</Label>
+									<p className="font-[family-name:var(--font-outfit)] text-[0.76rem] text-muted-foreground">
 										Control whether missed occurrences should be recovered in later slots.
 									</p>
 									<RadioGroup
@@ -1830,18 +1902,21 @@ function HabitDialog({
 												recoveryPolicy: recoveryPolicy as HabitRecoveryPolicy,
 											})
 										}
-										className="rounded-lg border border-border/70"
+										className="rounded-lg border border-border/40"
 									>
 										{Object.entries(recoveryLabels).map(([mode, label]) => (
 											<div
 												key={mode}
 												className={cn(
-													"flex cursor-pointer items-center gap-3 border-b border-border/70 px-3 py-3 last:border-b-0",
-													value.recoveryPolicy === mode && "bg-muted/50",
+													"flex cursor-pointer items-center gap-3 border-b border-border/40 px-3.5 py-3 last:border-b-0",
+													value.recoveryPolicy === mode && "bg-muted/40",
 												)}
 											>
 												<RadioGroupItem value={mode} id={`habit-recovery-${mode}`} />
-												<Label htmlFor={`habit-recovery-${mode}`} className="cursor-pointer">
+												<Label
+													htmlFor={`habit-recovery-${mode}`}
+													className="cursor-pointer font-[family-name:var(--font-outfit)] text-[0.82rem]"
+												>
 													{label}
 												</Label>
 											</div>
@@ -1849,9 +1924,13 @@ function HabitDialog({
 									</RadioGroup>
 								</div>
 
-								<div className="space-y-2">
-									<Label>Visibility</Label>
-									<p className="text-sm text-muted-foreground">
+								<div className="h-px bg-border/30" />
+
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Visibility
+									</Label>
+									<p className="font-[family-name:var(--font-outfit)] text-[0.76rem] text-muted-foreground">
 										How others see this event on your calendar.
 									</p>
 									<RadioGroup
@@ -1862,21 +1941,21 @@ function HabitDialog({
 												visibilityPreference: visibilityPreference as HabitVisibilityPreference,
 											})
 										}
-										className="rounded-lg border border-border/70"
+										className="rounded-lg border border-border/40"
 									>
 										{Object.entries(visibilityLabels).map(([mode, label]) => (
 											<div
 												key={mode}
 												className={cn(
-													"flex cursor-pointer items-center gap-3 border-b border-border/70 px-3 py-3 last:border-b-0",
-													value.visibilityPreference === mode && "bg-muted/50",
+													"flex cursor-pointer items-center gap-3 border-b border-border/40 px-3.5 py-3 last:border-b-0",
+													value.visibilityPreference === mode && "bg-muted/40",
 												)}
 											>
 												<RadioGroupItem value={mode} id={`habit-visibility-${mode}`} />
 												<div className="space-y-1">
 													<Label
 														htmlFor={`habit-visibility-${mode}`}
-														className="cursor-pointer font-normal"
+														className="cursor-pointer font-[family-name:var(--font-outfit)] text-[0.82rem] font-normal"
 													>
 														{label}
 													</Label>
@@ -1887,7 +1966,7 @@ function HabitDialog({
 																onChange({ ...value, publicDescription: event.target.value })
 															}
 															placeholder="Optional public description for defended events"
-															className="mt-1 min-h-16"
+															className="mt-1 min-h-16 font-[family-name:var(--font-outfit)] text-[0.82rem]"
 														/>
 													) : null}
 												</div>
@@ -1896,9 +1975,13 @@ function HabitDialog({
 									</RadioGroup>
 								</div>
 
-								<div className="space-y-2">
-									<Label>Time defense</Label>
-									<p className="text-sm text-muted-foreground">
+								<div className="h-px bg-border/30" />
+
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Time defense
+									</Label>
+									<p className="font-[family-name:var(--font-outfit)] text-[0.76rem] text-muted-foreground">
 										How aggressively Auto Cron should defend this event on your calendar.
 									</p>
 									<RadioGroup
@@ -1909,18 +1992,21 @@ function HabitDialog({
 												timeDefenseMode: timeDefenseMode as HabitTimeDefenseMode,
 											})
 										}
-										className="rounded-lg border border-border/70"
+										className="rounded-lg border border-border/40"
 									>
 										{Object.entries(defenseModeLabels).map(([mode, label]) => (
 											<div
 												key={mode}
 												className={cn(
-													"flex cursor-pointer items-center gap-3 border-b border-border/70 px-3 py-3 last:border-b-0",
-													value.timeDefenseMode === mode && "bg-muted/50",
+													"flex cursor-pointer items-center gap-3 border-b border-border/40 px-3.5 py-3 last:border-b-0",
+													value.timeDefenseMode === mode && "bg-muted/40",
 												)}
 											>
 												<RadioGroupItem value={mode} id={`habit-defense-${mode}`} />
-												<Label htmlFor={`habit-defense-${mode}`} className="cursor-pointer">
+												<Label
+													htmlFor={`habit-defense-${mode}`}
+													className="cursor-pointer font-[family-name:var(--font-outfit)] text-[0.82rem]"
+												>
 													{label}
 												</Label>
 											</div>
@@ -1928,8 +2014,10 @@ function HabitDialog({
 									</RadioGroup>
 								</div>
 
-								<div className="rounded-lg border border-border/70 p-3">
-									<div className="flex items-center space-x-2">
+								<div className="h-px bg-border/30" />
+
+								<div className="rounded-lg border border-border/40 px-3.5 py-3">
+									<div className="flex items-center space-x-2.5">
 										<Checkbox
 											id="auto-decline"
 											checked={value.autoDeclineInvites}
@@ -1937,37 +2025,51 @@ function HabitDialog({
 												onChange({ ...value, autoDeclineInvites: checked === true })
 											}
 										/>
-										<Label htmlFor="auto-decline">Auto-decline invites</Label>
+										<Label
+											htmlFor="auto-decline"
+											className="font-[family-name:var(--font-outfit)] text-[0.82rem]"
+										>
+											Auto-decline invites
+										</Label>
 									</div>
 								</div>
 
 								<div className="grid gap-4 md:grid-cols-3">
-									<div className="space-y-2">
-										<Label>CC others</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											CC others
+										</Label>
 										<Input
 											value={value.ccEmails}
 											onChange={(event) => onChange({ ...value, ccEmails: event.target.value })}
 											placeholder="a@x.com, b@y.com"
+											className="font-[family-name:var(--font-outfit)] text-[0.82rem]"
 										/>
 									</div>
-									<div className="space-y-2">
-										<Label>Avoid duplicate keywords</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Avoid duplicate keywords
+										</Label>
 										<Input
 											value={value.duplicateAvoidKeywords}
 											onChange={(event) =>
 												onChange({ ...value, duplicateAvoidKeywords: event.target.value })
 											}
 											placeholder="meeting, class"
+											className="font-[family-name:var(--font-outfit)] text-[0.82rem]"
 										/>
 									</div>
-									<div className="space-y-2">
-										<Label>Dependency note</Label>
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Dependency note
+										</Label>
 										<Input
 											value={value.dependencyNote}
 											onChange={(event) =>
 												onChange({ ...value, dependencyNote: event.target.value })
 											}
-											placeholder="Depends on..."
+											placeholder="Depends on…"
+											className="font-[family-name:var(--font-outfit)] text-[0.82rem]"
 										/>
 									</div>
 								</div>
@@ -1975,10 +2077,15 @@ function HabitDialog({
 						</AccordionItem>
 					</Accordion>
 
-					<div className="flex items-center justify-between rounded-lg border border-border/70 px-3 py-2">
-						<div className="text-sm">
-							<div className="font-medium">Active</div>
-							<div className="text-xs text-muted-foreground">Enable this habit for scheduling</div>
+					{/* Active toggle */}
+					<div className="flex items-center justify-between rounded-lg border border-border/40 px-4 py-3">
+						<div>
+							<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-medium">
+								Active
+							</p>
+							<p className="font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground">
+								Enable this habit for scheduling
+							</p>
 						</div>
 						<Switch
 							checked={value.isActive}
@@ -1987,11 +2094,21 @@ function HabitDialog({
 					</div>
 				</div>
 
+				{/* ── Footer ── */}
 				<DialogFooter>
-					<Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+					<Button
+						variant="ghost"
+						onClick={() => onOpenChange(false)}
+						disabled={busy}
+						className="font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium tracking-[0.02em] text-muted-foreground hover:text-foreground"
+					>
 						Cancel
 					</Button>
-					<Button onClick={onSubmit} disabled={busy}>
+					<Button
+						onClick={onSubmit}
+						disabled={busy}
+						className="gap-2 bg-accent font-[family-name:var(--font-outfit)] text-[0.76rem] font-bold uppercase tracking-[0.1em] text-accent-foreground shadow-[0_2px_12px_-3px_rgba(252,163,17,0.3)] transition-all hover:bg-accent/90 hover:shadow-[0_4px_16px_-3px_rgba(252,163,17,0.4)]"
+					>
 						{submitLabel}
 					</Button>
 				</DialogFooter>
