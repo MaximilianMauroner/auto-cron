@@ -124,7 +124,7 @@ describe("hours sets", () => {
 		await user.action(api.hours.actions.bootstrapHoursSetsForUser, {});
 
 		await user.mutation(api.hours.mutations.setDefaultTaskSchedulingMode, {
-			mode: "backfacing",
+			mode: "balanced",
 		});
 
 		const taskId = await user.action(api.tasks.actions.createTask, {
@@ -137,19 +137,19 @@ describe("hours sets", () => {
 
 		let tasks = await user.query(api.tasks.queries.listTasks, {});
 		expect(tasks[0]?.schedulingMode).toBeUndefined();
-		expect(tasks[0]?.effectiveSchedulingMode).toBe("backfacing");
+		expect(tasks[0]?.effectiveSchedulingMode).toBe("balanced");
 
 		await user.mutation(api.tasks.mutations.updateTask, {
 			id: taskId,
 			patch: {
-				schedulingMode: "parallel",
+				schedulingMode: "packed",
 			},
 		});
 
 		tasks = await user.query(api.tasks.queries.listTasks, {});
 		const updated = tasks.find((task) => task._id === taskId);
-		expect(updated?.schedulingMode).toBe("parallel");
-		expect(updated?.effectiveSchedulingMode).toBe("parallel");
+		expect(updated?.schedulingMode).toBe("packed");
+		expect(updated?.effectiveSchedulingMode).toBe("packed");
 	});
 
 	test("system hours sets are not deletable", async () => {
