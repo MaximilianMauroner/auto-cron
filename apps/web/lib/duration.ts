@@ -52,6 +52,14 @@ export const parseDurationToMinutes = (value: string): number | null => {
 	return null;
 };
 
+export const formatDurationCompact = (minutes: number): string => {
+	const safeMinutes = Math.max(0, Math.round(minutes));
+	if (safeMinutes < 60) return `${safeMinutes}m`;
+	const hours = Math.floor(safeMinutes / 60);
+	const remainder = safeMinutes % 60;
+	return remainder === 0 ? `${hours}h` : `${hours}h ${remainder}m`;
+};
+
 export const formatDurationFromMinutes = (minutes: number): string => {
 	const safeMinutes = Math.max(0, Math.round(minutes));
 	if (safeMinutes < 60) {

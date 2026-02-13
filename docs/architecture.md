@@ -69,8 +69,8 @@ Defined in `convex/schema.ts`:
 5. Scheduler writes derived `calendarEvents` and logs diagnostics in `schedulingRuns`.
 6. Google Calendar sync keeps external calendar state aligned.
    - Task/habit events synced from Google preserve their original `source` and `sourceId`.
-   - When a task event is moved/resized in Google, `pinnedStart`/`pinnedEnd` are written to the task
-     document so the scheduler respects the user's manual placement.
+   - When a task event is moved/resized in Google, the calendar event is marked `pinned: true`
+     so the scheduler respects the user's manual placement.
    - When a task/habit event is deleted in Google, the calendar event is unlinked and marked cancelled
      (not hard-deleted), and rescheduling is triggered.
 7. Google push notifications (`events.watch`) hit Convex HTTP webhook; webhook enqueues deduped
@@ -87,8 +87,8 @@ The Convex scheduling module lives in `convex/scheduling/*` and runs as an inter
    scheduled blocks.
 5. Expand habit recurrences from RRULE and build occurrence candidates.
 6. Build task chunk plans from required duration and chunk bounds.
-7. Place pinned tasks at their exact `pinnedStart`/`pinnedEnd` positions (bypassing solver).
-   Tasks with expired pins (entirely in the past) have their pins cleared and fall through to normal scheduling.
+7. Subtract pinned event durations from each task's estimated time so only the remaining
+   unpinned portion is scheduled. Pinned events act as immovable busy blocks.
 8. Run pass A (strict due-date feasibility) and pass B (full objective).
 9. On hard infeasible (`INFEASIBLE_HARD`), mark run failed and keep existing scheduler-generated blocks unchanged.
 10. On success, reconcile scheduler-generated task/habit blocks in horizon (patch existing first to preserve remote IDs, then insert/delete deltas) and patch task `scheduledStart/scheduledEnd`.

@@ -33,6 +33,7 @@ export type CalendarEventDTO = {
 	visibility?: CalendarVisibility;
 	location?: string;
 	color?: string;
+	pinned?: boolean;
 	updatedAt: number;
 	lastSyncedAt?: number;
 };

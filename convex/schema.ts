@@ -91,8 +91,6 @@ export default defineSchema({
 		scheduleAfter: v.optional(v.number()),
 		scheduledStart: v.optional(v.number()),
 		scheduledEnd: v.optional(v.number()),
-		pinnedStart: v.optional(v.number()),
-		pinnedEnd: v.optional(v.number()),
 		completedAt: v.optional(v.number()),
 		sortOrder: v.number(),
 		splitAllowed: v.optional(v.boolean()),
@@ -109,6 +107,11 @@ export default defineSchema({
 		visibilityPreference: v.optional(v.union(v.literal("default"), v.literal("private"))),
 		preferredCalendarId: v.optional(v.string()),
 		color: v.optional(v.string()),
+		// Deprecated: task-level pinning replaced by per-event pinning on calendarEvents.
+		// Kept temporarily for schema compatibility with existing documents.
+		// Run stripLegacyPinnedFields migration, then remove these two lines.
+		pinnedStart: v.optional(v.number()),
+		pinnedEnd: v.optional(v.number()),
 	})
 		.index("by_userId", ["userId"])
 		.index("by_userId_status", ["userId", "status"])
@@ -241,6 +244,7 @@ export default defineSchema({
 		),
 		location: v.optional(v.string()),
 		color: v.optional(v.string()),
+		pinned: v.optional(v.boolean()),
 	})
 		.index("by_userId", ["userId"])
 		.index("by_userId_start", ["userId", "start"])

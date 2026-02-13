@@ -198,11 +198,13 @@ export const applySchedulingBlocks = internalMutation({
 		}
 		for (const [key, blocks] of groupedBlocks) {
 			const existingGroup = groupedExisting.get(key) ?? [];
-			const pairCount = Math.min(existingGroup.length, blocks.length);
+			// Separate pinned events — they survive the commit cycle untouched
+			const unpinnedExisting = existingGroup.filter((e) => !e.pinned);
+			const pairCount = Math.min(unpinnedExisting.length, blocks.length);
 
 			for (let index = 0; index < pairCount; index += 1) {
 				const block = blocks[index];
-				const current = existingGroup[index];
+				const current = unpinnedExisting[index];
 				if (!block || !current) continue;
 				await ctx.db.patch(current._id, {
 					title: block.title,
@@ -236,7 +238,7 @@ export const applySchedulingBlocks = internalMutation({
 				});
 			}
 
-			for (const staleEvent of existingGroup.slice(pairCount)) {
+			for (const staleEvent of unpinnedExisting.slice(pairCount)) {
 				if (staleEvent.googleEventId) {
 					removedGoogleEvents.push({
 						googleEventId: staleEvent.googleEventId,
@@ -265,6 +267,7 @@ export const applySchedulingBlocks = internalMutation({
 		for (const [key, staleGroup] of groupedExisting) {
 			if (groupedBlocks.has(key)) continue;
 			for (const staleEvent of staleGroup) {
+				if (staleEvent.pinned) continue; // preserve pinned events
 				if (staleEvent.googleEventId) {
 					removedGoogleEvents.push({
 						googleEventId: staleEvent.googleEventId,
@@ -272,6 +275,21 @@ export const applySchedulingBlocks = internalMutation({
 					});
 				}
 				await ctx.db.delete(staleEvent._id);
+			}
+		}
+
+		// Include pinned event times in task placement calculations
+		for (const event of existing) {
+			if (
+				event.source === "task" &&
+				event.pinned === true &&
+				event.sourceId &&
+				!event.sourceId.includes(":travel:")
+			) {
+				const existingTask = tasksById.get(event.sourceId) ?? { starts: [], ends: [] };
+				existingTask.starts.push(event.start);
+				existingTask.ends.push(event.end);
+				tasksById.set(event.sourceId, existingTask);
 			}
 		}
 
@@ -397,21 +415,4 @@ export const failRun = internalMutation({
 	},
 });
 
-export const clearExpiredPinnedTasks = internalMutation({
-	args: {
-		taskIds: v.array(v.id("tasks")),
-	},
-	returns: v.null(),
-	handler: async (ctx, args) => {
-		for (const taskId of args.taskIds) {
-			const task = await ctx.db.get(taskId);
-			if (task && task.pinnedStart !== undefined) {
-				await ctx.db.patch(taskId, {
-					pinnedStart: undefined,
-					pinnedEnd: undefined,
-				});
-			}
-		}
-		return null;
-	},
-});
+// clearExpiredPinnedTasks removed — pinning is now per-event, not per-task

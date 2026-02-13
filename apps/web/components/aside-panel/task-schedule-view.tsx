@@ -5,28 +5,41 @@ import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuItem,
+	DropdownMenuSeparator,
 	DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useUserPreferences } from "@/components/user-preferences-context";
+import { useMutationWithStatus } from "@/hooks/use-convex-status";
+import { formatDurationCompact } from "@/lib/duration";
 import type { CalendarEventDTO } from "@auto-cron/types";
-import { MoreVertical } from "lucide-react";
+import { Clock3, MoreVertical, Pin, PinOff, Trash2 } from "lucide-react";
 import { useMemo } from "react";
+import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
-function formatDurationMinutes(ms: number) {
-	const minutes = Math.round(ms / 60_000);
-	if (minutes < 60) return `${minutes}m`;
-	const h = Math.floor(minutes / 60);
-	const m = minutes % 60;
-	return m > 0 ? `${h}h ${m}m` : `${h}h`;
+function formatDurationMs(ms: number) {
+	return formatDurationCompact(Math.round(ms / 60_000));
 }
 
 function EventRow({
 	event,
 	hour12,
 	muted,
-}: { event: CalendarEventDTO; hour12: boolean; muted?: boolean }) {
+	onViewDetails,
+}: {
+	event: CalendarEventDTO;
+	hour12: boolean;
+	muted?: boolean;
+	onViewDetails?: (eventId: string) => void;
+}) {
+	const { mutate: setEventPinned } = useMutationWithStatus(api.calendar.mutations.setEventPinned);
+	const { mutate: deleteEvent } = useMutationWithStatus(api.calendar.mutations.deleteEvent);
+
 	const startDate = new Date(event.start);
 	const endDate = new Date(event.end);
+	const isTravelBlock = event.sourceId?.includes(":travel:");
+	const isTaskEvent = event.source === "task" && !isTravelBlock;
+	const isPinned = event.pinned === true;
 
 	const dateStr = new Intl.DateTimeFormat(undefined, {
 		month: "short",
@@ -40,12 +53,25 @@ function EventRow({
 	};
 	const startTime = new Intl.DateTimeFormat(undefined, timeOpts).format(startDate);
 	const endTime = new Intl.DateTimeFormat(undefined, timeOpts).format(endDate);
-	const duration = formatDurationMinutes(event.end - event.start);
+	const duration = formatDurationMs(event.end - event.start);
+
+	const handlePin = () => {
+		void setEventPinned({ id: event._id as Id<"calendarEvents">, pinned: true });
+	};
+
+	const handleUnpin = () => {
+		void setEventPinned({ id: event._id as Id<"calendarEvents">, pinned: false });
+	};
+
+	const handleDeleteEvent = () => {
+		void deleteEvent({ id: event._id as Id<"calendarEvents"> });
+	};
 
 	return (
 		<div
 			className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-[0.7rem] transition-colors hover:bg-accent/30 ${muted ? "opacity-60" : ""}`}
 		>
+			{isPinned && isTaskEvent ? <Pin className="size-3 shrink-0 text-amber-600" /> : null}
 			<span className="w-[3.2rem] shrink-0 font-medium tabular-nums">{dateStr}</span>
 			<span className="flex-1 tabular-nums text-muted-foreground">
 				{startTime} – {endTime}
@@ -59,8 +85,35 @@ function EventRow({
 						<MoreVertical className="size-3" />
 					</Button>
 				</DropdownMenuTrigger>
-				<DropdownMenuContent align="end" className="w-36">
-					<DropdownMenuItem>View details</DropdownMenuItem>
+				<DropdownMenuContent align="end" className="w-40">
+					{onViewDetails ? (
+						<DropdownMenuItem onClick={() => onViewDetails(event._id)}>
+							View details
+						</DropdownMenuItem>
+					) : null}
+					{isTaskEvent ? (
+						<>
+							{isPinned ? (
+								<DropdownMenuItem onClick={handleUnpin}>
+									<PinOff className="mr-2 size-3.5" />
+									Unpin
+								</DropdownMenuItem>
+							) : (
+								<DropdownMenuItem onClick={handlePin}>
+									<Pin className="mr-2 size-3.5" />
+									Pin to time
+								</DropdownMenuItem>
+							)}
+							<DropdownMenuSeparator />
+						</>
+					) : null}
+					<DropdownMenuItem
+						onClick={handleDeleteEvent}
+						className="text-destructive focus:text-destructive"
+					>
+						<Trash2 className="mr-2 size-3.5" />
+						Delete event
+					</DropdownMenuItem>
 				</DropdownMenuContent>
 			</DropdownMenu>
 		</div>
@@ -70,17 +123,28 @@ function EventRow({
 export function TaskScheduleView({
 	events,
 	isLoading,
-}: { events: CalendarEventDTO[]; isLoading: boolean }) {
+	estimatedMinutes,
+	onViewDetails,
+}: {
+	events: CalendarEventDTO[];
+	isLoading: boolean;
+	estimatedMinutes?: number;
+	onViewDetails?: (eventId: string) => void;
+}) {
 	const { hour12 } = useUserPreferences();
 	const now = Date.now();
 
-	const { upcoming, past } = useMemo(() => {
+	const { upcoming, past, scheduledMinutes } = useMemo(() => {
+		const taskEvents = events.filter(
+			(e) => e.source === "task" && !e.sourceId?.includes(":travel:"),
+		);
+		const scheduled = taskEvents.reduce((sum, e) => sum + (e.end - e.start) / 60_000, 0);
 		const upcoming = events.filter((e) => e.end >= now);
 		const past = events
 			.filter((e) => e.end < now)
 			.slice()
 			.reverse();
-		return { upcoming, past };
+		return { upcoming, past, scheduledMinutes: Math.round(scheduled) };
 	}, [events, now]);
 
 	if (isLoading) {
@@ -97,8 +161,31 @@ export function TaskScheduleView({
 		);
 	}
 
+	const total = estimatedMinutes ?? 0;
+	const remaining = Math.max(0, total - scheduledMinutes);
+	const percent = total > 0 ? Math.min(100, Math.round((scheduledMinutes / total) * 100)) : 0;
+
 	return (
 		<div className="mt-1 space-y-2 border-t border-border/40 pt-2">
+			{total > 0 ? (
+				<div className="px-2">
+					<div className="flex items-center justify-between text-[0.66rem] text-muted-foreground">
+						<span className="inline-flex items-center gap-1">
+							<Clock3 className="size-3" />
+							{formatDurationCompact(scheduledMinutes)} / {formatDurationCompact(total)}
+						</span>
+						<span>
+							{remaining > 0 ? `${formatDurationCompact(remaining)} left` : "Fully scheduled"}
+						</span>
+					</div>
+					<div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-border/50">
+						<div
+							className="h-full rounded-full bg-primary/70 transition-all duration-300"
+							style={{ width: `${percent}%` }}
+						/>
+					</div>
+				</div>
+			) : null}
 			{upcoming.length > 0 ? (
 				<div>
 					<div className="mb-0.5 px-2 text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-muted-foreground/80">
@@ -108,7 +195,7 @@ export function TaskScheduleView({
 						{upcoming.map((event, i) => (
 							<div key={event._id}>
 								{i > 0 ? <div className="mx-2 border-t border-border/30" /> : null}
-								<EventRow event={event} hour12={hour12} />
+								<EventRow event={event} hour12={hour12} onViewDetails={onViewDetails} />
 							</div>
 						))}
 					</div>
@@ -124,7 +211,7 @@ export function TaskScheduleView({
 						{past.map((event, i) => (
 							<div key={event._id}>
 								{i > 0 ? <div className="mx-2 border-t border-border/30" /> : null}
-								<EventRow event={event} hour12={hour12} muted />
+								<EventRow event={event} hour12={hour12} muted onViewDetails={onViewDetails} />
 							</div>
 						))}
 					</div>

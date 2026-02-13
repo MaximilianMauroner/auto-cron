@@ -126,12 +126,6 @@ export const runForUser: ReturnType<typeof internalAction> = internalAction({
 				blocks: solved.blocks,
 			});
 
-			if (solved.expiredPinnedTaskIds.length > 0) {
-				await ctx.runMutation(internal.scheduling.mutations.clearExpiredPinnedTasks, {
-					taskIds: solved.expiredPinnedTaskIds,
-				});
-			}
-
 			await ctx.runMutation(internal.scheduling.mutations.completeRun, {
 				runId: args.runId,
 				tasksScheduled: applied.tasksScheduled,

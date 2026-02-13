@@ -379,6 +379,30 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 	},
 });
 
+/**
+ * Migration: strip deprecated pinnedStart/pinnedEnd fields from task documents.
+ * Run once via the Convex dashboard, then remove pinnedStart/pinnedEnd from schema.ts.
+ */
+export const stripLegacyPinnedFields = internalMutation({
+	args: {},
+	returns: v.object({ patched: v.number() }),
+	handler: async (ctx): Promise<{ patched: number }> => {
+		const tasks = await ctx.db.query("tasks").collect();
+		let patched = 0;
+		for (const task of tasks) {
+			const doc = task as Record<string, unknown>;
+			if (doc.pinnedStart !== undefined || doc.pinnedEnd !== undefined) {
+				await ctx.db.patch(task._id, {
+					pinnedStart: undefined,
+					pinnedEnd: undefined,
+				});
+				patched++;
+			}
+		}
+		return { patched };
+	},
+});
+
 export const internalRollbackTaskCreateForReservation = internalMutation({
 	args: {
 		operationKey: v.string(),
