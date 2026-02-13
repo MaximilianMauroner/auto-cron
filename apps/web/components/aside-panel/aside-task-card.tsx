@@ -15,6 +15,14 @@ import {
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
 import { formatDurationCompact } from "@/lib/duration";
 import type { CalendarEventDTO, Priority, TaskDTO, TaskStatus } from "@auto-cron/types";
+
+const priorityLabels: Record<Priority, string> = {
+	low: "Low",
+	medium: "Medium",
+	high: "High",
+	critical: "Critical",
+	blocker: "Blocker",
+};
 import { Check, ChevronDown, CircleDot, Clock3, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../../../convex/_generated/api";
@@ -98,7 +106,7 @@ export function AsideTaskCard({ task, onEditTask }: AsideTaskCardProps) {
 									</div>
 									<div className="flex items-center gap-1">
 										<Badge className={`${priorityClass[task.priority]} text-[0.6rem] px-1.5 py-0`}>
-											{task.priority}
+											{priorityLabels[task.priority]}
 										</Badge>
 										<ChevronDown
 											className={`size-3 text-muted-foreground/50 transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}

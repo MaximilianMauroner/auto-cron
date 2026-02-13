@@ -249,6 +249,7 @@ export const getSchedulingInputForUser = internalQuery({
 		for (const event of events) {
 			if (
 				event.source === "task" &&
+				event.status !== "cancelled" &&
 				event.pinned === true &&
 				event.sourceId &&
 				!event.sourceId.includes(":travel:")

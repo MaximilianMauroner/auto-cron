@@ -1436,6 +1436,7 @@ export const pinAllTaskEvents = mutation({
 		const now = Date.now();
 		for (const event of events) {
 			if (event.sourceId?.includes(":travel:")) continue;
+			if (event.status === "cancelled") continue;
 			await ctx.db.patch(event._id, { pinned: args.pinned, updatedAt: now });
 		}
 

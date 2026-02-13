@@ -12,7 +12,7 @@ import { useUserPreferences } from "@/components/user-preferences-context";
 import { useMutationWithStatus } from "@/hooks/use-convex-status";
 import { formatDurationCompact } from "@/lib/duration";
 import type { CalendarEventDTO } from "@auto-cron/types";
-import { Clock3, MoreVertical, Pin, PinOff, RotateCcw, Trash2 } from "lucide-react";
+import { Clock3, MoreVertical, Pin, PinOff, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
@@ -104,12 +104,6 @@ function EventRow({
 									Pin to time
 								</DropdownMenuItem>
 							)}
-							{isPinned ? (
-								<DropdownMenuItem onClick={handleUnpin}>
-									<RotateCcw className="mr-2 size-3.5" />
-									Reschedule
-								</DropdownMenuItem>
-							) : null}
 							<DropdownMenuSeparator />
 						</>
 					) : null}
