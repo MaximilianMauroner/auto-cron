@@ -262,10 +262,20 @@ export const getSchedulingInputForUser = internalQuery({
 			}
 		}
 
-		const tasks = await ctx.db
-			.query("tasks")
-			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
-			.collect();
+		const [tasks, habits, hoursSets] = await Promise.all([
+			ctx.db
+				.query("tasks")
+				.withIndex("by_userId", (q) => q.eq("userId", args.userId))
+				.collect(),
+			ctx.db
+				.query("habits")
+				.withIndex("by_userId", (q) => q.eq("userId", args.userId))
+				.collect(),
+			ctx.db
+				.query("hoursSets")
+				.withIndex("by_userId", (q) => q.eq("userId", args.userId))
+				.collect(),
+		]);
 		const schedulableTasks = tasks
 			.filter((task) => isSchedulableTaskStatus(task.status))
 			.map((task) => ({
@@ -294,10 +304,6 @@ export const getSchedulingInputForUser = internalQuery({
 				pinnedEventMinutes: pinnedMinutesByTask.get(String(task._id)) ?? 0,
 			}));
 
-		const habits = await ctx.db
-			.query("habits")
-			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
-			.collect();
 		const mappedHabits = habits.map((habit) => ({
 			id: habit._id,
 			creationTime: habit._creationTime,
@@ -321,10 +327,6 @@ export const getSchedulingInputForUser = internalQuery({
 			isActive: habit.isActive,
 		}));
 
-		const hoursSets = await ctx.db
-			.query("hoursSets")
-			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
-			.collect();
 		const hoursBySetId = Object.fromEntries(
 			hoursSets.map((set) => [String(set._id), set.windows] as const),
 		) as Record<
@@ -442,18 +444,20 @@ export const isRunSuperseded = internalQuery({
 		const run = await ctx.db.get(args.runId);
 		if (!run || run.userId !== args.userId) return true;
 
-		const pending = await ctx.db
-			.query("schedulingRuns")
-			.withIndex("by_userId_status_startedAt", (q) =>
-				q.eq("userId", args.userId).eq("status", "pending"),
-			)
-			.collect();
-		const running = await ctx.db
-			.query("schedulingRuns")
-			.withIndex("by_userId_status_startedAt", (q) =>
-				q.eq("userId", args.userId).eq("status", "running"),
-			)
-			.collect();
+		const [pending, running] = await Promise.all([
+			ctx.db
+				.query("schedulingRuns")
+				.withIndex("by_userId_status_startedAt", (q) =>
+					q.eq("userId", args.userId).eq("status", "pending"),
+				)
+				.collect(),
+			ctx.db
+				.query("schedulingRuns")
+				.withIndex("by_userId_status_startedAt", (q) =>
+					q.eq("userId", args.userId).eq("status", "running"),
+				)
+				.collect(),
+		]);
 
 		return [...pending, ...running].some(
 			(candidate) => candidate._id !== args.runId && isRunNewer(candidate, run),

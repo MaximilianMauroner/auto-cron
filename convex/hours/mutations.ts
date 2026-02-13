@@ -27,6 +27,8 @@ import {
 	timeFormatPreferenceValidator,
 } from "./shared";
 
+const CURRENT_SCHEDULING_MODEL_VERSION = 1;
+
 const WORK_SET_NAME = "Work";
 const ANYTIME_SET_NAME = "Anytime (24/7)";
 const DEFAULT_WORK_WINDOW_START = "09:00";
@@ -487,6 +489,8 @@ const ensureSettingsForUser = async (ctx: MutationCtx, userId: string) => {
 		schedulingHorizonDays: settings.schedulingHorizonDays ?? 75,
 		schedulingDowntimeMinutes: normalizedSchedulingDowntimeMinutesFromSettings(settings),
 		schedulingStepMinutes: normalizedSchedulingStepMinutesFromSettings(settings),
+		schedulingModelVersion: settings.schedulingModelVersion,
+		hoursBootstrapped: settings.hoursBootstrapped,
 		googleRefreshToken: settings.googleRefreshToken,
 		googleSyncToken: settings.googleSyncToken,
 		googleCalendarSyncTokens: settings.googleCalendarSyncTokens ?? [],
@@ -1036,11 +1040,25 @@ const bootstrapHoursSetsForUser = async (
 	ctx: MutationCtx,
 	userId: string,
 ): Promise<{ defaultHoursSetId: Id<"hoursSets">; reassignedCount: number }> => {
+	// Early exit: check flag before ensureSettingsForUser to avoid unnecessary write
+	const existingSettings = await ctx.db
+		.query("userSettings")
+		.withIndex("by_userId", (q) => q.eq("userId", userId))
+		.unique();
+	if (existingSettings?.hoursBootstrapped) {
+		const defaultSet = await getDefaultHoursSet(ctx, userId);
+		if (defaultSet) {
+			return { defaultHoursSetId: defaultSet._id, reassignedCount: 0 };
+		}
+		// Fall through if default set not found (shouldn't happen, but be safe)
+	}
+
 	await ensureSettingsForUser(ctx, userId);
 	const settings = await ctx.db
 		.query("userSettings")
 		.withIndex("by_userId", (q) => q.eq("userId", userId))
 		.unique();
+
 	assertValidWindows(anytimeWindows);
 
 	const existingHoursSets = await ctx.db
@@ -1134,6 +1152,13 @@ const bootstrapHoursSetsForUser = async (
 			}),
 		),
 	);
+
+	// Mark as bootstrapped so we skip the full scan next time
+	if (settings) {
+		await ctx.db.patch(settings._id, {
+			hoursBootstrapped: true,
+		});
+	}
 
 	return {
 		defaultHoursSetId: defaultHoursSet._id,
@@ -1316,6 +1341,12 @@ export const internalMigrateSchedulingModelForUser = internalMutation({
 			.query("userSettings")
 			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
 			.unique();
+
+		// Early exit: skip full scan if already at current version
+		if (settings?.schedulingModelVersion === CURRENT_SCHEDULING_MODEL_VERSION) {
+			return { updatedSettings: 0, updatedTasks: 0, updatedHabits: 0 };
+		}
+
 		if (settings) {
 			const normalizedMode = sanitizeTaskSchedulingMode(
 				(settings as { defaultTaskSchedulingMode?: string }).defaultTaskSchedulingMode,
@@ -1373,6 +1404,13 @@ export const internalMigrateSchedulingModelForUser = internalMutation({
 				recoveryPolicy: nextRecoveryPolicy,
 			});
 			updatedHabits += 1;
+		}
+
+		// Mark migration version so we skip the full scan next time
+		if (settings) {
+			await ctx.db.patch(settings._id, {
+				schedulingModelVersion: CURRENT_SCHEDULING_MODEL_VERSION,
+			});
 		}
 
 		return {

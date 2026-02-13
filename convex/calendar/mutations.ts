@@ -850,6 +850,8 @@ const performUpsertSyncedEventsForUser = async (
 				settings.schedulingDowntimeMinutes,
 			),
 			schedulingStepMinutes: normalizedSchedulingStepMinutesFromSettings(settings),
+			schedulingModelVersion: settings.schedulingModelVersion,
+			hoursBootstrapped: settings.hoursBootstrapped,
 			googleRefreshToken: settings.googleRefreshToken,
 			googleSyncToken: nextPrimaryToken,
 			googleCalendarSyncTokens: nextSyncTokens,
@@ -902,6 +904,8 @@ export const upsertGoogleTokens = mutation({
 					existing.schedulingDowntimeMinutes,
 				),
 				schedulingStepMinutes: normalizedSchedulingStepMinutesFromSettings(existing),
+				schedulingModelVersion: existing.schedulingModelVersion,
+				hoursBootstrapped: existing.hoursBootstrapped,
 				googleRefreshToken: args.refreshToken,
 				googleSyncToken: args.syncToken ?? existing.googleSyncToken,
 				googleCalendarSyncTokens: nextCalendarSyncTokens,
@@ -1429,8 +1433,9 @@ export const pinAllTaskEvents = mutation({
 		const { userId } = ctx;
 		const events = await ctx.db
 			.query("calendarEvents")
-			.withIndex("by_userId", (q) => q.eq("userId", userId))
-			.filter((q) => q.and(q.eq(q.field("source"), "task"), q.eq(q.field("sourceId"), args.taskId)))
+			.withIndex("by_userId_source_sourceId", (q) =>
+				q.eq("userId", userId).eq("source", "task").eq("sourceId", args.taskId),
+			)
 			.collect();
 
 		const now = Date.now();

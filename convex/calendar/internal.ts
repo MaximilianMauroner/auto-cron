@@ -568,6 +568,258 @@ export const dedupeUserCalendarEventsInRange = internalMutation({
 	},
 });
 
+export const normalizeAndDedupeEventsInRange = internalMutation({
+	args: {
+		userId: v.optional(v.string()),
+		start: v.optional(v.number()),
+		end: v.optional(v.number()),
+	},
+	returns: v.object({
+		seriesCreated: v.number(),
+		seriesUpdated: v.number(),
+		occurrencesPatched: v.number(),
+		merged: v.number(),
+		removed: v.number(),
+	}),
+	handler: async (ctx, args) => {
+		const userId = args.userId ?? (await requireAuth(ctx));
+		const now = Date.now();
+
+		// Fetch events once for both normalize and dedupe
+		const events =
+			typeof args.start === "number" && typeof args.end === "number"
+				? await (() => {
+						const rangeStart = args.start;
+						const rangeEnd = args.end;
+						return ctx.db
+							.query("calendarEvents")
+							.withIndex("by_userId_start", (q) => q.eq("userId", userId).lte("start", rangeEnd))
+							.filter((q) => q.gte(q.field("end"), rangeStart))
+							.collect();
+					})()
+				: await ctx.db
+						.query("calendarEvents")
+						.withIndex("by_userId", (q) => q.eq("userId", userId))
+						.collect();
+
+		// --- Normalize phase ---
+		const seriesCache = new Map<string, Doc<"calendarEventSeries"> | null>();
+		const processedSeriesCacheKeys = new Set<string>();
+		let seriesCreated = 0;
+		let seriesUpdated = 0;
+		let occurrencesPatched = 0;
+
+		for (const event of events) {
+			if (event.source !== "google") continue;
+			const googleSeriesId = event.recurringEventId ?? event.googleEventId ?? event.sourceId;
+			if (!googleSeriesId) continue;
+
+			const seriesCacheKey = `${event.calendarId ?? "primary"}:${googleSeriesId}`;
+			let series = seriesCache.get(seriesCacheKey);
+			if (!seriesCache.has(seriesCacheKey)) {
+				series = await ctx.db
+					.query("calendarEventSeries")
+					.withIndex("by_userId_calendarId_googleSeriesId", (q) =>
+						q
+							.eq("userId", userId)
+							.eq("calendarId", event.calendarId ?? "primary")
+							.eq("googleSeriesId", googleSeriesId),
+					)
+					.unique();
+				seriesCache.set(seriesCacheKey, series);
+			}
+
+			const nextSeriesValues = {
+				source: "google" as const,
+				sourceId: event.sourceId ?? event.googleEventId,
+				calendarId: event.calendarId ?? "primary",
+				googleSeriesId,
+				title: event.title ?? series?.title ?? "Untitled event",
+				description: event.description ?? series?.description,
+				allDay: event.allDay ?? series?.allDay ?? false,
+				recurrenceRule: event.recurrenceRule ?? series?.recurrenceRule,
+				status: event.status ?? series?.status,
+				busyStatus: event.busyStatus ?? series?.busyStatus ?? "busy",
+				visibility: event.visibility ?? series?.visibility,
+				location: event.location ?? series?.location,
+				color: event.color ?? series?.color,
+				etag: event.etag ?? series?.etag,
+				lastSyncedAt: event.lastSyncedAt ?? series?.lastSyncedAt,
+				isRecurring: Boolean(event.recurringEventId || event.recurrenceRule),
+			};
+			const nextSeriesUpdatedAt = Math.max(now, event.updatedAt);
+
+			if (!processedSeriesCacheKeys.has(seriesCacheKey)) {
+				if (!series) {
+					const seriesId = await ctx.db.insert("calendarEventSeries", {
+						userId,
+						...nextSeriesValues,
+						updatedAt: nextSeriesUpdatedAt,
+					});
+					series = await ctx.db.get(seriesId);
+					if (!series) {
+						throw new ConvexError({
+							code: "SERIES_CREATE_FAILED",
+							message: "Could not create calendar event series",
+						});
+					}
+					seriesCreated += 1;
+				} else {
+					const shouldPatchSeries =
+						series.source !== nextSeriesValues.source ||
+						series.sourceId !== nextSeriesValues.sourceId ||
+						series.calendarId !== nextSeriesValues.calendarId ||
+						series.googleSeriesId !== nextSeriesValues.googleSeriesId ||
+						series.title !== nextSeriesValues.title ||
+						series.description !== nextSeriesValues.description ||
+						series.allDay !== nextSeriesValues.allDay ||
+						series.recurrenceRule !== nextSeriesValues.recurrenceRule ||
+						series.status !== nextSeriesValues.status ||
+						series.busyStatus !== nextSeriesValues.busyStatus ||
+						series.visibility !== nextSeriesValues.visibility ||
+						series.location !== nextSeriesValues.location ||
+						series.color !== nextSeriesValues.color ||
+						series.etag !== nextSeriesValues.etag ||
+						series.lastSyncedAt !== nextSeriesValues.lastSyncedAt ||
+						series.isRecurring !== nextSeriesValues.isRecurring;
+					if (shouldPatchSeries) {
+						await ctx.db.patch(series._id, {
+							...nextSeriesValues,
+							updatedAt: nextSeriesUpdatedAt,
+						});
+						seriesUpdated += 1;
+						series = {
+							...series,
+							...nextSeriesValues,
+							updatedAt: nextSeriesUpdatedAt,
+						};
+					}
+				}
+				seriesCache.set(seriesCacheKey, series);
+				processedSeriesCacheKeys.add(seriesCacheKey);
+			}
+			if (!series) continue;
+
+			const isRecurringInstance = Boolean(event.recurringEventId);
+			const occurrenceStart = normalizeToMinute(event.originalStartTime ?? event.start);
+			const nextOccurrenceValues = {
+				seriesId: series._id,
+				occurrenceStart,
+				sourceId: event.sourceId ?? event.googleEventId,
+				title: isRecurringInstance ? undefined : event.title,
+				description: isRecurringInstance ? undefined : event.description,
+				allDay: isRecurringInstance ? undefined : event.allDay,
+				recurrenceRule: isRecurringInstance ? undefined : event.recurrenceRule,
+				busyStatus: isRecurringInstance ? undefined : event.busyStatus,
+				visibility: isRecurringInstance ? undefined : event.visibility,
+				location: isRecurringInstance ? undefined : event.location,
+				color: isRecurringInstance ? undefined : event.color,
+				updatedAt: Math.max(now, event.updatedAt),
+			};
+
+			const shouldPatch =
+				event.seriesId !== nextOccurrenceValues.seriesId ||
+				event.occurrenceStart !== nextOccurrenceValues.occurrenceStart ||
+				event.sourceId !== nextOccurrenceValues.sourceId ||
+				event.title !== nextOccurrenceValues.title ||
+				event.description !== nextOccurrenceValues.description ||
+				event.allDay !== nextOccurrenceValues.allDay ||
+				event.recurrenceRule !== nextOccurrenceValues.recurrenceRule ||
+				event.busyStatus !== nextOccurrenceValues.busyStatus ||
+				event.visibility !== nextOccurrenceValues.visibility ||
+				event.location !== nextOccurrenceValues.location ||
+				event.color !== nextOccurrenceValues.color;
+			if (!shouldPatch) continue;
+
+			await ctx.db.patch(event._id, nextOccurrenceValues);
+			occurrencesPatched += 1;
+		}
+
+		// --- Dedupe phase (reuse the same events list) ---
+		// Re-read events that may have been patched during normalization
+		const dedupeEvents =
+			typeof args.start === "number" && typeof args.end === "number"
+				? await (() => {
+						const rangeStart = args.start;
+						const rangeEnd = args.end;
+						return ctx.db
+							.query("calendarEvents")
+							.withIndex("by_userId_start", (q) => q.eq("userId", userId).lte("start", rangeEnd))
+							.filter((q) => q.gte(q.field("end"), rangeStart))
+							.collect();
+					})()
+				: await ctx.db
+						.query("calendarEvents")
+						.withIndex("by_userId", (q) => q.eq("userId", userId))
+						.collect();
+
+		const groups = new Map<string, Doc<"calendarEvents">[]>();
+		for (const event of dedupeEvents) {
+			const key = buildDedupeKey(event);
+			const existing = groups.get(key) ?? [];
+			existing.push(event);
+			groups.set(key, existing);
+		}
+
+		let merged = 0;
+		let removed = 0;
+
+		for (const group of groups.values()) {
+			if (group.length <= 1) continue;
+			merged += 1;
+			const sorted = [...group].sort((a, b) => recencyScore(b) - recencyScore(a));
+			const [primary, ...duplicates] = sorted;
+			if (!primary) continue;
+
+			const richest = [...group].sort((a, b) => {
+				const aScore =
+					(a.title ? 1 : 0) +
+					(a.description ? 1 : 0) +
+					(a.recurrenceRule ? 1 : 0) +
+					(a.busyStatus ? 1 : 0) +
+					(a.visibility ? 1 : 0) +
+					(a.location ? 1 : 0) +
+					(a.color ? 1 : 0);
+				const bScore =
+					(b.title ? 1 : 0) +
+					(b.description ? 1 : 0) +
+					(b.recurrenceRule ? 1 : 0) +
+					(b.busyStatus ? 1 : 0) +
+					(b.visibility ? 1 : 0) +
+					(b.location ? 1 : 0) +
+					(b.color ? 1 : 0);
+				return bScore - aScore;
+			})[0];
+
+			if (richest && richest._id !== primary._id) {
+				await ctx.db.patch(primary._id, {
+					title: primary.title ?? richest.title,
+					description: primary.description ?? richest.description,
+					recurrenceRule: primary.recurrenceRule ?? richest.recurrenceRule,
+					busyStatus: primary.busyStatus ?? richest.busyStatus,
+					visibility: primary.visibility ?? richest.visibility,
+					location: primary.location ?? richest.location,
+					color: primary.color ?? richest.color,
+					allDay: primary.allDay ?? richest.allDay,
+				});
+			}
+
+			for (const duplicate of duplicates) {
+				await ctx.db.delete(duplicate._id);
+				removed += 1;
+			}
+		}
+
+		return {
+			seriesCreated,
+			seriesUpdated,
+			occurrencesPatched,
+			merged,
+			removed,
+		};
+	},
+});
+
 export const listScheduledEventsForGoogleSync = internalQuery({
 	args: {
 		userId: v.string(),

@@ -79,28 +79,6 @@ export const runForUser: ReturnType<typeof internalAction> = internalAction({
 				now: Date.now(),
 			});
 			const solved = solveSchedule(input);
-			const isSupersededAfterSolve = await ctx.runQuery(
-				internal.scheduling.queries.isRunSuperseded,
-				{
-					runId: args.runId,
-					userId: args.userId,
-				},
-			);
-			if (isSupersededAfterSolve) {
-				await ctx.runMutation(internal.scheduling.mutations.failRun, {
-					runId: args.runId,
-					error: "Run superseded by a newer queued run.",
-					reasonCode: "SUPERSEDED_BY_NEWER_RUN",
-					feasibleOnTime: solved.feasibleOnTime,
-					horizonStart: solved.horizonStart,
-					horizonEnd: solved.horizonEnd,
-				});
-				return {
-					runId: args.runId,
-					status: "failed" as const,
-					reasonCode: "SUPERSEDED_BY_NEWER_RUN",
-				};
-			}
 
 			if (!solved.feasibleHard) {
 				await ctx.runMutation(internal.scheduling.mutations.failRun, {

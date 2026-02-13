@@ -112,18 +112,20 @@ export const applySchedulingBlocks = internalMutation({
 				message: "Scheduling run not found.",
 			});
 		}
-		const pending = await ctx.db
-			.query("schedulingRuns")
-			.withIndex("by_userId_status_startedAt", (q) =>
-				q.eq("userId", args.userId).eq("status", "pending"),
-			)
-			.collect();
-		const running = await ctx.db
-			.query("schedulingRuns")
-			.withIndex("by_userId_status_startedAt", (q) =>
-				q.eq("userId", args.userId).eq("status", "running"),
-			)
-			.collect();
+		const [pending, running] = await Promise.all([
+			ctx.db
+				.query("schedulingRuns")
+				.withIndex("by_userId_status_startedAt", (q) =>
+					q.eq("userId", args.userId).eq("status", "pending"),
+				)
+				.collect(),
+			ctx.db
+				.query("schedulingRuns")
+				.withIndex("by_userId_status_startedAt", (q) =>
+					q.eq("userId", args.userId).eq("status", "running"),
+				)
+				.collect(),
+		]);
 		const superseded = [...pending, ...running].some(
 			(run) => run._id !== args.runId && isRunNewer(run, currentRun),
 		);
