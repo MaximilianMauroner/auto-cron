@@ -16,7 +16,17 @@ import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/com
 import { useActionWithStatus } from "@/hooks/use-convex-status";
 import { getConvexErrorPayload } from "@/lib/convex-errors";
 import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duration";
-import type { HabitCategory, HabitFrequency, HabitPriority } from "@auto-cron/types";
+import type { HabitFrequency, HabitPriority } from "@auto-cron/types";
+
+/** @deprecated Temporary local type until UI is migrated to use real category IDs */
+type HabitCategory =
+	| "health"
+	| "fitness"
+	| "learning"
+	| "mindfulness"
+	| "productivity"
+	| "social"
+	| "other";
 import { Repeat2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
@@ -105,7 +115,8 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 				requestId: createRequestId(),
 				input: {
 					title: title.trim(),
-					category,
+					// biome-ignore lint/suspicious/noExplicitAny: temporary until UI migrated to category IDs
+					categoryId: category as any,
 					frequency,
 					recurrenceRule: recurrenceFromFrequency(frequency),
 					priority,

@@ -2,18 +2,22 @@ import { v } from "convex/values";
 import { query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
 import {
+	dateFormatValidator,
 	defaultTaskQuickCreateSettings,
 	hoursSetValidator,
 	isValidTimeZone,
+	normalizeDateFormat,
 	normalizeSchedulingDowntimeMinutes,
 	normalizeSchedulingStepMinutes,
 	normalizeTimeFormatPreference,
+	normalizeWeekStartsOn,
 	schedulingStepMinutesValidator,
 	taskCreationStatusValidator,
 	taskPriorityValidator,
 	taskSchedulingModeValidator,
 	taskVisibilityPreferenceValidator,
 	timeFormatPreferenceValidator,
+	weekStartsOnValidator,
 } from "./shared";
 
 const sanitizeTaskSchedulingMode = (
@@ -171,6 +175,10 @@ export const getTaskSchedulingDefaults = query({
 		schedulingDowntimeMinutes: v.number(),
 		schedulingStepMinutes: schedulingStepMinutesValidator,
 		taskQuickCreateDefaults: taskQuickCreateDefaultsValidator,
+		schedulingHorizonDays: v.number(),
+		weekStartsOn: weekStartsOnValidator,
+		dateFormat: dateFormatValidator,
+		timeFormatPreference: v.union(v.literal("12h"), v.literal("24h")),
 	}),
 	handler: withQueryAuth(async (ctx) => {
 		const settings = await ctx.db
@@ -184,6 +192,14 @@ export const getTaskSchedulingDefaults = query({
 			),
 			schedulingStepMinutes: normalizeSchedulingStepMinutes(settings?.schedulingStepMinutes),
 			taskQuickCreateDefaults: sanitizeTaskQuickCreateDefaults(settings),
+			schedulingHorizonDays: settings?.schedulingHorizonDays ?? 75,
+			weekStartsOn: normalizeWeekStartsOn(settings?.weekStartsOn) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+			dateFormat: normalizeDateFormat(settings?.dateFormat) as
+				| "MM/DD/YYYY"
+				| "DD/MM/YYYY"
+				| "YYYY-MM-DD",
+			timeFormatPreference: (normalizeTimeFormatPreference(settings?.timeFormatPreference) ??
+				"12h") as "12h" | "24h",
 		};
 	}),
 });

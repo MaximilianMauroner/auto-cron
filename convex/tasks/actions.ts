@@ -47,6 +47,7 @@ const taskCreateInputValidator = v.object({
 	visibilityPreference: v.optional(taskVisibilityPreferenceValidator),
 	preferredCalendarId: v.optional(v.string()),
 	color: v.optional(v.string()),
+	categoryId: v.optional(v.id("taskCategories")),
 });
 
 type TaskCreateInput = {
@@ -69,6 +70,7 @@ type TaskCreateInput = {
 	visibilityPreference?: "default" | "private";
 	preferredCalendarId?: string;
 	color?: string;
+	categoryId?: Id<"taskCategories">;
 };
 type CreateTaskArgs = {
 	requestId: string;

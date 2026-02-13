@@ -103,7 +103,8 @@ describe("hours sets", () => {
 			requestId: "hours-delete-habit",
 			input: {
 				title: "Habit on custom set",
-				category: "learning",
+				// biome-ignore lint/suspicious/noExplicitAny: placeholder until tests use real category IDs
+				categoryId: "placeholder_category_id" as any,
 				frequency: "weekly",
 				durationMinutes: 45,
 				hoursSetId: customSetId,

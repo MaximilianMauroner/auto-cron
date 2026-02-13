@@ -43,13 +43,17 @@ import {
 import { getConvexErrorPayload } from "@/lib/convex-errors";
 import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duration";
 import { cn } from "@/lib/utils";
-import type {
-	HabitCategory,
-	HabitDTO,
-	HabitFrequency,
-	HabitPriority,
-	HoursSetDTO,
-} from "@auto-cron/types";
+import type { HabitDTO, HabitFrequency, HabitPriority, HoursSetDTO } from "@auto-cron/types";
+
+/** @deprecated Temporary local type until UI is migrated to use real category IDs */
+type HabitCategory =
+	| "health"
+	| "fitness"
+	| "learning"
+	| "mindfulness"
+	| "productivity"
+	| "social"
+	| "other";
 import {
 	Calendar,
 	CalendarDays,
@@ -777,7 +781,8 @@ export default function HabitsPage() {
 			title: form.title.trim(),
 			description: form.description.trim() || undefined,
 			priority: form.priority,
-			category: form.category,
+			// biome-ignore lint/suspicious/noExplicitAny: temporary until UI migrated to category IDs
+			categoryId: form.category as any,
 			recurrenceRule: recurrenceFromFrequency(form.frequency),
 			recoveryPolicy: form.recoveryPolicy,
 			frequency: form.frequency,
@@ -874,7 +879,8 @@ export default function HabitsPage() {
 			title: habit.title,
 			description: habit.description ?? "",
 			priority: habit.priority ?? "medium",
-			category: habit.category,
+			// biome-ignore lint/suspicious/noExplicitAny: temporary until UI migrated to category IDs
+			category: (habit as any).category ?? "other",
 			frequency: habit.frequency ?? frequencyFromRecurrenceRule(habit.recurrenceRule),
 			repeatsPerPeriod: String(habit.repeatsPerPeriod ?? 1),
 			minDurationMinutes: formatDurationFromMinutes(
@@ -1332,7 +1338,10 @@ function HabitCard({
 				<Switch checked={habit.isActive} disabled={isBusy} onCheckedChange={onToggle} />
 			</div>
 			<div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-				<Badge variant="outline">{categoryLabels[habit.category]}</Badge>
+				<Badge variant="outline">
+					{/* biome-ignore lint/suspicious/noExplicitAny: temporary until UI migrated to category IDs */}
+					{categoryLabels[((habit as any).category ?? "other") as HabitCategory]}
+				</Badge>
 				<Badge className={priorityClass[habit.priority ?? "medium"]}>
 					{priorityLabels[habit.priority ?? "medium"]}
 				</Badge>

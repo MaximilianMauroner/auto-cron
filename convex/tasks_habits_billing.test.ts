@@ -61,7 +61,8 @@ describe("tasks/habits billing checks", () => {
 				requestId: "req-habit-unauth",
 				input: {
 					title: "Blocked habit",
-					category: "health",
+					// biome-ignore lint/suspicious/noExplicitAny: placeholder until tests use real category IDs
+					categoryId: "placeholder_category_id" as any,
 					frequency: "daily",
 					durationMinutes: 20,
 				},
@@ -93,7 +94,8 @@ describe("tasks/habits billing checks", () => {
 				requestId: "deny-habit",
 				input: {
 					title: "Denied habit",
-					category: "learning",
+					// biome-ignore lint/suspicious/noExplicitAny: placeholder until tests use real category IDs
+					categoryId: "placeholder_category_id" as any,
 					frequency: "weekly",
 					durationMinutes: 45,
 				},
@@ -178,7 +180,8 @@ describe("tasks/habits billing checks", () => {
 			requestId: "seed-habit",
 			input: {
 				title: "Habit to update",
-				category: "productivity",
+				// biome-ignore lint/suspicious/noExplicitAny: placeholder until tests use real category IDs
+				categoryId: "placeholder_category_id" as any,
 				frequency: "daily",
 				durationMinutes: 15,
 			},
@@ -280,7 +283,8 @@ describe("tasks/habits billing checks", () => {
 			requestId: "clear-habit-fields",
 			input: {
 				title: "Habit with optional fields",
-				category: "health",
+				// biome-ignore lint/suspicious/noExplicitAny: placeholder until tests use real category IDs
+				categoryId: "placeholder_category_id" as any,
 				frequency: "weekly",
 				durationMinutes: 45,
 				location: "Gym",

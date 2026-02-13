@@ -9,16 +9,6 @@ const habitFrequencyValidator = v.union(
 	v.literal("monthly"),
 );
 
-const habitCategoryValidator = v.union(
-	v.literal("health"),
-	v.literal("fitness"),
-	v.literal("learning"),
-	v.literal("mindfulness"),
-	v.literal("productivity"),
-	v.literal("social"),
-	v.literal("other"),
-);
-
 const habitPriorityValidator = v.union(
 	v.literal("low"),
 	v.literal("medium"),
@@ -53,7 +43,7 @@ const habitDtoValidator = v.object({
 	title: v.string(),
 	description: v.optional(v.string()),
 	priority: v.optional(habitPriorityValidator),
-	category: habitCategoryValidator,
+	categoryId: v.id("taskCategories"),
 	recurrenceRule: v.optional(v.string()),
 	recoveryPolicy: v.optional(habitRecoveryPolicyValidator),
 	frequency: v.optional(habitFrequencyValidator),

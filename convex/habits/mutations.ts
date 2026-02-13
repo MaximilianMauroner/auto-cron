@@ -13,16 +13,6 @@ const habitFrequencyValidator = v.union(
 	v.literal("monthly"),
 );
 
-const habitCategoryValidator = v.union(
-	v.literal("health"),
-	v.literal("fitness"),
-	v.literal("learning"),
-	v.literal("mindfulness"),
-	v.literal("productivity"),
-	v.literal("social"),
-	v.literal("other"),
-);
-
 const habitPriorityValidator = v.union(
 	v.literal("low"),
 	v.literal("medium"),
@@ -62,7 +52,7 @@ const habitCreateInputValidator = v.object({
 	title: v.string(),
 	description: v.optional(v.string()),
 	priority: v.optional(habitPriorityValidator),
-	category: habitCategoryValidator,
+	categoryId: v.id("taskCategories"),
 	recurrenceRule: v.optional(v.string()),
 	recoveryPolicy: v.optional(habitRecoveryPolicyValidator),
 	frequency: v.optional(habitFrequencyValidator),
@@ -97,7 +87,7 @@ const habitUpdatePatchValidator = v.object({
 	title: v.optional(v.string()),
 	description: v.optional(v.union(v.string(), v.null())),
 	priority: v.optional(v.union(habitPriorityValidator, v.null())),
-	category: v.optional(habitCategoryValidator),
+	categoryId: v.optional(v.id("taskCategories")),
 	recurrenceRule: v.optional(v.union(v.string(), v.null())),
 	recoveryPolicy: v.optional(v.union(habitRecoveryPolicyValidator, v.null())),
 	frequency: v.optional(v.union(habitFrequencyValidator, v.null())),
@@ -129,19 +119,11 @@ const habitUpdatePatchValidator = v.object({
 });
 
 type HabitFrequency = "daily" | "weekly" | "biweekly" | "monthly";
-type HabitCategory =
-	| "health"
-	| "fitness"
-	| "learning"
-	| "mindfulness"
-	| "productivity"
-	| "social"
-	| "other";
 type HabitCreateInput = {
 	title: string;
 	description?: string;
 	priority?: "low" | "medium" | "high" | "critical";
-	category: HabitCategory;
+	categoryId: Id<"taskCategories">;
 	recurrenceRule?: string;
 	recoveryPolicy?: "skip" | "recover";
 	frequency?: HabitFrequency;
@@ -175,7 +157,7 @@ type HabitUpdatePatch = {
 	title?: string;
 	description?: string | null;
 	priority?: "low" | "medium" | "high" | "critical" | null;
-	category?: HabitCategory;
+	categoryId?: Id<"taskCategories">;
 	recurrenceRule?: string | null;
 	recoveryPolicy?: "skip" | "recover" | null;
 	frequency?: HabitFrequency | null;
@@ -352,7 +334,7 @@ export const internalCreateHabitForUserWithOperation = internalMutation({
 			title: args.input.title,
 			description: args.input.description,
 			priority: args.input.priority ?? "medium",
-			category: args.input.category,
+			categoryId: args.input.categoryId,
 			recurrenceRule:
 				args.input.recurrenceRule ?? recurrenceFromLegacyFrequency(args.input.frequency),
 			recoveryPolicy: args.input.recoveryPolicy ?? "skip",

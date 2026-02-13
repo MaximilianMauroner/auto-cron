@@ -47,6 +47,7 @@ const taskCreateInputValidator = v.object({
 	visibilityPreference: v.optional(taskVisibilityPreferenceValidator),
 	preferredCalendarId: v.optional(v.string()),
 	color: v.optional(v.string()),
+	categoryId: v.optional(v.id("taskCategories")),
 });
 
 const taskUpdatePatchValidator = v.object({
@@ -97,6 +98,7 @@ type TaskCreateInput = {
 	visibilityPreference?: "default" | "private";
 	preferredCalendarId?: string;
 	color?: string;
+	categoryId?: Id<"taskCategories">;
 };
 type TaskUpdatePatch = {
 	title?: string;
@@ -324,6 +326,25 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 		const restMinutes = normalizeOptionalNonNegativeMinutes(args.input.restMinutes);
 		const travelMinutes = normalizeOptionalNonNegativeMinutes(args.input.travelMinutes);
 		const location = args.input.location?.trim();
+		// Get default category if none provided
+		let categoryId = args.input.categoryId;
+		if (!categoryId) {
+			const defaultCategory = await ctx.db
+				.query("taskCategories")
+				.withIndex("by_userId_isDefault", (q) => q.eq("userId", args.userId).eq("isDefault", true))
+				.first();
+			if (defaultCategory) {
+				categoryId = defaultCategory._id;
+			}
+		}
+
+		if (!categoryId) {
+			throw new ConvexError({
+				code: "NO_CATEGORY",
+				message: "No category provided and no default category found",
+			});
+		}
+
 		const insertedId = await ctx.db.insert("tasks", {
 			userId: args.userId,
 			title: args.input.title,
@@ -349,6 +370,7 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 			visibilityPreference: args.input.visibilityPreference,
 			preferredCalendarId: args.input.preferredCalendarId,
 			color: args.input.color,
+			categoryId,
 		});
 
 		if (reservation) {
