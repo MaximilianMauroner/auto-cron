@@ -30,7 +30,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -2850,6 +2850,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			}}
 		>
 			<SheetContent side="right" className="w-96 p-0 sm:max-w-md" showCloseButton={false}>
+				<SheetTitle className="sr-only">Event editor</SheetTitle>
 				<div className="flex h-full flex-col gap-3 overflow-y-auto p-3">
 					<div className="flex items-center justify-between">
 						<div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Event</div>
