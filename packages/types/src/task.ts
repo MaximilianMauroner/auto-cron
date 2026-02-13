@@ -12,7 +12,7 @@ export const priorityWeights: Record<Priority, number> = {
 export const taskStatuses = ["backlog", "queued", "scheduled", "in_progress", "done"] as const;
 export type TaskStatus = (typeof taskStatuses)[number];
 
-export const taskSchedulingModes = ["fastest", "backfacing", "parallel"] as const;
+export const taskSchedulingModes = ["fastest", "balanced", "packed"] as const;
 export type TaskSchedulingMode = (typeof taskSchedulingModes)[number];
 
 export const taskVisibilityPreferences = ["default", "private"] as const;
@@ -36,6 +36,9 @@ export type TaskDTO = {
 	splitAllowed?: boolean;
 	minChunkMinutes?: number;
 	maxChunkMinutes?: number;
+	restMinutes?: number;
+	travelMinutes?: number;
+	location?: string;
 	sendToUpNext?: boolean;
 	hoursSetId?: string;
 	schedulingMode?: TaskSchedulingMode;
@@ -56,6 +59,9 @@ export type TaskCreateInput = {
 	splitAllowed?: boolean;
 	minChunkMinutes?: number;
 	maxChunkMinutes?: number;
+	restMinutes?: number;
+	travelMinutes?: number;
+	location?: string;
 	sendToUpNext?: boolean;
 	hoursSetId?: string;
 	schedulingMode?: TaskSchedulingMode;
@@ -78,6 +84,9 @@ export type TaskUpdateInput = {
 	splitAllowed?: boolean;
 	minChunkMinutes?: number;
 	maxChunkMinutes?: number;
+	restMinutes?: number;
+	travelMinutes?: number;
+	location?: string;
 	sendToUpNext?: boolean;
 	hoursSetId?: string;
 	schedulingMode?: TaskSchedulingMode;

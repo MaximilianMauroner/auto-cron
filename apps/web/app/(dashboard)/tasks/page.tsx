@@ -67,6 +67,7 @@ type TaskEditorState = {
 	id?: string;
 	title: string;
 	description: string;
+	location: string;
 	priority: Priority;
 	status: TaskStatus;
 	estimatedMinutes: string;
@@ -75,11 +76,27 @@ type TaskEditorState = {
 	splitAllowed: boolean;
 	minChunkMinutes: string;
 	maxChunkMinutes: string;
+	restMinutes: string;
+	travelMinutes: string;
 	sendToUpNext: boolean;
 	hoursSetId: string;
 	schedulingMode: "default" | TaskSchedulingMode;
 	visibilityPreference: TaskVisibilityPreference;
 	preferredCalendarId: string;
+	color: string;
+};
+
+type TaskQuickCreateDefaults = {
+	priority: Priority;
+	status: "backlog" | "queued";
+	estimatedMinutes: number;
+	splitAllowed: boolean;
+	minChunkMinutes: number;
+	maxChunkMinutes: number;
+	restMinutes: number;
+	travelMinutes: number;
+	sendToUpNext: boolean;
+	visibilityPreference: TaskVisibilityPreference;
 	color: string;
 };
 
@@ -136,8 +153,8 @@ const taskColors = [
 
 const schedulingModeLabels: Record<TaskSchedulingMode, string> = {
 	fastest: "Fastest",
-	backfacing: "Backfacing",
-	parallel: "Parallel",
+	balanced: "Balanced",
+	packed: "Packed",
 };
 
 const visibilityLabels: Record<TaskVisibilityPreference, string> = {
@@ -145,24 +162,49 @@ const visibilityLabels: Record<TaskVisibilityPreference, string> = {
 	private: "Make this task private",
 };
 
-const initialCreateState: TaskEditorState = {
-	title: "",
-	description: "",
+const fallbackTaskQuickCreateDefaults: TaskQuickCreateDefaults = {
 	priority: "medium",
 	status: "backlog",
-	estimatedMinutes: "30 mins",
-	deadline: "",
-	scheduleAfter: "",
+	estimatedMinutes: 30,
 	splitAllowed: true,
-	minChunkMinutes: "30 mins",
-	maxChunkMinutes: "3 hrs",
+	minChunkMinutes: 30,
+	maxChunkMinutes: 180,
+	restMinutes: 0,
+	travelMinutes: 0,
 	sendToUpNext: false,
-	hoursSetId: "",
-	schedulingMode: "default",
 	visibilityPreference: "private",
-	preferredCalendarId: "primary",
 	color: "#f59e0b",
 };
+
+const createTaskEditorState = ({
+	defaults,
+	defaultHoursSetId,
+	defaultCalendarId,
+}: {
+	defaults: TaskQuickCreateDefaults;
+	defaultHoursSetId: string;
+	defaultCalendarId: string;
+}): TaskEditorState => ({
+	title: "",
+	description: "",
+	location: "",
+	priority: defaults.priority,
+	status: defaults.status,
+	estimatedMinutes: formatDurationFromMinutes(defaults.estimatedMinutes),
+	deadline: "",
+	scheduleAfter: "",
+	splitAllowed: defaults.splitAllowed,
+	minChunkMinutes: formatDurationFromMinutes(defaults.minChunkMinutes),
+	maxChunkMinutes: formatDurationFromMinutes(defaults.maxChunkMinutes),
+	restMinutes: formatDurationFromMinutes(defaults.restMinutes),
+	travelMinutes: formatDurationFromMinutes(defaults.travelMinutes),
+	sendToUpNext: defaults.sendToUpNext,
+	hoursSetId: defaultHoursSetId,
+	schedulingMode: "default",
+	visibilityPreference: defaults.visibilityPreference,
+	preferredCalendarId: defaultCalendarId,
+	color: defaults.color,
+});
 
 const createRequestId = () => {
 	if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
@@ -214,7 +256,13 @@ export default function TasksPage() {
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
 	const [isEditOpen, setIsEditOpen] = useState(false);
 	const [paywallOpen, setPaywallOpen] = useState(false);
-	const [createForm, setCreateForm] = useState<TaskEditorState>(initialCreateState);
+	const [createForm, setCreateForm] = useState<TaskEditorState>(() =>
+		createTaskEditorState({
+			defaults: fallbackTaskQuickCreateDefaults,
+			defaultHoursSetId: "",
+			defaultCalendarId: "primary",
+		}),
+	);
 	const [editForm, setEditForm] = useState<TaskEditorState | null>(null);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -228,6 +276,10 @@ export default function TasksPage() {
 	);
 	const defaultTaskSchedulingMode =
 		schedulingDefaultsQuery.data?.defaultTaskSchedulingMode ?? "fastest";
+	const taskQuickCreateDefaults = useMemo(
+		() => schedulingDefaultsQuery.data?.taskQuickCreateDefaults ?? fallbackTaskQuickCreateDefaults,
+		[schedulingDefaultsQuery.data?.taskQuickCreateDefaults],
+	);
 	const defaultHoursSetId = hoursSets.find((hoursSet) => hoursSet.isDefault)?._id ?? "";
 	const googleCalendarsQuery = useAuthenticatedQueryWithStatus(
 		api.calendar.queries.listGoogleCalendars,
@@ -252,6 +304,18 @@ export default function TasksPage() {
 	}, [googleCalendars]);
 	const defaultCalendarId =
 		editableGoogleCalendars.find((calendar) => calendar.primary)?.id ?? "primary";
+
+	const openCreate = () => {
+		setCreateForm(
+			createTaskEditorState({
+				defaults: taskQuickCreateDefaults,
+				defaultHoursSetId,
+				defaultCalendarId,
+			}),
+		);
+		setErrorMessage(null);
+		setIsCreateOpen(true);
+	};
 
 	useEffect(() => {
 		if (!isCreateOpen) return;
@@ -328,6 +392,8 @@ export default function TasksPage() {
 		const estimatedMinutesParsed = parseDurationToMinutes(createForm.estimatedMinutes);
 		const minChunkMinutesParsed = parseDurationToMinutes(createForm.minChunkMinutes);
 		const maxChunkMinutesParsed = parseDurationToMinutes(createForm.maxChunkMinutes);
+		const restMinutesParsed = parseDurationToMinutes(createForm.restMinutes);
+		const travelMinutesParsed = parseDurationToMinutes(createForm.travelMinutes);
 		if (
 			!createForm.title.trim() ||
 			estimatedMinutesParsed === null ||
@@ -346,11 +412,22 @@ export default function TasksPage() {
 			setErrorMessage("Split duration range is invalid.");
 			return;
 		}
+		if (
+			restMinutesParsed === null ||
+			travelMinutesParsed === null ||
+			restMinutesParsed < 0 ||
+			travelMinutesParsed < 0
+		) {
+			setErrorMessage("Rest and travel durations must be 0 or greater.");
+			return;
+		}
 		const estimatedMinutes = estimatedMinutesParsed;
+		const location = createForm.location.trim();
 
 		const payload = {
 			title: createForm.title.trim(),
 			description: createForm.description.trim() || undefined,
+			location: location || undefined,
 			priority: createForm.priority,
 			status: (createForm.sendToUpNext || createForm.status === "queued" ? "queued" : "backlog") as
 				| "backlog"
@@ -361,6 +438,8 @@ export default function TasksPage() {
 			splitAllowed: createForm.splitAllowed,
 			minChunkMinutes: createForm.splitAllowed ? (minChunkMinutesParsed ?? undefined) : undefined,
 			maxChunkMinutes: createForm.splitAllowed ? (maxChunkMinutesParsed ?? undefined) : undefined,
+			restMinutes: restMinutesParsed,
+			travelMinutes: travelMinutesParsed,
 			sendToUpNext: createForm.sendToUpNext,
 			hoursSetId: createForm.hoursSetId ? (createForm.hoursSetId as Id<"hoursSets">) : undefined,
 			schedulingMode:
@@ -373,7 +452,13 @@ export default function TasksPage() {
 		setErrorMessage(null);
 		try {
 			await createTask({ requestId: createRequestId(), input: payload });
-			setCreateForm(initialCreateState);
+			setCreateForm(
+				createTaskEditorState({
+					defaults: taskQuickCreateDefaults,
+					defaultHoursSetId,
+					defaultCalendarId,
+				}),
+			);
 			setIsCreateOpen(false);
 		} catch (error) {
 			applyBillingAwareError(error);
@@ -385,6 +470,8 @@ export default function TasksPage() {
 		const estimatedMinutesParsed = parseDurationToMinutes(editForm.estimatedMinutes);
 		const minChunkMinutesParsed = parseDurationToMinutes(editForm.minChunkMinutes);
 		const maxChunkMinutesParsed = parseDurationToMinutes(editForm.maxChunkMinutes);
+		const restMinutesParsed = parseDurationToMinutes(editForm.restMinutes);
+		const travelMinutesParsed = parseDurationToMinutes(editForm.travelMinutes);
 		if (!editForm.title.trim() || estimatedMinutesParsed === null || estimatedMinutesParsed <= 0) {
 			setErrorMessage("Please provide a title and valid estimated duration.");
 			return;
@@ -399,11 +486,22 @@ export default function TasksPage() {
 			setErrorMessage("Split duration range is invalid.");
 			return;
 		}
+		if (
+			restMinutesParsed === null ||
+			travelMinutesParsed === null ||
+			restMinutesParsed < 0 ||
+			travelMinutesParsed < 0
+		) {
+			setErrorMessage("Rest and travel durations must be 0 or greater.");
+			return;
+		}
 		const estimatedMinutes = estimatedMinutesParsed;
+		const location = editForm.location.trim();
 
 		const patch = {
 			title: editForm.title.trim(),
 			description: editForm.description.trim() || null,
+			location: location || null,
 			priority: editForm.priority,
 			status: editForm.sendToUpNext && editForm.status === "backlog" ? "queued" : editForm.status,
 			estimatedMinutes,
@@ -412,6 +510,8 @@ export default function TasksPage() {
 			splitAllowed: editForm.splitAllowed,
 			minChunkMinutes: editForm.splitAllowed ? (minChunkMinutesParsed ?? null) : null,
 			maxChunkMinutes: editForm.splitAllowed ? (maxChunkMinutesParsed ?? null) : null,
+			restMinutes: restMinutesParsed ?? null,
+			travelMinutes: travelMinutesParsed ?? null,
 			sendToUpNext: editForm.sendToUpNext,
 			hoursSetId: editForm.hoursSetId ? (editForm.hoursSetId as Id<"hoursSets">) : null,
 			schedulingMode: editForm.schedulingMode === "default" ? null : editForm.schedulingMode,
@@ -468,6 +568,7 @@ export default function TasksPage() {
 			id: task._id,
 			title: task.title,
 			description: task.description ?? "",
+			location: task.location ?? "",
 			priority: task.priority,
 			status: task.status,
 			estimatedMinutes: formatDurationFromMinutes(task.estimatedMinutes),
@@ -476,6 +577,8 @@ export default function TasksPage() {
 			splitAllowed: task.splitAllowed ?? false,
 			minChunkMinutes: formatDurationFromMinutes(task.minChunkMinutes ?? 30),
 			maxChunkMinutes: formatDurationFromMinutes(task.maxChunkMinutes ?? 180),
+			restMinutes: formatDurationFromMinutes(task.restMinutes ?? 0),
+			travelMinutes: formatDurationFromMinutes(task.travelMinutes ?? 0),
 			sendToUpNext: task.sendToUpNext ?? task.status === "queued",
 			hoursSetId: task.hoursSetId ?? defaultHoursSetId,
 			schedulingMode: task.schedulingMode ?? "default",
@@ -505,7 +608,7 @@ export default function TasksPage() {
 								Plan what matters, queue next execution, and keep scheduling unlimited on all plans.
 								Only creation is plan-metered.
 							</p>
-							<Button onClick={() => setIsCreateOpen(true)} disabled={busy} className="gap-1.5">
+							<Button onClick={openCreate} disabled={busy} className="gap-1.5">
 								<Plus className="size-4" />
 								New task
 							</Button>
@@ -548,7 +651,7 @@ export default function TasksPage() {
 								Create your first task and move it from backlog into execution.
 							</EmptyDescription>
 						</EmptyHeader>
-						<Button onClick={() => setIsCreateOpen(true)} className="gap-1.5">
+						<Button onClick={openCreate} className="gap-1.5">
 							<Plus className="size-4" />
 							Create task
 						</Button>
@@ -629,6 +732,7 @@ export default function TasksPage() {
 				open={isCreateOpen}
 				onOpenChange={setIsCreateOpen}
 				title="Create task"
+				compactCreate
 				value={createForm}
 				onChange={setCreateForm}
 				onSubmit={onCreateTask}
@@ -648,7 +752,14 @@ export default function TasksPage() {
 					}
 				}}
 				title="Edit task"
-				value={editForm ?? initialCreateState}
+				value={
+					editForm ??
+					createTaskEditorState({
+						defaults: taskQuickCreateDefaults,
+						defaultHoursSetId,
+						defaultCalendarId,
+					})
+				}
 				onChange={(nextValue) => setEditForm(nextValue)}
 				onSubmit={onSaveEdit}
 				submitLabel={isUpdatingTask ? "Saving..." : "Save changes"}
@@ -729,6 +840,11 @@ function TaskCard({
 						Split {task.minChunkMinutes ?? 30}-{task.maxChunkMinutes ?? 180}m
 					</span>
 				) : null}
+				{task.location ? (
+					<span className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-0.5">
+						At {task.location}
+					</span>
+				) : null}
 				<span className="inline-flex items-center gap-1 rounded-md border border-border/70 px-2 py-0.5">
 					Mode{" "}
 					{schedulingModeLabels[task.effectiveSchedulingMode ?? task.schedulingMode ?? "fastest"]}
@@ -801,6 +917,7 @@ function TaskDialog({
 	open,
 	onOpenChange,
 	title,
+	compactCreate = false,
 	value,
 	onChange,
 	onSubmit,
@@ -813,6 +930,7 @@ function TaskDialog({
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
 	title: string;
+	compactCreate?: boolean;
 	value: TaskEditorState;
 	onChange: (value: TaskEditorState) => void;
 	onSubmit: () => void;
@@ -835,6 +953,12 @@ function TaskDialog({
 		const base = current ?? 30;
 		updateEstimatedMinutes(base + delta);
 	};
+	const [showAdvanced, setShowAdvanced] = useState(!compactCreate);
+
+	useEffect(() => {
+		if (!open) return;
+		setShowAdvanced(!compactCreate);
+	}, [compactCreate, open]);
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -846,311 +970,443 @@ function TaskDialog({
 					</DialogTitle>
 				</DialogHeader>
 				<div className="max-h-[70vh] overflow-y-auto pr-1">
-					<Accordion type="multiple" defaultValue={["general", "scheduling", "visibility"]}>
-						<AccordionItem value="general">
-							<AccordionTrigger>General details</AccordionTrigger>
-							<AccordionContent className="space-y-4">
+					{compactCreate && !showAdvanced ? (
+						<div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
+							<div className="space-y-2">
+								<Label htmlFor="quick-task-name">Task name</Label>
+								<Input
+									id="quick-task-name"
+									placeholder="What needs to get done?"
+									value={value.title}
+									onChange={(event) => onChange({ ...value, title: event.target.value })}
+								/>
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="quick-task-location">Location (optional)</Label>
+								<Input
+									id="quick-task-location"
+									placeholder="Office, gym, client site..."
+									value={value.location}
+									onChange={(event) => onChange({ ...value, location: event.target.value })}
+								/>
+							</div>
+
+							<div className="grid gap-3 md:grid-cols-2">
 								<div className="space-y-2">
-									<Label htmlFor="task-name">Task name</Label>
-									<Input
-										id="task-name"
-										placeholder="Task name..."
-										value={value.title}
-										onChange={(event) => onChange({ ...value, title: event.target.value })}
+									<Label>Time needed</Label>
+									<DurationInput
+										value={value.estimatedMinutes}
+										onChange={(estimatedMinutes) => onChange({ ...value, estimatedMinutes })}
 									/>
 								</div>
-								<div className="grid gap-3 md:grid-cols-3">
-									<div className="space-y-2">
-										<Label>Color</Label>
-										<div className="flex flex-wrap gap-2 rounded-lg border border-border p-2">
-											{taskColors.map((color) => (
-												<button
-													key={color}
-													type="button"
-													onClick={() => onChange({ ...value, color })}
-													className={cn(
-														"size-6 rounded-full border transition-transform hover:scale-105",
-														value.color === color
-															? "border-foreground ring-2 ring-foreground/20"
-															: "border-border",
-													)}
-													style={{ backgroundColor: color }}
-													aria-label={`Select ${color}`}
-												/>
-											))}
-										</div>
-									</div>
-									<div className="space-y-2">
-										<Label>Hours</Label>
-										<Select
-											value={value.hoursSetId || undefined}
-											onValueChange={(hoursSetId) => onChange({ ...value, hoursSetId })}
-										>
-											<SelectTrigger>
-												<SelectValue placeholder="Select hours set" />
-											</SelectTrigger>
-											<SelectContent>
-												{hoursSets.map((hoursSet) => (
-													<SelectItem key={hoursSet._id} value={hoursSet._id}>
-														{hoursSet.name}
-														{hoursSet.isDefault ? " (Default)" : ""}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									</div>
-									<div className="space-y-2">
-										<Label>Calendar</Label>
-										<Select
-											value={value.preferredCalendarId}
-											onValueChange={(preferredCalendarId) =>
-												onChange({ ...value, preferredCalendarId })
-											}
-										>
-											<SelectTrigger>
-												<SelectValue />
-											</SelectTrigger>
-											<SelectContent>
-												{calendars.map((calendar) => (
-													<SelectItem key={calendar.id} value={calendar.id}>
-														{calendar.name}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									</div>
-								</div>
 								<div className="space-y-2">
-									<Label htmlFor="task-notes">Notes</Label>
-									<Textarea
-										id="task-notes"
-										placeholder="Add notes here..."
-										value={value.description}
-										onChange={(event) => onChange({ ...value, description: event.target.value })}
-										className="min-h-24"
+									<Label>Due date</Label>
+									<DateTimePicker
+										value={value.deadline}
+										onChange={(deadline) => onChange({ ...value, deadline })}
+										placeholder="Anytime"
+										minuteStep={15}
 									/>
 								</div>
-							</AccordionContent>
-						</AccordionItem>
+							</div>
 
-						<AccordionItem value="scheduling">
-							<AccordionTrigger>Scheduling</AccordionTrigger>
-							<AccordionContent className="space-y-4">
-								<div className="grid gap-3 md:grid-cols-2">
-									<div className="space-y-2">
-										<Label>Priority</Label>
-										<Select
-											value={value.priority}
-											onValueChange={(priority) =>
-												onChange({ ...value, priority: priority as Priority })
-											}
-										>
-											<SelectTrigger>
-												<SelectValue placeholder="Priority" />
-											</SelectTrigger>
-											<SelectContent>
-												{Object.keys(priorityClass).map((priority) => (
-													<SelectItem key={priority} value={priority}>
-														{priority}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									</div>
-									<div className="space-y-2">
-										<Label>Status</Label>
-										<Select
-											value={value.status}
-											onValueChange={(status) =>
-												onChange({ ...value, status: status as TaskStatus })
-											}
-										>
-											<SelectTrigger>
-												<SelectValue placeholder="Status" />
-											</SelectTrigger>
-											<SelectContent>
-												{statusOrder.map((status) => (
-													<SelectItem key={status} value={status}>
-														{statusTitles[status]}
-													</SelectItem>
-												))}
-											</SelectContent>
-										</Select>
-									</div>
-								</div>
-
-								<div className="grid gap-3 md:grid-cols-2">
-									<div className="space-y-2">
-										<Label>Scheduling mode</Label>
-										<Select
-											value={value.schedulingMode}
-											onValueChange={(schedulingMode) =>
-												onChange({
-													...value,
-													schedulingMode: schedulingMode as "default" | TaskSchedulingMode,
-												})
-											}
-										>
-											<SelectTrigger>
-												<SelectValue placeholder="Scheduling mode" />
-											</SelectTrigger>
-											<SelectContent>
-												<SelectItem value="default">
-													Use default ({schedulingModeLabels[defaultTaskSchedulingMode]})
+							<div className="grid gap-3 md:grid-cols-2">
+								<div className="space-y-2">
+									<Label>Priority</Label>
+									<Select
+										value={value.priority}
+										onValueChange={(priority) =>
+											onChange({ ...value, priority: priority as Priority })
+										}
+									>
+										<SelectTrigger>
+											<SelectValue placeholder="Priority" />
+										</SelectTrigger>
+										<SelectContent>
+											{Object.keys(priorityClass).map((priority) => (
+												<SelectItem key={priority} value={priority}>
+													{priority}
 												</SelectItem>
-												{Object.entries(schedulingModeLabels).map(([mode, label]) => (
-													<SelectItem key={mode} value={mode}>
-														{label}
-													</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+								<div className="flex items-end">
+									<div className="flex w-full items-center justify-between rounded-lg border border-border px-3 py-2">
+										<div>
+											<p className="text-sm font-medium">Send to Up Next</p>
+											<p className="text-xs text-muted-foreground">Queue it immediately.</p>
+										</div>
+										<Switch
+											checked={value.sendToUpNext}
+											onCheckedChange={(sendToUpNext) => onChange({ ...value, sendToUpNext })}
+										/>
+									</div>
+								</div>
+							</div>
+
+							<p className="text-xs text-muted-foreground">
+								Using account defaults for split, rest, travel, visibility, color, hours, and
+								calendar. Change these in{" "}
+								<a href="/settings/scheduling" className="underline underline-offset-2">
+									Settings
+								</a>
+								.
+							</p>
+						</div>
+					) : null}
+
+					{!compactCreate || showAdvanced ? (
+						<Accordion
+							type="multiple"
+							defaultValue={compactCreate ? ["general"] : ["general", "scheduling", "visibility"]}
+						>
+							<AccordionItem value="general">
+								<AccordionTrigger>General details</AccordionTrigger>
+								<AccordionContent className="space-y-4">
+									<div className="space-y-2">
+										<Label htmlFor="task-name">Task name</Label>
+										<Input
+											id="task-name"
+											placeholder="Task name..."
+											value={value.title}
+											onChange={(event) => onChange({ ...value, title: event.target.value })}
+										/>
+									</div>
+									<div className="grid gap-3 md:grid-cols-3">
+										<div className="space-y-2">
+											<Label>Color</Label>
+											<div className="flex flex-wrap gap-2 rounded-lg border border-border p-2">
+												{taskColors.map((color) => (
+													<button
+														key={color}
+														type="button"
+														onClick={() => onChange({ ...value, color })}
+														className={cn(
+															"size-6 rounded-full border transition-transform hover:scale-105",
+															value.color === color
+																? "border-foreground ring-2 ring-foreground/20"
+																: "border-border",
+														)}
+														style={{ backgroundColor: color }}
+														aria-label={`Select ${color}`}
+													/>
 												))}
-											</SelectContent>
-										</Select>
-										<p className="text-xs text-muted-foreground">
-											This stores mode intent for the scheduler. Algorithms remain unchanged.
-										</p>
-									</div>
-								</div>
-
-								<div className="grid gap-3 md:grid-cols-[1fr_auto]">
-									<div className="space-y-2">
-										<Label>Time needed</Label>
-										<div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon"
-												className="size-7"
-												onClick={() => bumpEstimatedMinutes(-15)}
-											>
-												<ArrowDown className="size-3.5" />
-											</Button>
-											<Input
-												type="text"
-												inputMode="text"
-												value={value.estimatedMinutes}
-												onChange={(event) =>
-													onChange({ ...value, estimatedMinutes: event.target.value })
-												}
-												className="h-9 border-0 shadow-none focus-visible:ring-0"
-											/>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon"
-												className="size-7"
-												onClick={() => bumpEstimatedMinutes(15)}
-											>
-												<ArrowUp className="size-3.5" />
-											</Button>
-										</div>
-									</div>
-									<div className="flex items-end">
-										<div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
-											<Switch
-												checked={value.splitAllowed}
-												onCheckedChange={(splitAllowed) => onChange({ ...value, splitAllowed })}
-											/>
-											<Label>Split up</Label>
-										</div>
-									</div>
-								</div>
-
-								<div className="grid gap-3 md:grid-cols-2">
-									<div className="space-y-2">
-										<Label>Min duration (mins)</Label>
-										<DurationInput
-											value={value.minChunkMinutes}
-											onChange={(minChunkMinutes) => onChange({ ...value, minChunkMinutes })}
-											className={cn(!value.splitAllowed && "pointer-events-none opacity-60")}
-										/>
-									</div>
-									<div className="space-y-2">
-										<Label>Max duration (mins)</Label>
-										<DurationInput
-											value={value.maxChunkMinutes}
-											onChange={(maxChunkMinutes) => onChange({ ...value, maxChunkMinutes })}
-											className={cn(!value.splitAllowed && "pointer-events-none opacity-60")}
-										/>
-									</div>
-								</div>
-
-								<div className="grid gap-3 md:grid-cols-2">
-									<div className="space-y-2">
-										<Label>Schedule after</Label>
-										<DateTimePicker
-											value={value.scheduleAfter}
-											onChange={(scheduleAfter) => onChange({ ...value, scheduleAfter })}
-											placeholder="Anytime"
-											minuteStep={15}
-										/>
-									</div>
-									<div className="space-y-2">
-										<Label>Due date</Label>
-										<DateTimePicker
-											value={value.deadline}
-											onChange={(deadline) => onChange({ ...value, deadline })}
-											placeholder="Anytime"
-											minuteStep={15}
-										/>
-									</div>
-								</div>
-
-								<div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-									<div>
-										<p className="text-sm font-medium">Send to Up Next</p>
-										<p className="text-xs text-muted-foreground">
-											Push this task to queued immediately.
-										</p>
-									</div>
-									<Switch
-										checked={value.sendToUpNext}
-										onCheckedChange={(sendToUpNext) => onChange({ ...value, sendToUpNext })}
-									/>
-								</div>
-							</AccordionContent>
-						</AccordionItem>
-
-						<AccordionItem value="visibility">
-							<AccordionTrigger>Visibility</AccordionTrigger>
-							<AccordionContent className="space-y-3">
-								<RadioGroup
-									value={value.visibilityPreference}
-									onValueChange={(visibilityPreference) =>
-										onChange({
-											...value,
-											visibilityPreference: visibilityPreference as TaskVisibilityPreference,
-										})
-									}
-									className="space-y-2"
-								>
-									{Object.entries(visibilityLabels).map(([key, label]) => (
-										<label
-											key={key}
-											htmlFor={`visibility-${key}`}
-											className={cn(
-												"flex items-start gap-3 rounded-lg border p-3 text-sm transition-colors",
-												value.visibilityPreference === key
-													? "border-primary/40 bg-primary/5"
-													: "border-border",
-											)}
-										>
-											<RadioGroupItem id={`visibility-${key}`} value={key} className="mt-1" />
-											<div>
-												<p className="font-medium">{label}</p>
-												<p className="text-xs text-muted-foreground">
-													{key === "private"
-														? "Task events are marked private and busy."
-														: "Task events follow the calendar's default privacy settings."}
-												</p>
 											</div>
-										</label>
-									))}
-								</RadioGroup>
-							</AccordionContent>
-						</AccordionItem>
-					</Accordion>
+										</div>
+										<div className="space-y-2">
+											<Label>Hours</Label>
+											<Select
+												value={value.hoursSetId || undefined}
+												onValueChange={(hoursSetId) => onChange({ ...value, hoursSetId })}
+											>
+												<SelectTrigger>
+													<SelectValue placeholder="Select hours set" />
+												</SelectTrigger>
+												<SelectContent>
+													{hoursSets.map((hoursSet) => (
+														<SelectItem key={hoursSet._id} value={hoursSet._id}>
+															{hoursSet.name}
+															{hoursSet.isDefault ? " (Default)" : ""}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+										</div>
+										<div className="space-y-2">
+											<Label>Calendar</Label>
+											<Select
+												value={value.preferredCalendarId}
+												onValueChange={(preferredCalendarId) =>
+													onChange({ ...value, preferredCalendarId })
+												}
+											>
+												<SelectTrigger>
+													<SelectValue />
+												</SelectTrigger>
+												<SelectContent>
+													{calendars.map((calendar) => (
+														<SelectItem key={calendar.id} value={calendar.id}>
+															{calendar.name}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+										</div>
+									</div>
+									<div className="space-y-2">
+										<Label htmlFor="task-notes">Notes</Label>
+										<Textarea
+											id="task-notes"
+											placeholder="Add notes here..."
+											value={value.description}
+											onChange={(event) => onChange({ ...value, description: event.target.value })}
+											className="min-h-24"
+										/>
+									</div>
+									<div className="space-y-2">
+										<Label htmlFor="task-location">Location</Label>
+										<Input
+											id="task-location"
+											placeholder="Office, gym, client site..."
+											value={value.location}
+											onChange={(event) => onChange({ ...value, location: event.target.value })}
+										/>
+										<p className="text-xs text-muted-foreground">
+											If set, scheduler can add travel events before and after this task.
+										</p>
+									</div>
+								</AccordionContent>
+							</AccordionItem>
+
+							<AccordionItem value="scheduling">
+								<AccordionTrigger>Scheduling</AccordionTrigger>
+								<AccordionContent className="space-y-4">
+									<div className="grid gap-3 md:grid-cols-2">
+										<div className="space-y-2">
+											<Label>Priority</Label>
+											<Select
+												value={value.priority}
+												onValueChange={(priority) =>
+													onChange({ ...value, priority: priority as Priority })
+												}
+											>
+												<SelectTrigger>
+													<SelectValue placeholder="Priority" />
+												</SelectTrigger>
+												<SelectContent>
+													{Object.keys(priorityClass).map((priority) => (
+														<SelectItem key={priority} value={priority}>
+															{priority}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+										</div>
+										<div className="space-y-2">
+											<Label>Status</Label>
+											<Select
+												value={value.status}
+												onValueChange={(status) =>
+													onChange({ ...value, status: status as TaskStatus })
+												}
+											>
+												<SelectTrigger>
+													<SelectValue placeholder="Status" />
+												</SelectTrigger>
+												<SelectContent>
+													{statusOrder.map((status) => (
+														<SelectItem key={status} value={status}>
+															{statusTitles[status]}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+										</div>
+									</div>
+
+									<div className="grid gap-3 md:grid-cols-2">
+										<div className="space-y-2">
+											<Label>Scheduling mode</Label>
+											<Select
+												value={value.schedulingMode}
+												onValueChange={(schedulingMode) =>
+													onChange({
+														...value,
+														schedulingMode: schedulingMode as "default" | TaskSchedulingMode,
+													})
+												}
+											>
+												<SelectTrigger>
+													<SelectValue placeholder="Scheduling mode" />
+												</SelectTrigger>
+												<SelectContent>
+													<SelectItem value="default">
+														Use default ({schedulingModeLabels[defaultTaskSchedulingMode]})
+													</SelectItem>
+													{Object.entries(schedulingModeLabels).map(([mode, label]) => (
+														<SelectItem key={mode} value={mode}>
+															{label}
+														</SelectItem>
+													))}
+												</SelectContent>
+											</Select>
+											<p className="text-xs text-muted-foreground">
+												This stores mode intent for the scheduler. Algorithms remain unchanged.
+											</p>
+										</div>
+									</div>
+
+									<div className="grid gap-3 md:grid-cols-[1fr_auto]">
+										<div className="space-y-2">
+											<Label>Time needed</Label>
+											<div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon"
+													className="size-7"
+													onClick={() => bumpEstimatedMinutes(-15)}
+												>
+													<ArrowDown className="size-3.5" />
+												</Button>
+												<Input
+													type="text"
+													inputMode="text"
+													value={value.estimatedMinutes}
+													onChange={(event) =>
+														onChange({ ...value, estimatedMinutes: event.target.value })
+													}
+													className="h-9 border-0 shadow-none focus-visible:ring-0"
+												/>
+												<Button
+													type="button"
+													variant="ghost"
+													size="icon"
+													className="size-7"
+													onClick={() => bumpEstimatedMinutes(15)}
+												>
+													<ArrowUp className="size-3.5" />
+												</Button>
+											</div>
+										</div>
+										<div className="flex items-end">
+											<div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+												<Switch
+													checked={value.splitAllowed}
+													onCheckedChange={(splitAllowed) => onChange({ ...value, splitAllowed })}
+												/>
+												<Label>Split up</Label>
+											</div>
+										</div>
+									</div>
+
+									<div className="grid gap-3 md:grid-cols-2">
+										<div className="space-y-2">
+											<Label>Min duration (mins)</Label>
+											<DurationInput
+												value={value.minChunkMinutes}
+												onChange={(minChunkMinutes) => onChange({ ...value, minChunkMinutes })}
+												className={cn(!value.splitAllowed && "pointer-events-none opacity-60")}
+											/>
+										</div>
+										<div className="space-y-2">
+											<Label>Max duration (mins)</Label>
+											<DurationInput
+												value={value.maxChunkMinutes}
+												onChange={(maxChunkMinutes) => onChange({ ...value, maxChunkMinutes })}
+												className={cn(!value.splitAllowed && "pointer-events-none opacity-60")}
+											/>
+										</div>
+									</div>
+									<div className="grid gap-3 md:grid-cols-2">
+										<div className="space-y-2">
+											<Label>Rest time</Label>
+											<DurationInput
+												value={value.restMinutes}
+												onChange={(restMinutes) => onChange({ ...value, restMinutes })}
+											/>
+										</div>
+										<div className="space-y-2">
+											<Label>Travel duration (each side)</Label>
+											<DurationInput
+												value={value.travelMinutes}
+												onChange={(travelMinutes) => onChange({ ...value, travelMinutes })}
+												className={cn(!value.location.trim() && "pointer-events-none opacity-60")}
+											/>
+											<p className="text-xs text-muted-foreground">
+												Used only when location is set.
+											</p>
+										</div>
+									</div>
+
+									<div className="grid gap-3 md:grid-cols-2">
+										<div className="space-y-2">
+											<Label>Schedule after</Label>
+											<DateTimePicker
+												value={value.scheduleAfter}
+												onChange={(scheduleAfter) => onChange({ ...value, scheduleAfter })}
+												placeholder="Anytime"
+												minuteStep={15}
+											/>
+										</div>
+										<div className="space-y-2">
+											<Label>Due date</Label>
+											<DateTimePicker
+												value={value.deadline}
+												onChange={(deadline) => onChange({ ...value, deadline })}
+												placeholder="Anytime"
+												minuteStep={15}
+											/>
+										</div>
+									</div>
+
+									<div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+										<div>
+											<p className="text-sm font-medium">Send to Up Next</p>
+											<p className="text-xs text-muted-foreground">
+												Push this task to queued immediately.
+											</p>
+										</div>
+										<Switch
+											checked={value.sendToUpNext}
+											onCheckedChange={(sendToUpNext) => onChange({ ...value, sendToUpNext })}
+										/>
+									</div>
+								</AccordionContent>
+							</AccordionItem>
+
+							<AccordionItem value="visibility">
+								<AccordionTrigger>Visibility</AccordionTrigger>
+								<AccordionContent className="space-y-3">
+									<RadioGroup
+										value={value.visibilityPreference}
+										onValueChange={(visibilityPreference) =>
+											onChange({
+												...value,
+												visibilityPreference: visibilityPreference as TaskVisibilityPreference,
+											})
+										}
+										className="space-y-2"
+									>
+										{Object.entries(visibilityLabels).map(([key, label]) => (
+											<label
+												key={key}
+												htmlFor={`visibility-${key}`}
+												className={cn(
+													"flex items-start gap-3 rounded-lg border p-3 text-sm transition-colors",
+													value.visibilityPreference === key
+														? "border-primary/40 bg-primary/5"
+														: "border-border",
+												)}
+											>
+												<RadioGroupItem id={`visibility-${key}`} value={key} className="mt-1" />
+												<div>
+													<p className="font-medium">{label}</p>
+													<p className="text-xs text-muted-foreground">
+														{key === "private"
+															? "Task events are marked private and busy."
+															: "Task events follow the calendar's default privacy settings."}
+													</p>
+												</div>
+											</label>
+										))}
+									</RadioGroup>
+								</AccordionContent>
+							</AccordionItem>
+						</Accordion>
+					) : null}
 				</div>
 				<DialogFooter>
+					{compactCreate ? (
+						<Button
+							variant="ghost"
+							onClick={() => setShowAdvanced((current) => !current)}
+							disabled={busy}
+						>
+							{showAdvanced ? "Back to quick form" : "Show advanced fields"}
+						</Button>
+					) : null}
 					<Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
 						Cancel
 					</Button>

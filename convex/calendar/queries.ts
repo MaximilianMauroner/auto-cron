@@ -258,3 +258,62 @@ export const listGoogleCalendars = query({
 			}));
 	}),
 });
+
+export const getGoogleSyncHealth = query({
+	args: {},
+	returns: v.object({
+		googleConnected: v.boolean(),
+		activeChannels: v.number(),
+		expiringSoonChannels: v.number(),
+		lastWebhookAt: v.optional(v.number()),
+		latestRunStatus: v.optional(
+			v.union(
+				v.literal("pending"),
+				v.literal("running"),
+				v.literal("completed"),
+				v.literal("failed"),
+			),
+		),
+		latestRunCompletedAt: v.optional(v.number()),
+		latestRunError: v.optional(v.string()),
+	}),
+	handler: withQueryAuth(async (ctx) => {
+		const { userId } = ctx;
+		const settings = await ctx.db
+			.query("userSettings")
+			.withIndex("by_userId", (q) => q.eq("userId", userId))
+			.unique();
+		const channels = await ctx.db
+			.query("googleCalendarWatchChannels")
+			.withIndex("by_userId", (q) => q.eq("userId", userId))
+			.collect();
+		const now = Date.now();
+		const activeChannels = channels.filter(
+			(channel) => channel.status === "active" && channel.expirationAt > now,
+		);
+		const expiringSoonChannels = activeChannels.filter(
+			(channel) => channel.expirationAt <= now + 24 * 60 * 60 * 1000,
+		);
+		const lastWebhookAt = channels.reduce<number | undefined>((latest, channel) => {
+			const current = channel.lastNotifiedAt;
+			if (typeof current !== "number") return latest;
+			return typeof latest === "number" ? Math.max(latest, current) : current;
+		}, undefined);
+		const latestRun = (
+			await ctx.db
+				.query("googleSyncRuns")
+				.withIndex("by_userId_startedAt", (q) => q.eq("userId", userId))
+				.order("desc")
+				.take(1)
+		)[0];
+		return {
+			googleConnected: Boolean(settings?.googleRefreshToken),
+			activeChannels: activeChannels.length,
+			expiringSoonChannels: expiringSoonChannels.length,
+			lastWebhookAt,
+			latestRunStatus: latestRun?.status,
+			latestRunCompletedAt: latestRun?.completedAt,
+			latestRunError: latestRun?.error,
+		};
+	}),
+});

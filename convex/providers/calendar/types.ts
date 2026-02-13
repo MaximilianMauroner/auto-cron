@@ -91,6 +91,13 @@ export type CalendarProviderSyncResult = {
 	resetSyncToken?: boolean;
 };
 
+export type CalendarWatchStartResult = {
+	channelId: string;
+	resourceId: string;
+	resourceUri?: string;
+	expirationAt: number;
+};
+
 export interface CalendarProvider {
 	listCalendars(input: { refreshToken: string }): Promise<ProviderCalendar[]>;
 	syncEvents(input: {
@@ -118,5 +125,18 @@ export interface CalendarProvider {
 		calendarId?: string;
 		event: CalendarProviderEvent;
 		scope: RecurrenceEditScope;
+	}): Promise<void>;
+	watchEvents(input: {
+		refreshToken: string;
+		calendarId: string;
+		address: string;
+		channelId: string;
+		channelToken: string;
+		ttlSeconds?: number;
+	}): Promise<CalendarWatchStartResult>;
+	stopWatchChannel(input: {
+		refreshToken: string;
+		channelId: string;
+		resourceId: string;
 	}): Promise<void>;
 }

@@ -38,6 +38,9 @@ const taskDtoValidator = v.object({
 	splitAllowed: v.optional(v.boolean()),
 	minChunkMinutes: v.optional(v.number()),
 	maxChunkMinutes: v.optional(v.number()),
+	restMinutes: v.optional(v.number()),
+	travelMinutes: v.optional(v.number()),
+	location: v.optional(v.string()),
 	sendToUpNext: v.optional(v.boolean()),
 	hoursSetId: v.optional(v.id("hoursSets")),
 	schedulingMode: v.optional(taskSchedulingModeValidator),
@@ -61,6 +64,15 @@ const statusOrder: Record<TaskStatus, number> = {
 	done: 4,
 };
 
+const sanitizeTaskSchedulingMode = (
+	mode: string | undefined,
+): "fastest" | "balanced" | "packed" => {
+	if (mode === "fastest" || mode === "balanced" || mode === "packed") {
+		return mode;
+	}
+	return "fastest";
+};
+
 export const listTasks = query({
 	args: {
 		statusFilter: v.optional(v.array(taskStatusValidator)),
@@ -72,7 +84,9 @@ export const listTasks = query({
 			.query("userSettings")
 			.withIndex("by_userId", (q) => q.eq("userId", userId))
 			.unique();
-		const defaultTaskSchedulingMode = settings?.defaultTaskSchedulingMode ?? "fastest";
+		const defaultTaskSchedulingMode = sanitizeTaskSchedulingMode(
+			settings?.defaultTaskSchedulingMode,
+		);
 		const statuses = args.statusFilter;
 		const byStatus = statuses?.length
 			? await Promise.all(
@@ -102,7 +116,12 @@ export const listTasks = query({
 			})
 			.map((task) => ({
 				...task,
-				effectiveSchedulingMode: task.schedulingMode ?? defaultTaskSchedulingMode,
+				schedulingMode: task.schedulingMode
+					? sanitizeTaskSchedulingMode(task.schedulingMode)
+					: undefined,
+				effectiveSchedulingMode: task.schedulingMode
+					? sanitizeTaskSchedulingMode(task.schedulingMode)
+					: defaultTaskSchedulingMode,
 			}));
 	}),
 });

@@ -1,7 +1,7 @@
 import { AuthKit } from "@convex-dev/workos-authkit";
 import type { Auth } from "convex/server";
 import { ConvexError } from "convex/values";
-import { components } from "./_generated/api";
+import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 
@@ -76,19 +76,8 @@ export const withActionAuth = <TArgs, TResult>(
 
 export const { authKitEvent } = authKit.events({
 	"user.created": async (ctx, event) => {
-		const existing = await ctx.db
-			.query("userSettings")
-			.withIndex("by_userId", (q) => q.eq("userId", event.data.id))
-			.unique();
-		if (existing) return;
-
-		await ctx.db.insert("userSettings", {
+		await ctx.runMutation(internal.hours.mutations.internalBootstrapDefaultPlannerDataForUser, {
 			userId: event.data.id,
-			timezone: "UTC",
-			defaultTaskSchedulingMode: "fastest",
-			schedulingHorizonDays: 75,
-			googleCalendarSyncTokens: [],
-			googleConnectedCalendars: [],
 		});
 	},
 	"user.deleted": async (ctx, event) => {

@@ -23,6 +23,11 @@ type ScheduleXEventLike = {
 	source?: string;
 	busyStatus?: "free" | "busy" | "tentative";
 };
+export type TimeGridEventProps = {
+	calendarEvent: ScheduleXEventLike;
+	timeZone?: string;
+	hour12?: boolean;
+};
 
 const toMillis = (value: unknown) => {
 	if (!value) return Date.now();
@@ -62,14 +67,24 @@ const toMillis = (value: unknown) => {
 	}
 	return Date.now();
 };
-const timeFormatter = new Intl.DateTimeFormat("en-US", {
-	hour: "numeric",
-	minute: "2-digit",
-});
+const formatterCache = new Map<string, Intl.DateTimeFormat>();
+const getTimeFormatter = (timeZone?: string, hour12?: boolean) => {
+	const key = `${timeZone ?? "local"}:${hour12 ? "h12" : "h24"}`;
+	const existing = formatterCache.get(key);
+	if (existing) return existing;
+	const formatter = new Intl.DateTimeFormat(undefined, {
+		timeZone,
+		hour: "numeric",
+		minute: "2-digit",
+		hour12,
+	});
+	formatterCache.set(key, formatter);
+	return formatter;
+};
 
-const formatTime = (value: unknown) => {
+const formatTime = (value: unknown, timeZone?: string, hour12?: boolean) => {
 	const date = new Date(toMillis(value));
-	return timeFormatter.format(date);
+	return getTimeFormatter(timeZone, hour12).format(date);
 };
 
 const sanitizeDenseTitle = (title?: string) => (title ?? "Untitled").replace(/\s+/g, " ").trim();
@@ -101,7 +116,7 @@ const deleteFromEvent = (eventId?: string | number) => {
 	);
 };
 
-function TimeGridEventComponent({ calendarEvent }: { calendarEvent: ScheduleXEventLike }) {
+function TimeGridEventComponent({ calendarEvent, timeZone, hour12 }: TimeGridEventProps) {
 	const start = toMillis(calendarEvent.start);
 	const end = toMillis(calendarEvent.end);
 	const minutes = Math.max(0, Math.round((end - start) / (1000 * 60)));
@@ -109,7 +124,7 @@ function TimeGridEventComponent({ calendarEvent }: { calendarEvent: ScheduleXEve
 	const compact = minutes < 45;
 	const semiCompact = minutes >= 45 && minutes < 90;
 	const full = minutes >= 90;
-	const timeLabel = `${formatTime(calendarEvent.start)} – ${formatTime(calendarEvent.end)}`;
+	const timeLabel = `${formatTime(calendarEvent.start, timeZone, hour12)} – ${formatTime(calendarEvent.end, timeZone, hour12)}`;
 	const colorKey = toCssSafeColorKey(calendarEvent.calendarId);
 	const eventStyle = {
 		backgroundColor: `var(--sx-color-${colorKey}-container, #1b2640)`,

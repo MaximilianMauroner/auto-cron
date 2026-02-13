@@ -4,10 +4,136 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
+import {
+	defaultSchedulingStepMinutes,
+	defaultTaskQuickCreateSettings,
+	normalizeSchedulingDowntimeMinutes,
+	normalizeSchedulingStepMinutes,
+	normalizeTimeFormatPreference,
+	normalizeTimeZone,
+} from "../hours/shared";
 import type { RecurrenceEditScope } from "../providers/calendar/types";
+import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
 
 const MINUTE_MS = 60 * 1000;
 const normalizeToMinute = (timestamp: number) => Math.floor(timestamp / MINUTE_MS) * MINUTE_MS;
+const sanitizeTaskSchedulingMode = (
+	mode: string | undefined,
+): "fastest" | "balanced" | "packed" => {
+	if (mode === "fastest" || mode === "balanced" || mode === "packed") {
+		return mode;
+	}
+	return "fastest";
+};
+const normalizedTimeFormatPreferenceFromSettings = (settings: {
+	timeFormatPreference?: string;
+}) => normalizeTimeFormatPreference(settings.timeFormatPreference) ?? undefined;
+const normalizedSchedulingStepMinutesFromSettings = (settings: {
+	schedulingStepMinutes?: number;
+}) => normalizeSchedulingStepMinutes(settings.schedulingStepMinutes);
+
+const normalizeTaskQuickCreateDefaultsForSettings = (settings: {
+	taskQuickCreatePriority?: string;
+	taskQuickCreateStatus?: string;
+	taskQuickCreateEstimatedMinutes?: number;
+	taskQuickCreateSplitAllowed?: boolean;
+	taskQuickCreateMinChunkMinutes?: number;
+	taskQuickCreateMaxChunkMinutes?: number;
+	taskQuickCreateRestMinutes?: number;
+	taskQuickCreateTravelMinutes?: number;
+	taskQuickCreateSendToUpNext?: boolean;
+	taskQuickCreateVisibilityPreference?: string;
+	taskQuickCreateColor?: string;
+}): {
+	taskQuickCreatePriority: "low" | "medium" | "high" | "critical" | "blocker";
+	taskQuickCreateStatus: "backlog" | "queued";
+	taskQuickCreateEstimatedMinutes: number;
+	taskQuickCreateSplitAllowed: boolean;
+	taskQuickCreateMinChunkMinutes: number;
+	taskQuickCreateMaxChunkMinutes: number;
+	taskQuickCreateRestMinutes: number;
+	taskQuickCreateTravelMinutes: number;
+	taskQuickCreateSendToUpNext: boolean;
+	taskQuickCreateVisibilityPreference: "default" | "private";
+	taskQuickCreateColor: string;
+} => {
+	const priority =
+		settings.taskQuickCreatePriority === "low" ||
+		settings.taskQuickCreatePriority === "medium" ||
+		settings.taskQuickCreatePriority === "high" ||
+		settings.taskQuickCreatePriority === "critical" ||
+		settings.taskQuickCreatePriority === "blocker"
+			? settings.taskQuickCreatePriority
+			: defaultTaskQuickCreateSettings.priority;
+	const status =
+		settings.taskQuickCreateStatus === "queued" || settings.taskQuickCreateStatus === "backlog"
+			? settings.taskQuickCreateStatus
+			: defaultTaskQuickCreateSettings.status;
+	const estimatedMinutes = Math.max(
+		15,
+		Number.isFinite(settings.taskQuickCreateEstimatedMinutes)
+			? Math.round(
+					settings.taskQuickCreateEstimatedMinutes ??
+						defaultTaskQuickCreateSettings.estimatedMinutes,
+				)
+			: defaultTaskQuickCreateSettings.estimatedMinutes,
+	);
+	const splitAllowed =
+		settings.taskQuickCreateSplitAllowed ?? defaultTaskQuickCreateSettings.splitAllowed;
+	const minChunkMinutes = Math.max(
+		15,
+		Number.isFinite(settings.taskQuickCreateMinChunkMinutes)
+			? Math.round(
+					settings.taskQuickCreateMinChunkMinutes ?? defaultTaskQuickCreateSettings.minChunkMinutes,
+				)
+			: defaultTaskQuickCreateSettings.minChunkMinutes,
+	);
+	const maxChunkMinutes = Math.max(
+		minChunkMinutes,
+		Number.isFinite(settings.taskQuickCreateMaxChunkMinutes)
+			? Math.round(
+					settings.taskQuickCreateMaxChunkMinutes ?? defaultTaskQuickCreateSettings.maxChunkMinutes,
+				)
+			: defaultTaskQuickCreateSettings.maxChunkMinutes,
+	);
+	const restMinutes = Math.max(
+		0,
+		Number.isFinite(settings.taskQuickCreateRestMinutes)
+			? Math.round(
+					settings.taskQuickCreateRestMinutes ?? defaultTaskQuickCreateSettings.restMinutes,
+				)
+			: defaultTaskQuickCreateSettings.restMinutes,
+	);
+	const travelMinutes = Math.max(
+		0,
+		Number.isFinite(settings.taskQuickCreateTravelMinutes)
+			? Math.round(
+					settings.taskQuickCreateTravelMinutes ?? defaultTaskQuickCreateSettings.travelMinutes,
+				)
+			: defaultTaskQuickCreateSettings.travelMinutes,
+	);
+	const visibilityPreference =
+		settings.taskQuickCreateVisibilityPreference === "default" ||
+		settings.taskQuickCreateVisibilityPreference === "private"
+			? settings.taskQuickCreateVisibilityPreference
+			: defaultTaskQuickCreateSettings.visibilityPreference;
+	const color = settings.taskQuickCreateColor?.trim() || defaultTaskQuickCreateSettings.color;
+
+	return {
+		taskQuickCreatePriority: priority,
+		taskQuickCreateStatus: status,
+		taskQuickCreateEstimatedMinutes: estimatedMinutes,
+		taskQuickCreateSplitAllowed: splitAllowed,
+		taskQuickCreateMinChunkMinutes: minChunkMinutes,
+		taskQuickCreateMaxChunkMinutes: maxChunkMinutes,
+		taskQuickCreateRestMinutes: restMinutes,
+		taskQuickCreateTravelMinutes: travelMinutes,
+		taskQuickCreateSendToUpNext:
+			settings.taskQuickCreateSendToUpNext ?? defaultTaskQuickCreateSettings.sendToUpNext,
+		taskQuickCreateVisibilityPreference: visibilityPreference,
+		taskQuickCreateColor: color,
+	};
+};
 
 const recurrenceScopeValidator = v.union(
 	v.literal("single"),
@@ -159,6 +285,243 @@ type MoveResizeEventArgs = {
 	end: number;
 	scope?: RecurrenceEditScope;
 };
+
+const googleSyncRunTriggerValidator = v.union(
+	v.literal("webhook"),
+	v.literal("cron"),
+	v.literal("manual"),
+	v.literal("oauth_connect"),
+);
+
+const watchChannelStatusValidator = v.union(
+	v.literal("active"),
+	v.literal("expired"),
+	v.literal("stopped"),
+);
+
+const isTestRuntime = () => process.env.NODE_ENV === "test" || process.env.VITEST === "true";
+
+export const enqueueGoogleSyncRun = internalMutation({
+	args: {
+		userId: v.string(),
+		triggeredBy: googleSyncRunTriggerValidator,
+		force: v.optional(v.boolean()),
+	},
+	returns: v.object({
+		enqueued: v.boolean(),
+		runId: v.id("googleSyncRuns"),
+	}),
+	handler: async (ctx, args) => {
+		const pending = await ctx.db
+			.query("googleSyncRuns")
+			.withIndex("by_userId_status_startedAt", (q) =>
+				q.eq("userId", args.userId).eq("status", "pending"),
+			)
+			.collect();
+		const latestPending = pending.sort((a, b) => b.startedAt - a.startedAt)[0];
+		if (latestPending && !args.force) {
+			return {
+				enqueued: false,
+				runId: latestPending._id,
+			};
+		}
+
+		const runId = await ctx.db.insert("googleSyncRuns", {
+			userId: args.userId,
+			triggeredBy: args.triggeredBy,
+			status: "pending",
+			startedAt: Date.now(),
+		});
+
+		if (!isTestRuntime()) {
+			await ctx.scheduler.runAfter(0, internal.calendar.actions.syncFromGoogleForUser, {
+				runId,
+				userId: args.userId,
+				triggeredBy: args.triggeredBy,
+			});
+		}
+
+		return {
+			enqueued: true,
+			runId,
+		};
+	},
+});
+
+export const markGoogleSyncRunRunning = internalMutation({
+	args: {
+		runId: v.id("googleSyncRuns"),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const run = await ctx.db.get(args.runId);
+		if (!run || run.status !== "pending") return null;
+		await ctx.db.patch(args.runId, {
+			status: "running",
+		});
+		return null;
+	},
+});
+
+export const completeGoogleSyncRun = internalMutation({
+	args: {
+		runId: v.id("googleSyncRuns"),
+		imported: v.number(),
+		deleted: v.number(),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const run = await ctx.db.get(args.runId);
+		if (!run) return null;
+		await ctx.db.patch(args.runId, {
+			status: "completed",
+			completedAt: Date.now(),
+			imported: args.imported,
+			deleted: args.deleted,
+			error: undefined,
+		});
+		return null;
+	},
+});
+
+export const failGoogleSyncRun = internalMutation({
+	args: {
+		runId: v.id("googleSyncRuns"),
+		error: v.string(),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const run = await ctx.db.get(args.runId);
+		if (!run) return null;
+		await ctx.db.patch(args.runId, {
+			status: "failed",
+			completedAt: Date.now(),
+			error: args.error,
+		});
+		return null;
+	},
+});
+
+export const upsertWatchChannel = internalMutation({
+	args: {
+		userId: v.string(),
+		calendarId: v.string(),
+		channelId: v.string(),
+		resourceId: v.string(),
+		resourceUri: v.optional(v.string()),
+		channelTokenHash: v.string(),
+		expirationAt: v.number(),
+	},
+	returns: v.id("googleCalendarWatchChannels"),
+	handler: async (ctx, args) => {
+		const existingByChannelId = await ctx.db
+			.query("googleCalendarWatchChannels")
+			.withIndex("by_channelId", (q) => q.eq("channelId", args.channelId))
+			.unique();
+		const now = Date.now();
+		if (existingByChannelId) {
+			await ctx.db.patch(existingByChannelId._id, {
+				userId: args.userId,
+				calendarId: args.calendarId,
+				channelId: args.channelId,
+				resourceId: args.resourceId,
+				resourceUri: args.resourceUri,
+				channelTokenHash: args.channelTokenHash,
+				expirationAt: args.expirationAt,
+				status: "active",
+				updatedAt: now,
+			});
+			return existingByChannelId._id;
+		}
+
+		const existingByCalendar = await ctx.db
+			.query("googleCalendarWatchChannels")
+			.withIndex("by_userId_calendarId", (q) =>
+				q.eq("userId", args.userId).eq("calendarId", args.calendarId),
+			)
+			.collect();
+		const latestForCalendar = existingByCalendar.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+		if (latestForCalendar) {
+			await ctx.db.patch(latestForCalendar._id, {
+				channelId: args.channelId,
+				resourceId: args.resourceId,
+				resourceUri: args.resourceUri,
+				channelTokenHash: args.channelTokenHash,
+				expirationAt: args.expirationAt,
+				status: "active",
+				updatedAt: now,
+			});
+			return latestForCalendar._id;
+		}
+
+		return await ctx.db.insert("googleCalendarWatchChannels", {
+			userId: args.userId,
+			calendarId: args.calendarId,
+			channelId: args.channelId,
+			resourceId: args.resourceId,
+			resourceUri: args.resourceUri,
+			channelTokenHash: args.channelTokenHash,
+			expirationAt: args.expirationAt,
+			status: "active",
+			lastNotifiedAt: undefined,
+			lastMessageNumber: undefined,
+			createdAt: now,
+			updatedAt: now,
+		});
+	},
+});
+
+export const deactivateWatchChannel = internalMutation({
+	args: {
+		watchChannelId: v.optional(v.id("googleCalendarWatchChannels")),
+		channelId: v.optional(v.string()),
+		status: v.optional(watchChannelStatusValidator),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const status = args.status ?? "stopped";
+		let targetId = args.watchChannelId;
+		if (!targetId && args.channelId) {
+			const byChannelId = await ctx.db
+				.query("googleCalendarWatchChannels")
+				.withIndex("by_channelId", (q) => q.eq("channelId", args.channelId ?? ""))
+				.unique();
+			targetId = byChannelId?._id;
+		}
+		if (!targetId) return null;
+		const existing = await ctx.db.get(targetId);
+		if (!existing) return null;
+		await ctx.db.patch(targetId, {
+			status,
+			updatedAt: Date.now(),
+		});
+		return null;
+	},
+});
+
+export const recordWatchNotification = internalMutation({
+	args: {
+		watchChannelId: v.id("googleCalendarWatchChannels"),
+		lastNotifiedAt: v.number(),
+		lastMessageNumber: v.optional(v.number()),
+	},
+	returns: v.null(),
+	handler: async (ctx, args) => {
+		const channel = await ctx.db.get(args.watchChannelId);
+		if (!channel) return null;
+		const currentMessageNumber = channel.lastMessageNumber ?? -1;
+		const nextMessageNumber =
+			typeof args.lastMessageNumber === "number"
+				? Math.max(currentMessageNumber, args.lastMessageNumber)
+				: channel.lastMessageNumber;
+		await ctx.db.patch(args.watchChannelId, {
+			lastNotifiedAt: args.lastNotifiedAt,
+			lastMessageNumber: nextMessageNumber,
+			updatedAt: Date.now(),
+		});
+		return null;
+	},
+});
 
 const upsertSeriesForGoogleEvent = async (
 	ctx: MutationCtx,
@@ -318,8 +681,9 @@ const performUpsertSyncedEventsForUser = async (
 					.eq("googleEventId", event.googleEventId),
 			)
 			.collect();
+		const googleLegacyMatches = legacyMatches.filter((match) => match.source === "google");
 
-		const allMatches = [...seriesMatches, ...legacyMatches];
+		const allMatches = [...seriesMatches, ...googleLegacyMatches];
 		const uniqueMatchesById = new Map<string, Doc<"calendarEvents">>();
 		for (const match of allMatches) {
 			uniqueMatchesById.set(String(match._id), match);
@@ -348,7 +712,8 @@ const performUpsertSyncedEventsForUser = async (
 			status: event.status,
 			etag: event.etag,
 			lastSyncedAt: event.lastSyncedAt,
-			busyStatus: isRecurringInstance ? undefined : event.busyStatus,
+			// Persist busy status on occurrences so scheduling can evaluate blocking events directly.
+			busyStatus: event.busyStatus,
 			visibility: isRecurringInstance ? undefined : event.visibility,
 			location: isRecurringInstance ? undefined : event.location,
 			color: isRecurringInstance ? undefined : event.color,
@@ -411,17 +776,21 @@ const performUpsertSyncedEventsForUser = async (
 			mergedSyncTokensByCalendarId.get("primary")?.syncToken ??
 			(resetCalendarIds.has("primary") ? undefined : settings.googleSyncToken);
 
-		const currentMode = (settings as { defaultTaskSchedulingMode?: string })
-			.defaultTaskSchedulingMode;
-		const defaultTaskSchedulingMode =
-			currentMode === "fastest" || currentMode === "backfacing" || currentMode === "parallel"
-				? currentMode
-				: "fastest";
+		const defaultTaskSchedulingMode = sanitizeTaskSchedulingMode(
+			(settings as { defaultTaskSchedulingMode?: string }).defaultTaskSchedulingMode,
+		);
+		const taskQuickCreateDefaults = normalizeTaskQuickCreateDefaultsForSettings(settings);
 		await ctx.db.replace(settings._id, {
 			userId: settings.userId,
-			timezone: settings.timezone ?? "UTC",
+			timezone: normalizeTimeZone(settings.timezone),
+			timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(settings),
 			defaultTaskSchedulingMode,
+			...taskQuickCreateDefaults,
 			schedulingHorizonDays: settings.schedulingHorizonDays ?? 75,
+			schedulingDowntimeMinutes: normalizeSchedulingDowntimeMinutes(
+				settings.schedulingDowntimeMinutes,
+			),
+			schedulingStepMinutes: normalizedSchedulingStepMinutesFromSettings(settings),
 			googleRefreshToken: settings.googleRefreshToken,
 			googleSyncToken: nextPrimaryToken,
 			googleCalendarSyncTokens: nextSyncTokens,
@@ -460,36 +829,55 @@ export const upsertGoogleTokens = mutation({
 						return Array.from(tokensByCalendarId.values());
 					})()
 				: (existing.googleCalendarSyncTokens ?? []);
-			const currentMode = (existing as { defaultTaskSchedulingMode?: string })
-				.defaultTaskSchedulingMode;
-			const defaultTaskSchedulingMode =
-				currentMode === "fastest" || currentMode === "backfacing" || currentMode === "parallel"
-					? currentMode
-					: "fastest";
+			const defaultTaskSchedulingMode = sanitizeTaskSchedulingMode(
+				(existing as { defaultTaskSchedulingMode?: string }).defaultTaskSchedulingMode,
+			);
 			await ctx.db.replace(existing._id, {
 				userId: existing.userId,
-				timezone: existing.timezone ?? "UTC",
+				timezone: normalizeTimeZone(existing.timezone),
+				timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(existing),
 				defaultTaskSchedulingMode,
+				...normalizeTaskQuickCreateDefaultsForSettings(existing),
 				schedulingHorizonDays: existing.schedulingHorizonDays ?? 75,
+				schedulingDowntimeMinutes: normalizeSchedulingDowntimeMinutes(
+					existing.schedulingDowntimeMinutes,
+				),
+				schedulingStepMinutes: normalizedSchedulingStepMinutesFromSettings(existing),
 				googleRefreshToken: args.refreshToken,
 				googleSyncToken: args.syncToken ?? existing.googleSyncToken,
 				googleCalendarSyncTokens: nextCalendarSyncTokens,
 				googleConnectedCalendars: existing.googleConnectedCalendars,
 			});
-			await ctx.scheduler.runAfter(0, internal.crons.ensureCalendarSyncGoogleCron, {});
+			await ctx.scheduler.runAfter(0, internal.calendar.mutations.enqueueGoogleSyncRun, {
+				userId,
+				triggeredBy: "oauth_connect",
+			});
+			await ctx.scheduler.runAfter(0, internal.calendar.actions.ensureWatchChannelsForUser, {
+				userId,
+			});
 			return existing._id;
 		}
 
 		const insertedId = await ctx.db.insert("userSettings", {
 			userId,
-			timezone: "UTC",
+			timezone: normalizeTimeZone(undefined),
+			timeFormatPreference: normalizedTimeFormatPreferenceFromSettings({}),
 			defaultTaskSchedulingMode: "fastest",
+			...normalizeTaskQuickCreateDefaultsForSettings({}),
 			schedulingHorizonDays: 75,
+			schedulingDowntimeMinutes: normalizeSchedulingDowntimeMinutes(undefined),
+			schedulingStepMinutes: defaultSchedulingStepMinutes,
 			googleRefreshToken: args.refreshToken,
 			googleSyncToken: args.syncToken,
 			googleCalendarSyncTokens: [],
 		});
-		await ctx.scheduler.runAfter(0, internal.crons.ensureCalendarSyncGoogleCron, {});
+		await ctx.scheduler.runAfter(0, internal.calendar.mutations.enqueueGoogleSyncRun, {
+			userId,
+			triggeredBy: "oauth_connect",
+		});
+		await ctx.scheduler.runAfter(0, internal.calendar.actions.ensureWatchChannelsForUser, {
+			userId,
+		});
 		return insertedId;
 	}),
 });
@@ -547,7 +935,7 @@ export const createEvent = mutation({
 			isRecurring: Boolean(args.input.recurrenceRule),
 		});
 
-		return ctx.db.insert("calendarEvents", {
+		const eventId = await ctx.db.insert("calendarEvents", {
 			userId,
 			title: undefined,
 			description: undefined,
@@ -567,11 +955,16 @@ export const createEvent = mutation({
 			status: "confirmed",
 			etag: undefined,
 			lastSyncedAt: undefined,
-			busyStatus: undefined,
+			busyStatus,
 			visibility: undefined,
 			location: undefined,
 			color: undefined,
 		});
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
+		return eventId;
 	}),
 });
 
@@ -679,6 +1072,10 @@ export const updateEvent = mutation({
 				});
 			}
 		}
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
 		return { id: args.id, scope };
 	}),
 });
@@ -702,6 +1099,10 @@ export const deleteEvent = mutation({
 		}
 
 		await ctx.db.delete(args.id);
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
 		return { scope: (args.scope ?? "single") as RecurrenceEditScope };
 	}),
 });
@@ -735,6 +1136,10 @@ export const moveResizeEvent = mutation({
 				end: args.end,
 				updatedAt: now,
 				occurrenceStart: normalizeToMinute(args.start),
+			});
+			await enqueueSchedulingRunFromMutation(ctx, {
+				userId,
+				triggeredBy: "calendar_change",
 			});
 			return { id: args.id, scope };
 		}
@@ -771,6 +1176,10 @@ export const moveResizeEvent = mutation({
 				updatedAt: now,
 			});
 		}
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
 
 		return { id: args.id, scope };
 	}),
@@ -785,6 +1194,11 @@ export const upsertSyncedEventsForUser = internalMutation({
 		upserted: v.number(),
 	}),
 	handler: async (ctx, args) => {
-		return performUpsertSyncedEventsForUser(ctx, args.userId, args);
+		const result = await performUpsertSyncedEventsForUser(ctx, args.userId, args);
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: args.userId,
+			triggeredBy: "calendar_change",
+		});
+		return result;
 	},
 });

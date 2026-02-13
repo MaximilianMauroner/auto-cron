@@ -97,6 +97,142 @@ export const listUsersWithGoogleSync = internalQuery({
 	},
 });
 
+export const listWatchChannelsForUser = internalQuery({
+	args: {
+		userId: v.string(),
+	},
+	returns: v.array(
+		v.object({
+			_id: v.id("googleCalendarWatchChannels"),
+			userId: v.string(),
+			calendarId: v.string(),
+			channelId: v.string(),
+			resourceId: v.string(),
+			resourceUri: v.optional(v.string()),
+			channelTokenHash: v.string(),
+			expirationAt: v.number(),
+			status: v.union(v.literal("active"), v.literal("expired"), v.literal("stopped")),
+			lastNotifiedAt: v.optional(v.number()),
+			lastMessageNumber: v.optional(v.number()),
+			createdAt: v.number(),
+			updatedAt: v.number(),
+		}),
+	),
+	handler: async (ctx, args) => {
+		const channels = await ctx.db
+			.query("googleCalendarWatchChannels")
+			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
+			.collect();
+		return channels.map((channel) => ({
+			_id: channel._id,
+			userId: channel.userId,
+			calendarId: channel.calendarId,
+			channelId: channel.channelId,
+			resourceId: channel.resourceId,
+			resourceUri: channel.resourceUri,
+			channelTokenHash: channel.channelTokenHash,
+			expirationAt: channel.expirationAt,
+			status: channel.status,
+			lastNotifiedAt: channel.lastNotifiedAt,
+			lastMessageNumber: channel.lastMessageNumber,
+			createdAt: channel.createdAt,
+			updatedAt: channel.updatedAt,
+		}));
+	},
+});
+
+export const getWatchChannelByChannelId = internalQuery({
+	args: {
+		channelId: v.string(),
+	},
+	returns: v.union(
+		v.null(),
+		v.object({
+			_id: v.id("googleCalendarWatchChannels"),
+			userId: v.string(),
+			calendarId: v.string(),
+			channelId: v.string(),
+			resourceId: v.string(),
+			resourceUri: v.optional(v.string()),
+			channelTokenHash: v.string(),
+			expirationAt: v.number(),
+			status: v.union(v.literal("active"), v.literal("expired"), v.literal("stopped")),
+			lastNotifiedAt: v.optional(v.number()),
+			lastMessageNumber: v.optional(v.number()),
+			createdAt: v.number(),
+			updatedAt: v.number(),
+		}),
+	),
+	handler: async (ctx, args) => {
+		const channel = await ctx.db
+			.query("googleCalendarWatchChannels")
+			.withIndex("by_channelId", (q) => q.eq("channelId", args.channelId))
+			.unique();
+		if (!channel) return null;
+		return {
+			_id: channel._id,
+			userId: channel.userId,
+			calendarId: channel.calendarId,
+			channelId: channel.channelId,
+			resourceId: channel.resourceId,
+			resourceUri: channel.resourceUri,
+			channelTokenHash: channel.channelTokenHash,
+			expirationAt: channel.expirationAt,
+			status: channel.status,
+			lastNotifiedAt: channel.lastNotifiedAt,
+			lastMessageNumber: channel.lastMessageNumber,
+			createdAt: channel.createdAt,
+			updatedAt: channel.updatedAt,
+		};
+	},
+});
+
+export const listExpiringWatchChannels = internalQuery({
+	args: {
+		before: v.number(),
+		limit: v.optional(v.number()),
+	},
+	returns: v.array(
+		v.object({
+			_id: v.id("googleCalendarWatchChannels"),
+			userId: v.string(),
+			calendarId: v.string(),
+			channelId: v.string(),
+			resourceId: v.string(),
+			resourceUri: v.optional(v.string()),
+			channelTokenHash: v.string(),
+			expirationAt: v.number(),
+			status: v.union(v.literal("active"), v.literal("expired"), v.literal("stopped")),
+			lastNotifiedAt: v.optional(v.number()),
+			lastMessageNumber: v.optional(v.number()),
+			createdAt: v.number(),
+			updatedAt: v.number(),
+		}),
+	),
+	handler: async (ctx, args) => {
+		const limit = Math.max(1, Math.min(args.limit ?? 500, 5000));
+		const channels = await ctx.db
+			.query("googleCalendarWatchChannels")
+			.withIndex("by_expirationAt", (q) => q.lte("expirationAt", args.before))
+			.take(limit);
+		return channels.map((channel) => ({
+			_id: channel._id,
+			userId: channel.userId,
+			calendarId: channel.calendarId,
+			channelId: channel.channelId,
+			resourceId: channel.resourceId,
+			resourceUri: channel.resourceUri,
+			channelTokenHash: channel.channelTokenHash,
+			expirationAt: channel.expirationAt,
+			status: channel.status,
+			lastNotifiedAt: channel.lastNotifiedAt,
+			lastMessageNumber: channel.lastMessageNumber,
+			createdAt: channel.createdAt,
+			updatedAt: channel.updatedAt,
+		}));
+	},
+});
+
 export const getEventById = internalQuery({
 	args: {
 		id: v.id("calendarEvents"),
@@ -154,17 +290,18 @@ export const updateLocalEventFromGoogle = internalMutation({
 	handler: async (ctx, args) => {
 		const event = await ctx.db.get(args.id);
 		if (!event) return;
+		const nextSourceId = event.source === "google" ? args.googleEventId : event.sourceId;
 
 		await ctx.db.patch(args.id, {
 			googleEventId: args.googleEventId,
-			sourceId: args.googleEventId,
+			sourceId: nextSourceId,
 			calendarId: args.calendarId ?? event.calendarId,
 			etag: args.etag,
 			lastSyncedAt: args.lastSyncedAt,
 			occurrenceStart: normalizeToMinute(event.originalStartTime ?? event.start),
 		});
 
-		if (event.seriesId) {
+		if (event.seriesId && event.source === "google") {
 			const series = await ctx.db.get(event.seriesId);
 			if (series) {
 				await ctx.db.patch(series._id, {
@@ -428,5 +565,89 @@ export const dedupeUserCalendarEventsInRange = internalMutation({
 		}
 
 		return { merged, removed };
+	},
+});
+
+export const listScheduledEventsForGoogleSync = internalQuery({
+	args: {
+		userId: v.string(),
+		start: v.number(),
+		end: v.number(),
+	},
+	returns: v.array(
+		v.object({
+			id: v.id("calendarEvents"),
+			source: v.union(v.literal("task"), v.literal("habit")),
+			sourceId: v.string(),
+			title: v.string(),
+			description: v.optional(v.string()),
+			start: v.number(),
+			end: v.number(),
+			allDay: v.boolean(),
+			googleEventId: v.optional(v.string()),
+			calendarId: v.string(),
+			recurrenceRule: v.optional(v.string()),
+			recurringEventId: v.optional(v.string()),
+			originalStartTime: v.optional(v.number()),
+			status: v.optional(
+				v.union(v.literal("confirmed"), v.literal("tentative"), v.literal("cancelled")),
+			),
+			etag: v.optional(v.string()),
+			busyStatus: v.union(v.literal("free"), v.literal("busy"), v.literal("tentative")),
+			visibility: v.optional(
+				v.union(
+					v.literal("default"),
+					v.literal("public"),
+					v.literal("private"),
+					v.literal("confidential"),
+				),
+			),
+			location: v.optional(v.string()),
+			color: v.optional(v.string()),
+		}),
+	),
+	handler: async (ctx, args) => {
+		const events = await ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_start", (q) => q.eq("userId", args.userId).lte("start", args.end))
+			.filter((q) => q.gte(q.field("end"), args.start))
+			.collect();
+
+		return events
+			.filter(
+				(
+					event,
+				): event is typeof event & {
+					source: "task" | "habit";
+					sourceId: string;
+				} =>
+					(event.source === "task" || event.source === "habit") &&
+					typeof event.sourceId === "string",
+			)
+			.map((event) => ({
+				id: event._id,
+				source: event.source,
+				sourceId: event.sourceId,
+				title: event.title ?? "Scheduled block",
+				description: event.description,
+				start: event.start,
+				end: event.end,
+				allDay: event.allDay ?? false,
+				googleEventId: event.googleEventId,
+				calendarId: event.calendarId ?? "primary",
+				recurrenceRule: event.recurrenceRule,
+				recurringEventId: event.recurringEventId,
+				originalStartTime: event.originalStartTime,
+				status: event.status,
+				etag: event.etag,
+				busyStatus: event.busyStatus ?? "busy",
+				visibility: event.visibility,
+				location: event.location,
+				color: event.color,
+			}))
+			.sort((a, b) => {
+				if (a.start !== b.start) return a.start - b.start;
+				return String(a.id).localeCompare(String(b.id));
+			});
 	},
 });

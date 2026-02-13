@@ -12,7 +12,7 @@ const settingsSections = [
 	},
 	{
 		title: "Task Scheduling",
-		description: "Set the default task scheduling mode.",
+		description: "Set scheduling mode, global downtime, and step size defaults.",
 		href: "/settings/scheduling",
 		icon: SlidersHorizontal,
 	},

@@ -4,9 +4,84 @@ import type { MutationCtx, QueryCtx } from "../_generated/server";
 
 export const taskSchedulingModeValidator = v.union(
 	v.literal("fastest"),
-	v.literal("backfacing"),
-	v.literal("parallel"),
+	v.literal("balanced"),
+	v.literal("packed"),
 );
+
+export const taskPriorityValidator = v.union(
+	v.literal("low"),
+	v.literal("medium"),
+	v.literal("high"),
+	v.literal("critical"),
+	v.literal("blocker"),
+);
+
+export const taskCreationStatusValidator = v.union(v.literal("backlog"), v.literal("queued"));
+
+export const taskVisibilityPreferenceValidator = v.union(
+	v.literal("default"),
+	v.literal("private"),
+);
+export const timeFormatPreferenceValidator = v.union(v.literal("12h"), v.literal("24h"));
+
+export const defaultTaskQuickCreateSettings = {
+	priority: "medium",
+	status: "backlog",
+	estimatedMinutes: 30,
+	splitAllowed: true,
+	minChunkMinutes: 30,
+	maxChunkMinutes: 180,
+	restMinutes: 0,
+	travelMinutes: 0,
+	sendToUpNext: false,
+	visibilityPreference: "private",
+	color: "#f59e0b",
+} as const;
+
+export const defaultSchedulingDowntimeMinutes = 0;
+const maxSchedulingDowntimeMinutes = 24 * 60;
+export const schedulingStepMinutesOptions = [15, 30, 60] as const;
+export type SchedulingStepMinutes = (typeof schedulingStepMinutesOptions)[number];
+export const schedulingStepMinutesValidator = v.union(v.literal(15), v.literal(30), v.literal(60));
+export const defaultSchedulingStepMinutes = 15;
+
+export const normalizeSchedulingDowntimeMinutes = (value: number | undefined) => {
+	if (!Number.isFinite(value)) return defaultSchedulingDowntimeMinutes;
+	return Math.min(maxSchedulingDowntimeMinutes, Math.max(0, Math.round(value ?? 0)));
+};
+
+export const normalizeSchedulingStepMinutes = (
+	value: number | undefined,
+): SchedulingStepMinutes => {
+	if (!Number.isFinite(value)) return defaultSchedulingStepMinutes;
+	const candidate = Math.round(value ?? defaultSchedulingStepMinutes);
+	if (candidate === 15 || candidate === 30 || candidate === 60) return candidate;
+	return defaultSchedulingStepMinutes;
+};
+
+const DEFAULT_TIMEZONE = "UTC";
+
+export const isValidTimeZone = (value: string) => {
+	const normalized = value.trim();
+	if (!normalized) return false;
+	try {
+		new Intl.DateTimeFormat("en-US", { timeZone: normalized }).format(0);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+export const normalizeTimeZone = (value: string | undefined) => {
+	const normalized = value?.trim();
+	if (!normalized || !isValidTimeZone(normalized)) return DEFAULT_TIMEZONE;
+	return normalized;
+};
+
+export const normalizeTimeFormatPreference = (value: string | undefined): "12h" | "24h" | null => {
+	if (value === "12h" || value === "24h") return value;
+	return null;
+};
 
 export const hourWindowDayValidator = v.union(
 	v.literal(0),

@@ -57,6 +57,7 @@ import {
 	MapPin,
 	Plus,
 	Repeat2,
+	Search,
 	Shield,
 	Sparkles,
 	Timer,
@@ -70,6 +71,7 @@ type HabitVisibilityPreference = "default" | "public" | "private";
 type HabitTimeDefenseMode = "always_free" | "auto" | "always_busy";
 type HabitReminderMode = "default" | "custom" | "none";
 type HabitUnscheduledBehavior = "leave_on_calendar" | "remove_from_calendar";
+type HabitRecoveryPolicy = "skip" | "recover";
 
 type HabitEditorState = {
 	id?: string;
@@ -94,6 +96,7 @@ type HabitEditorState = {
 	reminderMode: HabitReminderMode;
 	customReminderMinutes: string;
 	unscheduledBehavior: HabitUnscheduledBehavior;
+	recoveryPolicy: HabitRecoveryPolicy;
 	autoDeclineInvites: boolean;
 	ccEmails: string;
 	duplicateAvoidKeywords: string;
@@ -111,6 +114,37 @@ type GoogleCalendarListItem = {
 	isExternal: boolean;
 };
 
+type HabitTemplateCategory =
+	| "All"
+	| "Product"
+	| "Engineering"
+	| "Support"
+	| "Design"
+	| "Sales"
+	| "Marketing"
+	| "Leadership"
+	| "Wellness"
+	| "Learning";
+
+type HabitTemplate = {
+	id: string;
+	name: string;
+	emoji: string;
+	category: HabitTemplateCategory;
+	description: string;
+	habitCategory: HabitCategory;
+	priority: HabitPriority;
+	frequency: HabitFrequency;
+	minDurationMinutes: number;
+	maxDurationMinutes: number;
+	idealTime: string;
+	preferredDays: number[];
+	color: string;
+	timeDefenseMode: HabitTimeDefenseMode;
+	recoveryPolicy: HabitRecoveryPolicy;
+	visibilityPreference: HabitVisibilityPreference;
+};
+
 const categoryLabels: Record<HabitCategory, string> = {
 	health: "Health",
 	fitness: "Fitness",
@@ -125,12 +159,14 @@ const priorityLabels: Record<HabitPriority, string> = {
 	low: "Low priority",
 	medium: "Medium priority",
 	high: "High priority",
+	critical: "Critical priority",
 };
 
 const priorityClass: Record<HabitPriority, string> = {
 	low: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30",
 	medium: "bg-sky-500/10 text-sky-700 border-sky-500/30",
 	high: "bg-amber-500/10 text-amber-700 border-amber-500/30",
+	critical: "bg-orange-500/10 text-orange-700 border-orange-500/30",
 };
 
 const frequencyLabels: Record<HabitFrequency, string> = {
@@ -149,6 +185,11 @@ const reminderModeLabels: Record<HabitReminderMode, string> = {
 const unscheduledLabels: Record<HabitUnscheduledBehavior, string> = {
 	leave_on_calendar: "Leave it on the calendar",
 	remove_from_calendar: "Remove it from the calendar",
+};
+
+const recoveryLabels: Record<HabitRecoveryPolicy, string> = {
+	skip: "Skip missed occurrences",
+	recover: "Recover missed occurrences",
 };
 
 const visibilityLabels: Record<HabitVisibilityPreference, string> = {
@@ -185,6 +226,238 @@ const habitColors = [
 	"#ec4899",
 ] as const;
 
+const templateCategories: HabitTemplateCategory[] = [
+	"All",
+	"Product",
+	"Engineering",
+	"Support",
+	"Design",
+	"Sales",
+	"Marketing",
+	"Leadership",
+	"Wellness",
+	"Learning",
+];
+
+const habitTemplates: HabitTemplate[] = [
+	{
+		id: "lunch-reset",
+		name: "Lunch Reset",
+		emoji: "🍱",
+		category: "Wellness",
+		description: "Protect a true midday break so afternoons stay sharp.",
+		habitCategory: "health",
+		priority: "medium",
+		frequency: "daily",
+		minDurationMinutes: 30,
+		maxDurationMinutes: 60,
+		idealTime: "12:30",
+		preferredDays: [1, 2, 3, 4, 5],
+		color: "#22c55e",
+		timeDefenseMode: "always_free",
+		recoveryPolicy: "skip",
+		visibilityPreference: "default",
+	},
+	{
+		id: "product-spec",
+		name: "Spec Writing",
+		emoji: "📝",
+		category: "Product",
+		description: "Block concentrated time for product specs and tradeoffs.",
+		habitCategory: "productivity",
+		priority: "high",
+		frequency: "weekly",
+		minDurationMinutes: 45,
+		maxDurationMinutes: 120,
+		idealTime: "10:00",
+		preferredDays: [2, 4],
+		color: "#0ea5e9",
+		timeDefenseMode: "always_busy",
+		recoveryPolicy: "recover",
+		visibilityPreference: "default",
+	},
+	{
+		id: "eng-deep-work",
+		name: "Engineering Deep Work",
+		emoji: "💻",
+		category: "Engineering",
+		description: "Uninterrupted build window for complex technical work.",
+		habitCategory: "productivity",
+		priority: "high",
+		frequency: "daily",
+		minDurationMinutes: 60,
+		maxDurationMinutes: 120,
+		idealTime: "09:00",
+		preferredDays: [1, 2, 3, 4, 5],
+		color: "#6366f1",
+		timeDefenseMode: "always_busy",
+		recoveryPolicy: "recover",
+		visibilityPreference: "private",
+	},
+	{
+		id: "support-inbox",
+		name: "Support Catch-up",
+		emoji: "📨",
+		category: "Support",
+		description: "Predictable windows for triage and customer follow-ups.",
+		habitCategory: "social",
+		priority: "medium",
+		frequency: "daily",
+		minDurationMinutes: 20,
+		maxDurationMinutes: 40,
+		idealTime: "14:00",
+		preferredDays: [1, 2, 3, 4, 5],
+		color: "#14b8a6",
+		timeDefenseMode: "auto",
+		recoveryPolicy: "skip",
+		visibilityPreference: "default",
+	},
+	{
+		id: "design-critique",
+		name: "Design Critique Prep",
+		emoji: "🎨",
+		category: "Design",
+		description: "Prepare mockups and rationale before critique sessions.",
+		habitCategory: "learning",
+		priority: "medium",
+		frequency: "weekly",
+		minDurationMinutes: 45,
+		maxDurationMinutes: 90,
+		idealTime: "15:00",
+		preferredDays: [1, 3],
+		color: "#ec4899",
+		timeDefenseMode: "auto",
+		recoveryPolicy: "recover",
+		visibilityPreference: "default",
+	},
+	{
+		id: "sales-followups",
+		name: "Pipeline Follow-ups",
+		emoji: "📈",
+		category: "Sales",
+		description: "Daily momentum block for prospect and customer follow-ups.",
+		habitCategory: "social",
+		priority: "high",
+		frequency: "daily",
+		minDurationMinutes: 25,
+		maxDurationMinutes: 45,
+		idealTime: "16:00",
+		preferredDays: [1, 2, 3, 4, 5],
+		color: "#f97316",
+		timeDefenseMode: "always_busy",
+		recoveryPolicy: "recover",
+		visibilityPreference: "default",
+	},
+	{
+		id: "marketing-content",
+		name: "Content Sprint",
+		emoji: "📣",
+		category: "Marketing",
+		description: "Ship campaigns, copy, and creative without context switching.",
+		habitCategory: "learning",
+		priority: "medium",
+		frequency: "weekly",
+		minDurationMinutes: 60,
+		maxDurationMinutes: 120,
+		idealTime: "11:00",
+		preferredDays: [2, 4],
+		color: "#a855f7",
+		timeDefenseMode: "auto",
+		recoveryPolicy: "recover",
+		visibilityPreference: "default",
+	},
+	{
+		id: "leadership-1on1-notes",
+		name: "1:1 Preparation",
+		emoji: "🧭",
+		category: "Leadership",
+		description: "Prepare coaching notes and decision context before meetings.",
+		habitCategory: "productivity",
+		priority: "high",
+		frequency: "weekly",
+		minDurationMinutes: 30,
+		maxDurationMinutes: 60,
+		idealTime: "08:00",
+		preferredDays: [1],
+		color: "#f59e0b",
+		timeDefenseMode: "always_busy",
+		recoveryPolicy: "recover",
+		visibilityPreference: "default",
+	},
+	{
+		id: "walking-break",
+		name: "Take a Walk",
+		emoji: "🌿",
+		category: "Wellness",
+		description: "Recharge with short movement to maintain energy and focus.",
+		habitCategory: "health",
+		priority: "medium",
+		frequency: "daily",
+		minDurationMinutes: 15,
+		maxDurationMinutes: 30,
+		idealTime: "15:30",
+		preferredDays: [1, 2, 3, 4, 5],
+		color: "#84cc16",
+		timeDefenseMode: "always_free",
+		recoveryPolicy: "skip",
+		visibilityPreference: "default",
+	},
+	{
+		id: "reading-hour",
+		name: "Reading Hour",
+		emoji: "📚",
+		category: "Learning",
+		description: "Reserved learning window for books, papers, or industry updates.",
+		habitCategory: "learning",
+		priority: "medium",
+		frequency: "daily",
+		minDurationMinutes: 30,
+		maxDurationMinutes: 120,
+		idealTime: "20:00",
+		preferredDays: [1, 2, 3, 4, 5],
+		color: "#0ea5e9",
+		timeDefenseMode: "auto",
+		recoveryPolicy: "skip",
+		visibilityPreference: "private",
+	},
+	{
+		id: "monthly-metrics",
+		name: "Monthly Metrics Review",
+		emoji: "📊",
+		category: "Leadership",
+		description: "Review KPIs and decide adjustments for the next cycle.",
+		habitCategory: "productivity",
+		priority: "high",
+		frequency: "monthly",
+		minDurationMinutes: 60,
+		maxDurationMinutes: 120,
+		idealTime: "10:00",
+		preferredDays: [1],
+		color: "#ef4444",
+		timeDefenseMode: "always_busy",
+		recoveryPolicy: "recover",
+		visibilityPreference: "default",
+	},
+	{
+		id: "mindful-reset",
+		name: "Mindful Reset",
+		emoji: "🧘",
+		category: "Wellness",
+		description: "Short calm block to reset stress and attention.",
+		habitCategory: "mindfulness",
+		priority: "medium",
+		frequency: "daily",
+		minDurationMinutes: 10,
+		maxDurationMinutes: 20,
+		idealTime: "13:00",
+		preferredDays: [1, 2, 3, 4, 5, 6, 0],
+		color: "#06b6d4",
+		timeDefenseMode: "always_free",
+		recoveryPolicy: "skip",
+		visibilityPreference: "private",
+	},
+];
+
 const initialForm: HabitEditorState = {
 	title: "",
 	description: "",
@@ -207,6 +480,7 @@ const initialForm: HabitEditorState = {
 	reminderMode: "default",
 	customReminderMinutes: "15",
 	unscheduledBehavior: "remove_from_calendar",
+	recoveryPolicy: "skip",
 	autoDeclineInvites: false,
 	ccEmails: "",
 	duplicateAvoidKeywords: "",
@@ -253,6 +527,39 @@ const addMinutesToTime = (time: string, minutesToAdd: number) => {
 	return `${String(nextHours).padStart(2, "0")}:${String(nextMinutes).padStart(2, "0")}`;
 };
 
+const recurrenceFromFrequency = (frequency: HabitFrequency) => {
+	switch (frequency) {
+		case "daily":
+			return "RRULE:FREQ=DAILY;INTERVAL=1";
+		case "weekly":
+			return "RRULE:FREQ=WEEKLY;INTERVAL=1";
+		case "biweekly":
+			return "RRULE:FREQ=WEEKLY;INTERVAL=2";
+		case "monthly":
+			return "RRULE:FREQ=MONTHLY;INTERVAL=1";
+		default:
+			return "RRULE:FREQ=WEEKLY;INTERVAL=1";
+	}
+};
+
+const frequencyFromRecurrenceRule = (rule: string | undefined): HabitFrequency => {
+	if (!rule) return "weekly";
+	const normalized = rule.trim().replace(/^RRULE:/i, "");
+	const fields = new Map<string, string>();
+	for (const chunk of normalized.split(";")) {
+		const [key, value] = chunk.split("=", 2);
+		if (!key || !value) continue;
+		fields.set(key.toUpperCase(), value.toUpperCase());
+	}
+	const freq = fields.get("FREQ");
+	const interval = Number.parseInt(fields.get("INTERVAL") ?? "1", 10);
+	if (freq === "DAILY") return "daily";
+	if (freq === "WEEKLY" && interval >= 2) return "biweekly";
+	if (freq === "WEEKLY") return "weekly";
+	if (freq === "MONTHLY") return "monthly";
+	return "weekly";
+};
+
 const parseCsv = (value: string) =>
 	value
 		.split(",")
@@ -288,6 +595,15 @@ const formatDate = (value?: number) => {
 	}).format(new Date(value));
 };
 
+const formatTemplateCadence = (template: HabitTemplate) => {
+	const days = formatDays(template.preferredDays);
+	const duration = `${formatDurationFromMinutes(template.minDurationMinutes)} - ${formatDurationFromMinutes(
+		template.maxDurationMinutes,
+	)}`;
+	const frequency = frequencyLabels[template.frequency];
+	return `${frequency} • ${days} • ${duration}`;
+};
+
 export default function HabitsPage() {
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
 	const [isEditOpen, setIsEditOpen] = useState(false);
@@ -295,6 +611,9 @@ export default function HabitsPage() {
 	const [createForm, setCreateForm] = useState<HabitEditorState>(initialForm);
 	const [editForm, setEditForm] = useState<HabitEditorState | null>(null);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const [activeTab, setActiveTab] = useState<"all" | "templates">("all");
+	const [templateCategory, setTemplateCategory] = useState<HabitTemplateCategory>("All");
+	const [templateQuery, setTemplateQuery] = useState("");
 
 	const habitsQuery = useAuthenticatedQueryWithStatus(api.habits.queries.listHabits, {});
 	const habits = (habitsQuery.data ?? []) as HabitDTO[];
@@ -368,6 +687,19 @@ export default function HabitsPage() {
 		};
 	}, [habits]);
 
+	const filteredTemplates = useMemo(() => {
+		const query = templateQuery.trim().toLowerCase();
+		return habitTemplates.filter((template) => {
+			if (templateCategory !== "All" && template.category !== templateCategory) return false;
+			if (!query) return true;
+			return (
+				template.name.toLowerCase().includes(query) ||
+				template.description.toLowerCase().includes(query) ||
+				template.category.toLowerCase().includes(query)
+			);
+		});
+	}, [templateCategory, templateQuery]);
+
 	const hoursSetNameById = useMemo(() => {
 		return new Map(hoursSets.map((hoursSet) => [hoursSet._id, hoursSet.name] as const));
 	}, [hoursSets]);
@@ -432,6 +764,8 @@ export default function HabitsPage() {
 			description: form.description.trim() || undefined,
 			priority: form.priority,
 			category: form.category,
+			recurrenceRule: recurrenceFromFrequency(form.frequency),
+			recoveryPolicy: form.recoveryPolicy,
 			frequency: form.frequency,
 			durationMinutes: maxDurationMinutes,
 			minDurationMinutes,
@@ -527,7 +861,7 @@ export default function HabitsPage() {
 			description: habit.description ?? "",
 			priority: habit.priority ?? "medium",
 			category: habit.category,
-			frequency: habit.frequency,
+			frequency: habit.frequency ?? frequencyFromRecurrenceRule(habit.recurrenceRule),
 			repeatsPerPeriod: String(habit.repeatsPerPeriod ?? 1),
 			minDurationMinutes: formatDurationFromMinutes(
 				habit.minDurationMinutes ?? habit.durationMinutes,
@@ -548,6 +882,7 @@ export default function HabitsPage() {
 			reminderMode: habit.reminderMode ?? "default",
 			customReminderMinutes: String(habit.customReminderMinutes ?? 15),
 			unscheduledBehavior: habit.unscheduledBehavior ?? "remove_from_calendar",
+			recoveryPolicy: habit.recoveryPolicy ?? "skip",
 			autoDeclineInvites: habit.autoDeclineInvites ?? false,
 			ccEmails: (habit.ccEmails ?? []).join(", "),
 			duplicateAvoidKeywords: (habit.duplicateAvoidKeywords ?? []).join(", "),
@@ -558,40 +893,158 @@ export default function HabitsPage() {
 		setIsEditOpen(true);
 	};
 
+	const applyTemplate = (template: HabitTemplate) => {
+		setErrorMessage(null);
+		setCreateForm({
+			...initialForm,
+			title: template.name,
+			description: template.description,
+			priority: template.priority,
+			category: template.habitCategory,
+			frequency: template.frequency,
+			repeatsPerPeriod: "1",
+			minDurationMinutes: formatDurationFromMinutes(template.minDurationMinutes),
+			maxDurationMinutes: formatDurationFromMinutes(template.maxDurationMinutes),
+			idealTime: template.idealTime,
+			preferredDays: template.preferredDays,
+			hoursSetId: defaultHoursSetId,
+			preferredCalendarId: defaultCalendarId,
+			color: template.color,
+			visibilityPreference: template.visibilityPreference,
+			timeDefenseMode: template.timeDefenseMode,
+			recoveryPolicy: template.recoveryPolicy,
+		});
+		setIsCreateOpen(true);
+	};
+
 	return (
 		<div className="h-full min-h-0 overflow-auto p-4 md:p-6 lg:p-8">
 			<div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-				<div className="grid gap-4 md:grid-cols-[1.2fr_1fr]">
-					<Card className="border-border/60 bg-card/70">
-						<CardHeader className="pb-2">
-							<CardDescription className="text-xs uppercase tracking-[0.14em]">
-								Habit Engine
-							</CardDescription>
-							<CardTitle className="flex items-center gap-2 text-2xl">
-								<Repeat2 className="size-5 text-primary" />
-								Habits
-							</CardTitle>
-						</CardHeader>
-						<CardContent className="space-y-3">
-							<p className="max-w-xl text-sm text-muted-foreground">
-								Configure habit details, scheduling envelopes, visibility, reminders, and
-								time-defense behavior in one compact editor.
-							</p>
+				<Card className="border-border/60 bg-card/80">
+					<CardContent className="space-y-4 p-4 md:p-5">
+						<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+							<div className="inline-flex w-full rounded-xl border border-border/70 bg-background/60 p-1 md:w-auto">
+								<button
+									type="button"
+									onClick={() => setActiveTab("all")}
+									className={cn(
+										"rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+										activeTab === "all"
+											? "bg-primary text-primary-foreground"
+											: "text-muted-foreground hover:text-foreground",
+									)}
+								>
+									All habits
+								</button>
+								<button
+									type="button"
+									onClick={() => setActiveTab("templates")}
+									className={cn(
+										"rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+										activeTab === "templates"
+											? "bg-primary text-primary-foreground"
+											: "text-muted-foreground hover:text-foreground",
+									)}
+								>
+									Templates
+								</button>
+							</div>
 							<Button onClick={() => setIsCreateOpen(true)} disabled={busy} className="gap-1.5">
 								<Plus className="size-4" />
 								New habit
 							</Button>
-						</CardContent>
-					</Card>
+						</div>
+						{activeTab === "templates" ? (
+							<div className="space-y-3 border-t border-border/70 pt-4">
+								<div className="flex flex-wrap gap-2">
+									{templateCategories.map((category) => (
+										<button
+											key={category}
+											type="button"
+											onClick={() => setTemplateCategory(category)}
+											className={cn(
+												"rounded-full border px-3 py-1.5 text-sm transition-colors",
+												templateCategory === category
+													? "border-primary/60 bg-primary/10 text-primary"
+													: "border-border/70 bg-background/50 text-muted-foreground hover:text-foreground",
+											)}
+										>
+											{category}
+										</button>
+									))}
+								</div>
+								<div className="relative max-w-sm">
+									<Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+									<Input
+										value={templateQuery}
+										onChange={(event) => setTemplateQuery(event.target.value)}
+										placeholder="Search templates"
+										className="pl-9"
+									/>
+								</div>
+							</div>
+						) : (
+							<p className="text-sm text-muted-foreground">
+								Configure habits with advanced scheduling controls, then tune details in the editor.
+							</p>
+						)}
+					</CardContent>
+				</Card>
 
-					<Card className="border-border/60 bg-card/70">
-						<CardHeader className="pb-2">
-							<CardDescription className="text-xs uppercase tracking-[0.14em]">
-								Coverage
-							</CardDescription>
-							<CardTitle className="text-lg">Habit Overview</CardTitle>
-						</CardHeader>
-						<CardContent className="grid grid-cols-2 gap-2.5 text-sm">
+				{errorMessage ? (
+					<div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+						{errorMessage}
+					</div>
+				) : null}
+
+				{activeTab === "templates" ? (
+					<div className="space-y-5">
+						<Card className="overflow-hidden border-border/70 bg-gradient-to-r from-cyan-500/10 via-sky-500/10 to-indigo-500/10">
+							<CardContent className="flex flex-col items-center gap-3 px-6 py-12 text-center">
+								<div className="rounded-full border border-primary/30 bg-primary/10 p-3">
+									<Sparkles className="size-6 text-primary" />
+								</div>
+								<div className="space-y-1">
+									<p className="text-2xl font-semibold tracking-tight">Team Habit Templates</p>
+									<p className="max-w-2xl text-sm text-muted-foreground">
+										Start from proven routines, then customize every detail before saving.
+									</p>
+								</div>
+								<Button variant="outline" onClick={() => setIsCreateOpen(true)} className="gap-1.5">
+									<Plus className="size-4" />
+									Create from scratch
+								</Button>
+							</CardContent>
+						</Card>
+
+						<div className="space-y-3">
+							<div className="flex items-center justify-between">
+								<p className="text-lg font-semibold">Template library</p>
+								<Badge variant="secondary">{filteredTemplates.length} templates</Badge>
+							</div>
+							{filteredTemplates.length === 0 ? (
+								<Empty className="border-border/70 bg-card/40">
+									<EmptyHeader>
+										<EmptyTitle>No templates match</EmptyTitle>
+										<EmptyDescription>Try another category or search term.</EmptyDescription>
+									</EmptyHeader>
+								</Empty>
+							) : (
+								<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+									{filteredTemplates.map((template) => (
+										<TemplateCard
+											key={template.id}
+											template={template}
+											onUse={() => applyTemplate(template)}
+										/>
+									))}
+								</div>
+							)}
+						</div>
+					</div>
+				) : (
+					<>
+						<div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
 							<MetricTile label="Total" value={habits.length} icon={Sparkles} />
 							<MetricTile label="Active" value={activeHabits.length} icon={Flame} />
 							<MetricTile label="Paused" value={pausedHabits.length} icon={Waves} />
@@ -600,112 +1053,115 @@ export default function HabitsPage() {
 								value={activeHabits.reduce((sum, habit) => sum + habit.durationMinutes, 0)}
 								icon={Timer}
 							/>
-						</CardContent>
-					</Card>
-				</div>
+						</div>
 
-				{errorMessage ? (
-					<div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
-						{errorMessage}
-					</div>
-				) : null}
-
-				{habitsQuery.isPending ? (
-					<div className="grid gap-4 md:grid-cols-2">
-						{["habit-skeleton-left", "habit-skeleton-right"].map((key) => (
-							<Card key={key} className="h-72 animate-pulse bg-muted/30" />
-						))}
-					</div>
-				) : habits.length === 0 ? (
-					<Empty className="border-border/70 bg-card/40">
-						<EmptyHeader>
-							<EmptyTitle>No habits configured</EmptyTitle>
-							<EmptyDescription>
-								Create your first habit with full scheduling controls.
-							</EmptyDescription>
-						</EmptyHeader>
-						<Button onClick={() => setIsCreateOpen(true)} className="gap-1.5">
-							<Plus className="size-4" />
-							Create habit
-						</Button>
-					</Empty>
-				) : (
-					<div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
-						<Card className="border-border/70 bg-card/70">
-							<CardHeader className="pb-2">
-								<CardTitle className="flex items-center justify-between text-base">
-									<span>Active routines</span>
-									<Badge variant="secondary">{activeHabits.length}</Badge>
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="space-y-2">
-								{activeHabits.length === 0 ? (
-									<p className="text-sm text-muted-foreground">No active habits.</p>
-								) : (
-									activeHabits.map((habit) => (
-										<HabitCard
-											key={habit._id}
-											habit={habit}
-											hoursSetName={
-												habit.hoursSetId ? hoursSetNameById.get(habit.hoursSetId) : undefined
-											}
-											calendarName={
-												habit.preferredCalendarId
-													? calendarNameById.get(habit.preferredCalendarId)
-													: undefined
-											}
-											onEdit={() => openEdit(habit)}
-											onDelete={() => deleteHabit({ id: asHabitId(habit._id) })}
-											onToggle={(isActive) =>
-												toggleHabitActive({ id: asHabitId(habit._id), isActive })
-											}
-											isBusy={busy}
-										/>
-									))
-								)}
-							</CardContent>
-						</Card>
-
-						<Card className="border-border/70 bg-card/70">
-							<CardHeader className="pb-2">
-								<CardTitle className="flex items-center justify-between text-base">
-									<span>Paused routines</span>
-									<Badge variant="outline">{pausedHabits.length}</Badge>
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="space-y-2">
-								{pausedHabits.length === 0 ? (
-									<p className="text-sm text-muted-foreground">No paused habits.</p>
-								) : (
-									pausedHabits.map((habit) => (
-										<div
-											key={habit._id}
-											className="rounded-lg border border-border/70 bg-background/70 p-3"
-										>
-											<div className="flex items-start justify-between gap-2">
-												<div className="min-w-0">
-													<p className="truncate text-sm font-semibold">{habit.title}</p>
-													<p className="text-xs text-muted-foreground">
-														{frequencyLabels[habit.frequency]} / {habit.durationMinutes}m
-													</p>
-												</div>
-												<Button
-													size="sm"
-													variant="outline"
-													disabled={busy}
-													onClick={() =>
-														toggleHabitActive({ id: asHabitId(habit._id), isActive: true })
+						{habitsQuery.isPending ? (
+							<div className="grid gap-4 md:grid-cols-2">
+								{["habit-skeleton-left", "habit-skeleton-right"].map((key) => (
+									<Card key={key} className="h-72 animate-pulse bg-muted/30" />
+								))}
+							</div>
+						) : habits.length === 0 ? (
+							<Empty className="border-border/70 bg-card/40">
+								<EmptyHeader>
+									<EmptyTitle>No habits configured</EmptyTitle>
+									<EmptyDescription>
+										Create your first habit with full scheduling controls.
+									</EmptyDescription>
+								</EmptyHeader>
+								<Button onClick={() => setIsCreateOpen(true)} className="gap-1.5">
+									<Plus className="size-4" />
+									Create habit
+								</Button>
+							</Empty>
+						) : (
+							<div className="grid gap-4 lg:grid-cols-[1.35fr_1fr]">
+								<Card className="border-border/70 bg-card/70">
+									<CardHeader className="pb-2">
+										<CardTitle className="flex items-center justify-between text-base">
+											<span>Active routines</span>
+											<Badge variant="secondary">{activeHabits.length}</Badge>
+										</CardTitle>
+									</CardHeader>
+									<CardContent className="space-y-2">
+										{activeHabits.length === 0 ? (
+											<p className="text-sm text-muted-foreground">No active habits.</p>
+										) : (
+											activeHabits.map((habit) => (
+												<HabitCard
+													key={habit._id}
+													habit={habit}
+													hoursSetName={
+														habit.hoursSetId ? hoursSetNameById.get(habit.hoursSetId) : undefined
 													}
+													calendarName={
+														habit.preferredCalendarId
+															? calendarNameById.get(habit.preferredCalendarId)
+															: undefined
+													}
+													onEdit={() => openEdit(habit)}
+													onDelete={() => deleteHabit({ id: asHabitId(habit._id) })}
+													onToggle={(isActive) =>
+														toggleHabitActive({ id: asHabitId(habit._id), isActive })
+													}
+													isBusy={busy}
+												/>
+											))
+										)}
+									</CardContent>
+								</Card>
+
+								<Card className="border-border/70 bg-card/70">
+									<CardHeader className="pb-2">
+										<CardTitle className="flex items-center justify-between text-base">
+											<span>Paused routines</span>
+											<Badge variant="outline">{pausedHabits.length}</Badge>
+										</CardTitle>
+									</CardHeader>
+									<CardContent className="space-y-2">
+										{pausedHabits.length === 0 ? (
+											<p className="text-sm text-muted-foreground">No paused habits.</p>
+										) : (
+											pausedHabits.map((habit) => (
+												<div
+													key={habit._id}
+													className="rounded-lg border border-border/70 bg-background/70 p-3"
 												>
-													Resume
-												</Button>
-											</div>
-										</div>
-									))
-								)}
-							</CardContent>
-						</Card>
-					</div>
+													<div className="flex items-start justify-between gap-2">
+														<div className="min-w-0">
+															<p className="truncate text-sm font-semibold">{habit.title}</p>
+															<p className="text-xs text-muted-foreground">
+																{
+																	frequencyLabels[
+																		habit.frequency ??
+																			frequencyFromRecurrenceRule(habit.recurrenceRule)
+																	]
+																}{" "}
+																/ {habit.durationMinutes}m
+															</p>
+														</div>
+														<Button
+															size="sm"
+															variant="outline"
+															disabled={busy}
+															onClick={() =>
+																toggleHabitActive({
+																	id: asHabitId(habit._id),
+																	isActive: true,
+																})
+															}
+														>
+															Resume
+														</Button>
+													</div>
+												</div>
+											))
+										)}
+									</CardContent>
+								</Card>
+							</div>
+						)}
+					</>
 				)}
 			</div>
 
@@ -760,6 +1216,54 @@ function MetricTile({
 			</div>
 			<div className="mt-1.5 text-xl font-semibold">{value}</div>
 		</div>
+	);
+}
+
+function TemplateCard({
+	template,
+	onUse,
+}: {
+	template: HabitTemplate;
+	onUse: () => void;
+}) {
+	return (
+		<Card className="group relative overflow-hidden border-border/70 bg-card/60">
+			<div
+				className="pointer-events-none absolute inset-x-0 top-0 h-1"
+				style={{ backgroundColor: template.color }}
+			/>
+			<CardHeader className="space-y-2 pb-1">
+				<div className="flex items-start justify-between gap-3">
+					<div className="space-y-1">
+						<CardDescription className="text-xs uppercase tracking-[0.14em]">
+							{template.category}
+						</CardDescription>
+						<CardTitle className="text-lg">
+							<span className="mr-2" role="img" aria-label={`${template.name} icon`}>
+								{template.emoji}
+							</span>
+							{template.name}
+						</CardTitle>
+					</div>
+					<Badge variant="outline">{priorityLabels[template.priority]}</Badge>
+				</div>
+			</CardHeader>
+			<CardContent className="space-y-3">
+				<p className="line-clamp-2 text-sm text-muted-foreground">{template.description}</p>
+				<div className="rounded-md border border-border/70 bg-background/60 px-2.5 py-2 text-xs text-muted-foreground">
+					{formatTemplateCadence(template)}
+				</div>
+				<div className="flex items-center justify-between gap-2">
+					<div className="flex flex-wrap items-center gap-1.5">
+						<Badge variant="secondary">{categoryLabels[template.habitCategory]}</Badge>
+						<Badge variant="outline">{defenseModeLabels[template.timeDefenseMode]}</Badge>
+					</div>
+					<Button size="sm" onClick={onUse}>
+						Use template
+					</Button>
+				</div>
+			</CardContent>
+		</Card>
 	);
 }
 
@@ -1292,6 +1796,38 @@ function HabitDialog({
 											>
 												<RadioGroupItem value={mode} id={`habit-unscheduled-${mode}`} />
 												<Label htmlFor={`habit-unscheduled-${mode}`} className="cursor-pointer">
+													{label}
+												</Label>
+											</div>
+										))}
+									</RadioGroup>
+								</div>
+
+								<div className="space-y-2">
+									<Label>Recovery policy</Label>
+									<p className="text-sm text-muted-foreground">
+										Control whether missed occurrences should be recovered in later slots.
+									</p>
+									<RadioGroup
+										value={value.recoveryPolicy}
+										onValueChange={(recoveryPolicy) =>
+											onChange({
+												...value,
+												recoveryPolicy: recoveryPolicy as HabitRecoveryPolicy,
+											})
+										}
+										className="rounded-lg border border-border/70"
+									>
+										{Object.entries(recoveryLabels).map(([mode, label]) => (
+											<div
+												key={mode}
+												className={cn(
+													"flex cursor-pointer items-center gap-3 border-b border-border/70 px-3 py-3 last:border-b-0",
+													value.recoveryPolicy === mode && "bg-muted/50",
+												)}
+											>
+												<RadioGroupItem value={mode} id={`habit-recovery-${mode}`} />
+												<Label htmlFor={`habit-recovery-${mode}`} className="cursor-pointer">
 													{label}
 												</Label>
 											</div>

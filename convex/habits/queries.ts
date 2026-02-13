@@ -19,7 +19,13 @@ const habitCategoryValidator = v.union(
 	v.literal("other"),
 );
 
-const habitPriorityValidator = v.union(v.literal("low"), v.literal("medium"), v.literal("high"));
+const habitPriorityValidator = v.union(
+	v.literal("low"),
+	v.literal("medium"),
+	v.literal("high"),
+	v.literal("critical"),
+);
+const habitRecoveryPolicyValidator = v.union(v.literal("skip"), v.literal("recover"));
 const habitVisibilityPreferenceValidator = v.union(
 	v.literal("default"),
 	v.literal("public"),
@@ -48,7 +54,9 @@ const habitDtoValidator = v.object({
 	description: v.optional(v.string()),
 	priority: v.optional(habitPriorityValidator),
 	category: habitCategoryValidator,
-	frequency: habitFrequencyValidator,
+	recurrenceRule: v.optional(v.string()),
+	recoveryPolicy: v.optional(habitRecoveryPolicyValidator),
+	frequency: v.optional(habitFrequencyValidator),
 	durationMinutes: v.number(),
 	minDurationMinutes: v.optional(v.number()),
 	maxDurationMinutes: v.optional(v.number()),
@@ -92,6 +100,11 @@ export const listHabits = query({
 			.collect();
 
 		const filtered = args.activeOnly ? allHabits.filter((habit) => habit.isActive) : allHabits;
-		return filtered.sort((a, b) => a.title.localeCompare(b.title));
+		return filtered
+			.map((habit) => ({
+				...habit,
+				priority: habit.priority === "blocker" ? "critical" : habit.priority,
+			}))
+			.sort((a, b) => a.title.localeCompare(b.title));
 	}),
 });

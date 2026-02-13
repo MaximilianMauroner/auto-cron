@@ -12,7 +12,7 @@ const productDetails = [
 		},
 		items: [
 			{ featureId: "tasks", primaryText: "50 tasks", secondaryText: "per month" },
-			{ featureId: "habits", primaryText: "5 habits", secondaryText: "per month" },
+			{ featureId: "habits", primaryText: "5 habits", secondaryText: "total" },
 			{ primaryText: "Unlimited scheduling" },
 			{ primaryText: "Google Calendar Sync" },
 		],
@@ -27,7 +27,7 @@ const productDetails = [
 		},
 		items: [
 			{ featureId: "tasks", primaryText: "200 tasks", secondaryText: "per month" },
-			{ featureId: "habits", primaryText: "20 habits", secondaryText: "per month" },
+			{ featureId: "habits", primaryText: "20 habits", secondaryText: "total" },
 			{ primaryText: "Unlimited scheduling" },
 			{ primaryText: "Google Calendar Sync" },
 		],

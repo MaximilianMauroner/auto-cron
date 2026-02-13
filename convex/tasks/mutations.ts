@@ -8,6 +8,7 @@ import {
 	getDefaultHoursSet,
 	taskSchedulingModeValidator,
 } from "../hours/shared";
+import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
 
 const taskStatusValidator = v.union(
 	v.literal("backlog"),
@@ -37,6 +38,9 @@ const taskCreateInputValidator = v.object({
 	splitAllowed: v.optional(v.boolean()),
 	minChunkMinutes: v.optional(v.number()),
 	maxChunkMinutes: v.optional(v.number()),
+	restMinutes: v.optional(v.number()),
+	travelMinutes: v.optional(v.number()),
+	location: v.optional(v.string()),
 	sendToUpNext: v.optional(v.boolean()),
 	hoursSetId: v.optional(v.id("hoursSets")),
 	schedulingMode: v.optional(taskSchedulingModeValidator),
@@ -60,6 +64,9 @@ const taskUpdatePatchValidator = v.object({
 	splitAllowed: v.optional(v.union(v.boolean(), v.null())),
 	minChunkMinutes: v.optional(v.union(v.number(), v.null())),
 	maxChunkMinutes: v.optional(v.union(v.number(), v.null())),
+	restMinutes: v.optional(v.union(v.number(), v.null())),
+	travelMinutes: v.optional(v.union(v.number(), v.null())),
+	location: v.optional(v.union(v.string(), v.null())),
 	sendToUpNext: v.optional(v.union(v.boolean(), v.null())),
 	hoursSetId: v.optional(v.union(v.id("hoursSets"), v.null())),
 	schedulingMode: v.optional(v.union(taskSchedulingModeValidator, v.null())),
@@ -81,9 +88,12 @@ type TaskCreateInput = {
 	splitAllowed?: boolean;
 	minChunkMinutes?: number;
 	maxChunkMinutes?: number;
+	restMinutes?: number;
+	travelMinutes?: number;
+	location?: string;
 	sendToUpNext?: boolean;
 	hoursSetId?: Id<"hoursSets">;
-	schedulingMode?: "fastest" | "backfacing" | "parallel";
+	schedulingMode?: "fastest" | "balanced" | "packed";
 	visibilityPreference?: "default" | "private";
 	preferredCalendarId?: string;
 	color?: string;
@@ -103,9 +113,12 @@ type TaskUpdatePatch = {
 	splitAllowed?: boolean | null;
 	minChunkMinutes?: number | null;
 	maxChunkMinutes?: number | null;
+	restMinutes?: number | null;
+	travelMinutes?: number | null;
+	location?: string | null;
 	sendToUpNext?: boolean | null;
 	hoursSetId?: Id<"hoursSets"> | null;
-	schedulingMode?: "fastest" | "backfacing" | "parallel" | null;
+	schedulingMode?: "fastest" | "balanced" | "packed" | null;
 	visibilityPreference?: "default" | "private" | null;
 	preferredCalendarId?: string | null;
 	color?: string | null;
@@ -176,6 +189,17 @@ const resolveHoursSetForTask = async (
 	return defaultHoursSet._id;
 };
 
+const normalizeOptionalNonNegativeMinutes = (value: number | null | undefined) => {
+	if (value === null || value === undefined) return undefined;
+	if (!Number.isFinite(value) || value < 0) {
+		throw new ConvexError({
+			code: "INVALID_DURATION",
+			message: "Duration values must be 0 or greater.",
+		});
+	}
+	return Math.round(value);
+};
+
 export const updateTask = mutation({
 	args: {
 		id: v.id("tasks"),
@@ -192,6 +216,17 @@ export const updateTask = mutation({
 		for (const [key, value] of Object.entries(args.patch)) {
 			nextPatch[key] = value === null ? undefined : value;
 		}
+		if (args.patch.restMinutes !== undefined) {
+			nextPatch.restMinutes = normalizeOptionalNonNegativeMinutes(args.patch.restMinutes);
+		}
+		if (args.patch.travelMinutes !== undefined) {
+			nextPatch.travelMinutes = normalizeOptionalNonNegativeMinutes(args.patch.travelMinutes);
+		}
+		if (args.patch.location !== undefined) {
+			const normalizedLocation = args.patch.location?.trim();
+			nextPatch.location =
+				normalizedLocation && normalizedLocation.length > 0 ? normalizedLocation : undefined;
+		}
 		if (args.patch.hoursSetId !== undefined && args.patch.hoursSetId !== null) {
 			await resolveHoursSetForTask(ctx, ctx.userId, args.patch.hoursSetId);
 		}
@@ -202,6 +237,10 @@ export const updateTask = mutation({
 			}
 		}
 		await ctx.db.patch(args.id, nextPatch as Partial<typeof task>);
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: ctx.userId,
+			triggeredBy: "task_change",
+		});
 		return args.id;
 	}),
 });
@@ -217,6 +256,10 @@ export const deleteTask = mutation({
 			throw notFoundError();
 		}
 		await ctx.db.delete(args.id);
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: ctx.userId,
+			triggeredBy: "task_change",
+		});
 		return null;
 	}),
 });
@@ -248,6 +291,10 @@ export const reorderTasks = mutation({
 				}),
 			),
 		);
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: ctx.userId,
+			triggeredBy: "task_change",
+		});
 		return null;
 	}),
 });
@@ -274,6 +321,9 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 		const status = args.input.sendToUpNext ? "queued" : (args.input.status ?? "backlog");
 		const sortOrder = await resolveNextSortOrder(ctx, args.userId, status);
 		const hoursSetId = await resolveHoursSetForTask(ctx, args.userId, args.input.hoursSetId);
+		const restMinutes = normalizeOptionalNonNegativeMinutes(args.input.restMinutes);
+		const travelMinutes = normalizeOptionalNonNegativeMinutes(args.input.travelMinutes);
+		const location = args.input.location?.trim();
 		const insertedId = await ctx.db.insert("tasks", {
 			userId: args.userId,
 			title: args.input.title,
@@ -290,6 +340,9 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 			splitAllowed: args.input.splitAllowed,
 			minChunkMinutes: args.input.minChunkMinutes,
 			maxChunkMinutes: args.input.maxChunkMinutes,
+			restMinutes,
+			travelMinutes,
+			location: location && location.length > 0 ? location : undefined,
 			sendToUpNext: args.input.sendToUpNext,
 			hoursSetId,
 			schedulingMode: args.input.schedulingMode,
@@ -316,6 +369,11 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 				updatedAt: Date.now(),
 			});
 		}
+
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: args.userId,
+			triggeredBy: "task_change",
+		});
 
 		return insertedId;
 	},

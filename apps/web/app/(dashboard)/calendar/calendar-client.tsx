@@ -42,6 +42,7 @@ import type {
 import {
 	type CalendarEventExternal,
 	type CalendarType,
+	createCalendar,
 	createViewDay,
 	createViewMonthGrid,
 	createViewWeek,
@@ -49,7 +50,7 @@ import {
 import { createCalendarControlsPlugin } from "@schedule-x/calendar-controls";
 import { createCurrentTimePlugin } from "@schedule-x/current-time";
 import { createDragAndDropPlugin } from "@schedule-x/drag-and-drop";
-import { ScheduleXCalendar, useCalendarApp } from "@schedule-x/react";
+import { ScheduleXCalendar } from "@schedule-x/react";
 import { createScrollControllerPlugin } from "@schedule-x/scroll-controller";
 import { useAction, useConvexAuth } from "convex/react";
 import {
@@ -66,12 +67,13 @@ import {
 	MoreHorizontal,
 	RefreshCw,
 	Repeat2,
+	Route,
 	Sparkles,
 	User,
 	Video,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ComponentProps, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
 
 type EditorState = {
@@ -139,6 +141,11 @@ type PendingMoveUpdate = {
 	end: number;
 	title: string;
 };
+type SyncRange = {
+	start: number;
+	end: number;
+};
+type TimeFormatPreference = "12h" | "24h";
 
 type RecurrenceFrequency = "NONE" | "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 type WeekdayToken = "MO" | "TU" | "WE" | "TH" | "FR" | "SA" | "SU";
@@ -180,27 +187,6 @@ type GoogleCalendarListItem = {
 };
 
 const monthYearFormatter = new Intl.DateTimeFormat("en-US", { month: "long", year: "numeric" });
-const detailsDateFormatter = new Intl.DateTimeFormat("en-US", {
-	weekday: "short",
-	month: "short",
-	day: "numeric",
-	year: "numeric",
-	hour: "numeric",
-	minute: "2-digit",
-});
-const dateOnlyFormatter = new Intl.DateTimeFormat("en-US", {
-	weekday: "short",
-	day: "numeric",
-	month: "short",
-});
-const compactDateFormatter = new Intl.DateTimeFormat("en-US", {
-	month: "short",
-	day: "numeric",
-});
-const timeOnlyFormatter = new Intl.DateTimeFormat("en-US", {
-	hour: "numeric",
-	minute: "2-digit",
-});
 const monthDayFormatter = new Intl.DateTimeFormat("en-US", {
 	month: "short",
 	day: "numeric",
@@ -226,7 +212,7 @@ const visibilityOptions = [
 	{ value: "private", label: "Private" },
 	{ value: "confidential", label: "Confidential" },
 ] as const;
-const durationPresetMinutes = [15, 30, 45, 60, 90, 120, 180, 240] as const;
+const durationPresetMultipliers = [1, 2, 3, 4, 6, 8] as const;
 
 const defaultSourceCalendars: Record<string, CalendarType> = {
 	"google-default": {
@@ -392,7 +378,20 @@ const getCalendarKey = (event: CalendarEventDTO) => {
 	if (event.source === "google") {
 		return `google-${resolveGoogleColor(event.color).token}`;
 	}
+	if (
+		(event.source === "task" || event.source === "habit" || event.source === "manual") &&
+		event.color?.trim()
+	) {
+		return `${event.source}-${resolveGoogleColor(event.color).token}`;
+	}
 	return event.source;
+};
+
+const sourceCalendarLabel: Record<CalendarSource, string> = {
+	google: "Google",
+	task: "Task",
+	habit: "Habit",
+	manual: "Manual",
 };
 
 const toLocalParts = (timestamp: number) => {
@@ -406,12 +405,112 @@ const toLocalParts = (timestamp: number) => {
 	};
 };
 
-const toInputDateTime = (timestamp: number) => {
-	const parts = toLocalParts(timestamp);
-	return `${parts.year}-${parts.month}-${parts.day}T${parts.hours}:${parts.minutes}`;
+const LOCAL_DATE_TIME_REGEX =
+	/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(\.(\d{1,3}))?)?$/;
+const timeZoneFormatterCache = new Map<string, Intl.DateTimeFormat>();
+const getTimeZoneFormatter = (timeZone: string) => {
+	const existing = timeZoneFormatterCache.get(timeZone);
+	if (existing) return existing;
+	const formatter = new Intl.DateTimeFormat("en-US", {
+		timeZone,
+		hourCycle: "h23",
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+	});
+	timeZoneFormatterCache.set(timeZone, formatter);
+	return formatter;
 };
 
-const parseDateTimeInput = (value: string) => {
+const getTimeZoneParts = (timestamp: number, timeZone: string) => {
+	try {
+		const formatter = getTimeZoneFormatter(timeZone);
+		const parts = formatter.formatToParts(new Date(timestamp));
+		const byType = new Map(parts.map((part) => [part.type, part.value]));
+		const year = Number.parseInt(byType.get("year") ?? "", 10);
+		const month = Number.parseInt(byType.get("month") ?? "", 10);
+		const day = Number.parseInt(byType.get("day") ?? "", 10);
+		const hour = Number.parseInt(byType.get("hour") ?? "", 10);
+		const minute = Number.parseInt(byType.get("minute") ?? "", 10);
+		const second = Number.parseInt(byType.get("second") ?? "", 10);
+		if (
+			!Number.isFinite(year) ||
+			!Number.isFinite(month) ||
+			!Number.isFinite(day) ||
+			!Number.isFinite(hour) ||
+			!Number.isFinite(minute) ||
+			!Number.isFinite(second)
+		) {
+			return null;
+		}
+		return { year, month, day, hour, minute, second };
+	} catch {
+		return null;
+	}
+};
+
+const parseLocalDateTimeInTimeZone = (raw: string, timeZone: string): number | undefined => {
+	const match = raw.match(LOCAL_DATE_TIME_REGEX);
+	if (!match) return undefined;
+
+	const year = Number.parseInt(match[1] ?? "", 10);
+	const month = Number.parseInt(match[2] ?? "", 10);
+	const day = Number.parseInt(match[3] ?? "", 10);
+	const hour = Number.parseInt(match[4] ?? "", 10);
+	const minute = Number.parseInt(match[5] ?? "", 10);
+	const second = Number.parseInt(match[6] ?? "0", 10);
+	const millisecond = Number.parseInt((match[8] ?? "0").padEnd(3, "0"), 10);
+	if (
+		!Number.isFinite(year) ||
+		!Number.isFinite(month) ||
+		!Number.isFinite(day) ||
+		!Number.isFinite(hour) ||
+		!Number.isFinite(minute) ||
+		!Number.isFinite(second) ||
+		!Number.isFinite(millisecond)
+	) {
+		return undefined;
+	}
+
+	const targetUtcValue = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
+	let candidate = targetUtcValue;
+	for (let index = 0; index < 3; index += 1) {
+		const resolved = getTimeZoneParts(candidate, timeZone);
+		if (!resolved) return undefined;
+		const observedUtcValue = Date.UTC(
+			resolved.year,
+			resolved.month - 1,
+			resolved.day,
+			resolved.hour,
+			resolved.minute,
+			resolved.second,
+			millisecond,
+		);
+		const delta = targetUtcValue - observedUtcValue;
+		candidate += delta;
+		if (delta === 0) break;
+	}
+	return candidate;
+};
+
+const toInputDateTime = (timestamp: number, timeZone?: string) => {
+	const parts = timeZone ? getTimeZoneParts(timestamp, timeZone) : null;
+	if (parts) {
+		return `${String(parts.year).padStart(4, "0")}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}T${String(parts.hour).padStart(2, "0")}:${String(parts.minute).padStart(2, "0")}`;
+	}
+	const localParts = toLocalParts(timestamp);
+	return `${localParts.year}-${localParts.month}-${localParts.day}T${localParts.hours}:${localParts.minutes}`;
+};
+
+const parseDateTimeInput = (value: string, timeZone?: string) => {
+	const valueWithSeconds = value.length === 16 ? `${value}:00` : value;
+	if (timeZone) {
+		const parsedInTimeZone = parseLocalDateTimeInTimeZone(valueWithSeconds, timeZone);
+		if (parsedInTimeZone !== undefined) return parsedInTimeZone;
+	}
 	const [datePart, timePart] = value.split("T");
 	if (!datePart || !timePart) return new Date(value).getTime();
 	const [yearInput, monthInput, dayInput] = datePart.split("-").map(Number);
@@ -938,6 +1037,12 @@ const normalizeSelectedDate = (value: string) => {
 	return formatDateInput(new Date());
 };
 
+const toDateAnchorTimestamp = (value: string) => {
+	const normalized = normalizeSelectedDate(value);
+	const timestamp = Date.parse(`${normalized}T12:00:00`);
+	return Number.isFinite(timestamp) ? timestamp : Date.now();
+};
+
 const hasCalendarControlsApp = (plugin: unknown): plugin is { $app: object } => {
 	if (!plugin || typeof plugin !== "object") return false;
 	return "$app" in plugin && Boolean((plugin as { $app?: object }).$app);
@@ -950,9 +1055,6 @@ const hasScrollControllerApp = (
 	const maybePlugin = plugin as { $app?: object; scrollTo?: (time: string) => void };
 	return Boolean(maybePlugin.$app) && typeof maybePlugin.scrollTo === "function";
 };
-
-const formatEventDateRange = (start: number, end: number) =>
-	`${detailsDateFormatter.format(new Date(start))} - ${detailsDateFormatter.format(new Date(end))}`;
 
 const formatDuration = (start: number, end: number) => {
 	const durationMs = Math.max(0, end - start);
@@ -1051,14 +1153,14 @@ const parseTimeToMinutes = (value: string) => {
 	return Math.max(0, Math.min(24 * 60, hours * 60 + minutes));
 };
 
-const snapToQuarterHour = (timestamp: number) => {
-	const step = 1000 * 60 * 15;
-	return Math.round(timestamp / step) * step;
-};
-const QUARTER_HOUR_MS = 1000 * 60 * 15;
+const snapToStep = (timestamp: number, stepMs: number) => Math.round(timestamp / stepMs) * stepMs;
+const DAY_MS = 1000 * 60 * 60 * 24;
 const DRAG_CREATE_THRESHOLD_PX = 6;
 const DEFAULT_SCROLL_TIME = "08:00";
 const EVENT_SHEET_BREAKPOINT_QUERY = "(max-width: 1279px)";
+const DEFAULT_SOURCE_FILTER: CalendarSource[] = ["google", "task", "habit", "manual"];
+const QUERY_RANGE_PAST_DAYS = 7;
+const QUERY_RANGE_FUTURE_DAYS = 70;
 
 const getCurrentFocusScrollTime = () => {
 	const now = new Date();
@@ -1073,6 +1175,40 @@ const getCurrentFocusScrollTime = () => {
 };
 
 const isTodayDate = (dateString: string) => dateString === formatDateInput(new Date());
+const detectLocalTimeZone = () => {
+	try {
+		return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+	} catch {
+		return "UTC";
+	}
+};
+const detectLocalTimeFormatPreference = (): TimeFormatPreference => {
+	try {
+		return new Intl.DateTimeFormat(undefined, { hour: "numeric" }).resolvedOptions().hour12 ===
+			false
+			? "24h"
+			: "12h";
+	} catch {
+		return "24h";
+	}
+};
+
+const useResettableCalendarApp = <TCalendarApp,>(factory: () => TCalendarApp, resetKey: string) => {
+	const factoryRef = useRef(factory);
+	const [calendarApp, setCalendarApp] = useState<TCalendarApp | null>(null);
+
+	useEffect(() => {
+		factoryRef.current = factory;
+	}, [factory]);
+
+	useEffect(() => {
+		if (resetKey.length >= 0) {
+			setCalendarApp(factoryRef.current());
+		}
+	}, [resetKey]);
+
+	return calendarApp;
+};
 
 type CalendarClientProps = {
 	initialErrorMessage?: string | null;
@@ -1086,7 +1222,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
 	const [error, setError] = useState<string | null>(initialErrorMessage);
 	const [searchQuery, setSearchQuery] = useState("");
-	const [sourceFilter, setSourceFilter] = useState<CalendarSource[]>(["google"]);
+	const [sourceFilter, setSourceFilter] = useState<CalendarSource[]>(DEFAULT_SOURCE_FILTER);
 	const [editor, setEditor] = useState<EditorState | null>(null);
 	const [isCustomRepeatDialogOpen, setIsCustomRepeatDialogOpen] = useState(false);
 	const [customRecurrenceDraft, setCustomRecurrenceDraft] = useState<CustomRecurrenceDraft | null>(
@@ -1102,6 +1238,9 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const [selectedDate, setSelectedDate] = useState(() =>
 		normalizeSelectedDate(formatDateInput(new Date())),
 	);
+	const [queryRangeAnchor, setQueryRangeAnchor] = useState(() =>
+		toDateAnchorTimestamp(formatDateInput(new Date())),
+	);
 	const [isMobileEventSheetOpen, setIsMobileEventSheetOpen] = useState(false);
 	const [isEventSheetMode, setIsEventSheetMode] = useState(false);
 	const dragCreateRef = useRef<DragCreateState | null>(null);
@@ -1113,6 +1252,11 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const wasEventSheetModeRef = useRef(false);
 	const calendarContainerRef = useRef<HTMLDivElement>(null);
 	const scheduleEventsByIdRef = useRef<Map<string, CalendarEventDTO>>(new Map());
+	const syncedGoogleRangeRef = useRef<SyncRange | null>(null);
+	const autoSyncAttemptedRangeKeyRef = useRef<string | null>(null);
+	const autoWatchRegistrationAttemptedRef = useRef(false);
+	const localTimeZone = useMemo(() => detectLocalTimeZone(), []);
+	const localTimeFormatPreference = useMemo(() => detectLocalTimeFormatPreference(), []);
 
 	useEffect(() => {
 		if (typeof window === "undefined") return;
@@ -1126,19 +1270,30 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	}, []);
 
 	const calendarControlsPlugin = useMemo(() => createCalendarControlsPlugin(), []);
-	const scheduleXTimeZone = useMemo(() => {
-		try {
-			return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-		} catch {
-			return "UTC";
-		}
-	}, []);
+	const displayPreferencesQuery = useAuthenticatedQueryWithStatus(
+		api.hours.queries.getCalendarDisplayPreferences,
+		{},
+	);
+	const schedulingDefaultsQuery = useAuthenticatedQueryWithStatus(
+		api.hours.queries.getTaskSchedulingDefaults,
+		{},
+	);
+	const scheduleXTimeZone = displayPreferencesQuery.data?.timezone ?? localTimeZone;
+	const calendarTimeFormatPreference =
+		displayPreferencesQuery.data?.timeFormatPreference ?? localTimeFormatPreference;
+	const schedulingStepMinutes = schedulingDefaultsQuery.data?.schedulingStepMinutes ?? 15;
+	const schedulingStepMs = schedulingStepMinutes * 60 * 1000;
+	const schedulingStepSeconds = schedulingStepMinutes * 60;
+	const isTwelveHourClock = calendarTimeFormatPreference === "12h";
 	const scrollControllerPlugin = useMemo(
 		() => createScrollControllerPlugin({ initialScroll: DEFAULT_SCROLL_TIME }),
 		[],
 	);
 	const currentTimePlugin = useMemo(() => createCurrentTimePlugin({ fullWeekWidth: true }), []);
-	const dragAndDropPlugin = useMemo(() => createDragAndDropPlugin(15), []);
+	const dragAndDropPlugin = useMemo(
+		() => createDragAndDropPlugin(schedulingStepMinutes),
+		[schedulingStepMinutes],
+	);
 	const effectiveTheme = isThemeMounted ? (resolvedTheme === "dark" ? "dark" : "light") : "light";
 	const isDarkTheme = effectiveTheme === "dark";
 
@@ -1146,13 +1301,21 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		setIsThemeMounted(true);
 	}, []);
 
-	const queryRange = useMemo(() => {
-		const now = Date.now();
-		return {
-			start: now - 1000 * 60 * 60 * 24 * 7,
-			end: now + 1000 * 60 * 60 * 24 * 70,
-		};
-	}, []);
+	const selectedDateTimestamp = useMemo(() => toDateAnchorTimestamp(selectedDate), [selectedDate]);
+
+	const queryRange = useMemo(
+		() => ({
+			start: queryRangeAnchor - QUERY_RANGE_PAST_DAYS * DAY_MS,
+			end: queryRangeAnchor + QUERY_RANGE_FUTURE_DAYS * DAY_MS,
+		}),
+		[queryRangeAnchor],
+	);
+
+	useEffect(() => {
+		if (selectedDateTimestamp < queryRange.start || selectedDateTimestamp > queryRange.end) {
+			setQueryRangeAnchor(selectedDateTimestamp);
+		}
+	}, [queryRange.end, queryRange.start, selectedDateTimestamp]);
 
 	const eventsQuery = useAuthenticatedQueryWithStatus(api.calendar.queries.listEvents, {
 		start: queryRange.start,
@@ -1164,6 +1327,10 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		api.calendar.queries.listGoogleCalendars,
 		{},
 	);
+	const googleSyncHealthQuery = useAuthenticatedQueryWithStatus(
+		api.calendar.queries.getGoogleSyncHealth,
+		{},
+	);
 	const googleCalendars = (googleCalendarsQuery.data ?? []) as GoogleCalendarListItem[];
 
 	const { mutate: createEventMutation } = useMutationWithStatus(api.calendar.mutations.createEvent);
@@ -1173,6 +1340,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		api.calendar.mutations.moveResizeEvent,
 	);
 	const syncFromGoogle = useAction(api.calendar.actions.syncFromGoogle);
+	const ensureGoogleWatchChannels = useAction(api.calendar.actions.ensureGoogleWatchChannels);
 	const pushEventToGoogle = useAction(api.calendar.actions.pushEventToGoogle);
 
 	const normalizedEvents = useMemo(() => {
@@ -1188,14 +1356,15 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	}, [events]);
 
 	const calendarTypes = useMemo(() => {
-		const dynamicGoogleCalendars: Record<string, CalendarType> = {};
+		const dynamicCalendars: Record<string, CalendarType> = {};
 		for (const event of normalizedEvents) {
-			if (event.source !== "google") continue;
+			if (!event.color?.trim()) continue;
+			const key = getCalendarKey(event);
+			if (key === event.source) continue;
 			const resolved = resolveGoogleColor(event.color);
-			const key = `google-${resolved.token}`;
-			dynamicGoogleCalendars[key] = {
+			dynamicCalendars[key] = {
 				colorName: key,
-				label: "Google",
+				label: sourceCalendarLabel[event.source],
 				lightColors: {
 					main: resolved.main,
 					container: resolved.lightContainer,
@@ -1211,7 +1380,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 
 		return {
 			...defaultSourceCalendars,
-			...dynamicGoogleCalendars,
+			...dynamicCalendars,
 		};
 	}, [normalizedEvents]);
 
@@ -1260,7 +1429,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			})
 			.map((event) => toScheduleXEvent(event, scheduleXTimeZone))
 			.filter((event): event is CalendarEventExternal => Boolean(event));
-		if (!dragPreview) return baseEvents;
+		if (!dragPreview || (editor && editor.mode !== "create")) return baseEvents;
 		const previewStart = toScheduleXZonedDateTime(dragPreview.start, scheduleXTimeZone);
 		const previewEnd = toScheduleXZonedDateTime(dragPreview.end, scheduleXTimeZone);
 		if (!previewStart || !previewEnd) return baseEvents;
@@ -1275,14 +1444,27 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				busyStatus: "free",
 			},
 		];
-	}, [dragPreview, optimisticEventUpdate, resizePreview, scheduleEvents, scheduleXTimeZone]);
+	}, [
+		dragPreview,
+		editor,
+		optimisticEventUpdate,
+		resizePreview,
+		scheduleEvents,
+		scheduleXTimeZone,
+	]);
 	const customComponents = useMemo(
 		() => ({
-			timeGridEvent: TimeGridEvent,
-			dateGridEvent: DateGridEvent,
-			monthGridEvent: DateGridEvent,
+			timeGridEvent: (props: ComponentProps<typeof TimeGridEvent>) => (
+				<TimeGridEvent {...props} timeZone={scheduleXTimeZone} hour12={isTwelveHourClock} />
+			),
+			dateGridEvent: (props: ComponentProps<typeof DateGridEvent>) => (
+				<DateGridEvent {...props} timeZone={scheduleXTimeZone} hour12={isTwelveHourClock} />
+			),
+			monthGridEvent: (props: ComponentProps<typeof DateGridEvent>) => (
+				<DateGridEvent {...props} timeZone={scheduleXTimeZone} hour12={isTwelveHourClock} />
+			),
 		}),
-		[],
+		[isTwelveHourClock, scheduleXTimeZone],
 	);
 
 	const visibleEventCount = scheduleEvents.length;
@@ -1375,6 +1557,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 
 	const openEditorForEvent = useCallback(
 		(event: CalendarEventDTO, panelMode: "details" | "edit") => {
+			setDragPreview(null);
 			const recurrenceRule =
 				event.recurrenceRule?.trim() ||
 				(event.recurringEventId
@@ -1388,8 +1571,8 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				eventId: event._id,
 				title: event.title,
 				description: event.description ?? "",
-				start: toInputDateTime(event.start),
-				end: toInputDateTime(event.end),
+				start: toInputDateTime(event.start, scheduleXTimeZone),
+				end: toInputDateTime(event.end, scheduleXTimeZone),
 				allDay: event.allDay,
 				calendarId: event.calendarId ?? defaultCreateCalendarId,
 				busyStatus: event.busyStatus ?? "busy",
@@ -1399,7 +1582,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				scope: "single",
 			});
 		},
-		[defaultCreateCalendarId, normalizedEvents, recurrenceRuleBySeriesId],
+		[defaultCreateCalendarId, normalizedEvents, recurrenceRuleBySeriesId, scheduleXTimeZone],
 	);
 
 	const applyMovedEventUpdate = useCallback(
@@ -1473,9 +1656,14 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			eventWidth: 94,
 			nDays: 7,
 			eventOverlap: true,
-			timeAxisFormatOptions: { hour: "2-digit", minute: "2-digit" } as const,
+			timeAxisFormatOptions: {
+				hour: "2-digit",
+				minute: "2-digit",
+				hour12: isTwelveHourClock,
+				hourCycle: isTwelveHourClock ? "h12" : "h23",
+			} as const,
 		}),
-		[],
+		[isTwelveHourClock],
 	);
 	const safeSelectedDate = useMemo(() => normalizeSelectedDate(selectedDate), [selectedDate]);
 	const selectedDateForScheduleX = useMemo(
@@ -1486,119 +1674,127 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		() => toScheduleXPlainDate(selectedDateForScheduleX),
 		[selectedDateForScheduleX],
 	);
-
-	const calendar = useCalendarApp(
-		{
-			selectedDate: selectedPlainDateForScheduleX as never,
-			isDark: isDarkTheme,
-			views: calendarViews,
-			defaultView: "week",
-			dayBoundaries,
-			calendars: calendarTypes,
-			weekOptions,
-			events: scheduleXEvents,
-			callbacks: {
-				onSelectedDateUpdate: (date) => {
-					setSelectedDate(normalizeSelectedDate(String(date)));
-				},
-				onClickDateTime: (dateTime) => {
-					if (Date.now() < suppressClickCreateUntilRef.current) return;
-					const start = snapToQuarterHour(fromScheduleDateTime(dateTime));
-					const end = snapToQuarterHour(start + 1000 * 60 * 15);
-					setEditor({
-						mode: "create",
-						panelMode: "edit",
-						title: "",
-						description: "",
-						start: toInputDateTime(start),
-						end: toInputDateTime(end),
-						allDay: false,
-						calendarId: defaultCreateCalendarId,
-						busyStatus: "busy",
-						visibility: "default",
-						location: "",
-						recurrenceRule: "",
-						scope: "single",
-					});
-				},
-				onMouseDownDateTime: (dateTime, mouseDownEvent) => {
-					if (mouseDownEvent.button !== 0) return;
-					const start = snapToQuarterHour(fromScheduleDateTime(dateTime));
-					const day = getScheduleDatePart(dateTime);
-					const rawPointerId = (mouseDownEvent as MouseEvent & { pointerId?: number }).pointerId;
-					const pointerId = typeof rawPointerId === "number" ? rawPointerId : null;
-					dragCreateRef.current = {
-						active: true,
-						start,
-						current: start,
-						day,
-						pointerDownX: mouseDownEvent.clientX,
-						pointerDownY: mouseDownEvent.clientY,
-						hasMoved: false,
-						pointerId,
-					};
-					setDragPreview({
-						start,
-						end: start + 1000 * 60 * 15,
-						day,
-					});
-				},
-				onEventClick: (calendarEvent) => {
-					const eventId = String(calendarEvent.id);
-					const preferEdit = preferEditEventUntilRef.current;
-					if (preferEdit && preferEdit.eventId === eventId && Date.now() < preferEdit.until) {
-						preferEditEventUntilRef.current = null;
-						const preferredEvent = scheduleEventsByIdRef.current.get(eventId);
-						if (preferredEvent) {
-							openEditorForEventRef.current(preferredEvent, "edit");
-						}
-						return;
-					}
-
-					const matched = scheduleEventsByIdRef.current.get(eventId);
-					if (!matched) return;
-					openEditorForEventRef.current(matched, "details");
-				},
-				onEventUpdate: async (updated) => {
-					try {
-						setError(null);
-						const eventId = toCalendarEventId(String(updated.id));
-						const start = fromScheduleDateTime(updated.start);
-						const end = fromScheduleDateTime(updated.end);
-						const snappedStart = snapToQuarterHour(start);
-						const snappedEnd = Math.max(snappedStart + QUARTER_HOUR_MS, snapToQuarterHour(end));
-						const current = scheduleEventsByIdRef.current.get(eventId);
-						if (!current) return;
-						if (current.recurrenceRule || current.recurringEventId) {
-							setPendingMoveUpdate({
-								eventId,
-								start: snappedStart,
-								end: snappedEnd,
-								title: current.title,
+	const calendarResetKey = [
+		scheduleXTimeZone,
+		calendarTimeFormatPreference,
+		String(schedulingStepMinutes),
+		isDarkTheme ? "dark" : "light",
+		defaultCreateCalendarId,
+	].join("|");
+	const calendar = useResettableCalendarApp(
+		() =>
+			createCalendar(
+				{
+					selectedDate: selectedPlainDateForScheduleX as never,
+					isDark: isDarkTheme,
+					views: calendarViews,
+					defaultView: "week",
+					dayBoundaries,
+					calendars: calendarTypes,
+					weekOptions,
+					events: scheduleXEvents,
+					callbacks: {
+						onSelectedDateUpdate: (date) => {
+							setSelectedDate(normalizeSelectedDate(String(date)));
+						},
+						onClickDateTime: (dateTime) => {
+							if (Date.now() < suppressClickCreateUntilRef.current) return;
+							const start = snapToStep(fromScheduleDateTime(dateTime), schedulingStepMs);
+							const end = snapToStep(start + schedulingStepMs, schedulingStepMs);
+							setEditor({
+								mode: "create",
+								panelMode: "edit",
+								title: "",
+								description: "",
+								start: toInputDateTime(start, scheduleXTimeZone),
+								end: toInputDateTime(end, scheduleXTimeZone),
+								allDay: false,
+								calendarId: defaultCreateCalendarId,
+								busyStatus: "busy",
+								visibility: "default",
+								location: "",
+								recurrenceRule: "",
+								scope: "single",
 							});
-							return;
-						}
-						await applyMovedEventUpdateRef.current({
-							eventId,
-							start: snappedStart,
-							end: snappedEnd,
-							scope: "single",
-						});
-					} catch (updateError) {
-						setError(updateError instanceof Error ? updateError.message : "Unable to move event.");
-					}
+						},
+						onMouseDownDateTime: (dateTime, mouseDownEvent) => {
+							if (mouseDownEvent.button !== 0) return;
+							const start = snapToStep(fromScheduleDateTime(dateTime), schedulingStepMs);
+							const day = getScheduleDatePart(dateTime);
+							const rawPointerId = (mouseDownEvent as MouseEvent & { pointerId?: number })
+								.pointerId;
+							const pointerId = typeof rawPointerId === "number" ? rawPointerId : null;
+							dragCreateRef.current = {
+								active: true,
+								start,
+								current: start,
+								day,
+								pointerDownX: mouseDownEvent.clientX,
+								pointerDownY: mouseDownEvent.clientY,
+								hasMoved: false,
+								pointerId,
+							};
+							setDragPreview({
+								start,
+								end: start + schedulingStepMs,
+								day,
+							});
+						},
+						onEventClick: (calendarEvent) => {
+							const eventId = String(calendarEvent.id);
+							const preferEdit = preferEditEventUntilRef.current;
+							if (preferEdit && preferEdit.eventId === eventId && Date.now() < preferEdit.until) {
+								preferEditEventUntilRef.current = null;
+								const preferredEvent = scheduleEventsByIdRef.current.get(eventId);
+								if (preferredEvent) {
+									openEditorForEventRef.current(preferredEvent, "edit");
+								}
+								return;
+							}
+
+							const matched = scheduleEventsByIdRef.current.get(eventId);
+							if (!matched) return;
+							openEditorForEventRef.current(matched, "details");
+						},
+						onEventUpdate: async (updated) => {
+							try {
+								setError(null);
+								const eventId = toCalendarEventId(String(updated.id));
+								const start = fromScheduleDateTime(updated.start);
+								const end = fromScheduleDateTime(updated.end);
+								const snappedStart = snapToStep(start, schedulingStepMs);
+								const snappedEnd = Math.max(
+									snappedStart + schedulingStepMs,
+									snapToStep(end, schedulingStepMs),
+								);
+								const current = scheduleEventsByIdRef.current.get(eventId);
+								if (!current) return;
+								if (current.recurrenceRule || current.recurringEventId) {
+									setPendingMoveUpdate({
+										eventId,
+										start: snappedStart,
+										end: snappedEnd,
+										title: current.title,
+									});
+									return;
+								}
+								await applyMovedEventUpdateRef.current({
+									eventId,
+									start: snappedStart,
+									end: snappedEnd,
+									scope: "single",
+								});
+							} catch (updateError) {
+								setError(
+									updateError instanceof Error ? updateError.message : "Unable to move event.",
+								);
+							}
+						},
+					},
 				},
-			},
-		},
-		[
-			calendarViews,
-			calendarControlsPlugin,
-			currentTimePlugin,
-			dayBoundaries,
-			dragAndDropPlugin,
-			scrollControllerPlugin,
-			weekOptions,
-		],
+				[calendarControlsPlugin, currentTimePlugin, dragAndDropPlugin, scrollControllerPlugin],
+			),
+		calendarResetKey,
 	);
 
 	useEffect(() => {
@@ -1691,10 +1887,12 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			const ratio = rect.height === 0 ? 0 : y / rect.height;
 			const dayStart = dayBoundaryMinutes.start;
 			const dayEnd = dayBoundaryMinutes.end;
-			const snappedMinutes = Math.round((dayStart + ratio * (dayEnd - dayStart)) / 15) * 15;
-			const maxStartMinute = Math.max(dayStart, dayEnd - 15);
+			const snappedMinutes =
+				Math.round((dayStart + ratio * (dayEnd - dayStart)) / schedulingStepMinutes) *
+				schedulingStepMinutes;
+			const maxStartMinute = Math.max(dayStart, dayEnd - schedulingStepMinutes);
 			const minutes = Math.max(dayStart, Math.min(maxStartMinute, snappedMinutes));
-			const nextCurrent = snapToQuarterHour(toTimestampFromDayAndMinutes(day, minutes));
+			const nextCurrent = snapToStep(toTimestampFromDayAndMinutes(day, minutes), schedulingStepMs);
 			dragCreateRef.current = {
 				...dragState,
 				current: nextCurrent,
@@ -1704,7 +1902,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			const end = Math.max(dragState.start, nextCurrent);
 			setDragPreview({
 				start,
-				end: end === start ? start + 1000 * 60 * 15 : end,
+				end: end === start ? start + schedulingStepMs : end,
 				day,
 			});
 		};
@@ -1716,9 +1914,9 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				return;
 			}
 
-			const minDurationMs = 1000 * 60 * 15;
-			const start = snapToQuarterHour(Math.min(dragState.start, dragState.current));
-			const end = snapToQuarterHour(Math.max(dragState.start, dragState.current));
+			const minDurationMs = schedulingStepMs;
+			const start = snapToStep(Math.min(dragState.start, dragState.current), schedulingStepMs);
+			const end = snapToStep(Math.max(dragState.start, dragState.current), schedulingStepMs);
 			const duration = end - start;
 			if (duration < minDurationMs) return;
 			setDragPreview({ start, end, day: dragState.day });
@@ -1729,8 +1927,8 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				panelMode: "edit",
 				title: "",
 				description: "",
-				start: toInputDateTime(start),
-				end: toInputDateTime(end),
+				start: toInputDateTime(start, scheduleXTimeZone),
+				end: toInputDateTime(end, scheduleXTimeZone),
 				allDay: false,
 				calendarId: defaultCreateCalendarId,
 				busyStatus: "busy",
@@ -1804,7 +2002,14 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				window.removeEventListener("mouseup", onMouseUp);
 			}
 		};
-	}, [dayBoundaryMinutes.end, dayBoundaryMinutes.start, defaultCreateCalendarId]);
+	}, [
+		dayBoundaryMinutes.end,
+		dayBoundaryMinutes.start,
+		defaultCreateCalendarId,
+		schedulingStepMinutes,
+		schedulingStepMs,
+		scheduleXTimeZone,
+	]);
 
 	useEffect(() => {
 		const updateResizeEnd = (resizeState: ResizeEventState, pointerY: number) => {
@@ -1818,10 +2023,13 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			const minutesPerPixel = dayMinutes / rect.height;
 			const deltaY = pointerY - resizeState.startPointerY;
 			const candidateEnd = resizeState.originalEnd + deltaY * minutesPerPixel * 60_000;
-			const minEnd = resizeState.start + 1000 * 60 * 15;
+			const minEnd = resizeState.start + schedulingStepMs;
 			const dayMaxEnd = toTimestampFromDayAndMinutes(resizeState.day, dayBoundaryMinutes.end);
 			const boundedEnd = Math.max(minEnd, Math.min(dayMaxEnd, candidateEnd));
-			const steppedEnd = Math.max(minEnd, Math.min(dayMaxEnd, snapToQuarterHour(boundedEnd)));
+			const steppedEnd = Math.max(
+				minEnd,
+				Math.min(dayMaxEnd, snapToStep(boundedEnd, schedulingStepMs)),
+			);
 			if (steppedEnd === resizeState.currentEnd) return;
 			resizeEventRef.current = { ...resizeState, currentEnd: steppedEnd };
 			setResizePreview({
@@ -1836,8 +2044,8 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			resizeEventRef.current = null;
 			setResizePreview(null);
 			if (resizeState.currentEnd === resizeState.originalEnd) return;
-			const minEnd = resizeState.start + 1000 * 60 * 15;
-			const nextEnd = snapToQuarterHour(Math.max(minEnd, resizeState.currentEnd));
+			const minEnd = resizeState.start + schedulingStepMs;
+			const nextEnd = snapToStep(Math.max(minEnd, resizeState.currentEnd), schedulingStepMs);
 
 			void (async () => {
 				try {
@@ -1915,21 +2123,21 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			window.removeEventListener("mousemove", onMouseMove);
 			window.removeEventListener("mouseup", onMouseUp);
 		};
-	}, [dayBoundaryMinutes.end, dayBoundaryMinutes.start]);
+	}, [dayBoundaryMinutes.end, dayBoundaryMinutes.start, schedulingStepMs]);
 
 	useEffect(() => {
 		if (!editor || editor.mode !== "create") return;
-		const start = snapToQuarterHour(parseDateTimeInput(editor.start));
-		const end = snapToQuarterHour(parseDateTimeInput(editor.end));
+		const start = snapToStep(parseDateTimeInput(editor.start, scheduleXTimeZone), schedulingStepMs);
+		const end = snapToStep(parseDateTimeInput(editor.end, scheduleXTimeZone), schedulingStepMs);
 		if (!Number.isFinite(start) || !Number.isFinite(end)) return;
 		const normalizedStart = Math.min(start, end);
 		const normalizedEnd = Math.max(start, end);
 		setDragPreview({
 			start: normalizedStart,
-			end: normalizedEnd === normalizedStart ? normalizedStart + 1000 * 60 * 15 : normalizedEnd,
+			end: normalizedEnd === normalizedStart ? normalizedStart + schedulingStepMs : normalizedEnd,
 			day: formatDateInput(new Date(normalizedStart)),
 		});
-	}, [editor]);
+	}, [editor, scheduleXTimeZone, schedulingStepMs]);
 
 	useEffect(() => {
 		if (!calendar || pendingMoveUpdate) return;
@@ -2076,9 +2284,37 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		setSelectedDate(selectedDateForScheduleX);
 	}, [selectedDateForScheduleX, selectedDate]);
 
+	useEffect(() => {
+		if (isAuthenticated) return;
+		autoWatchRegistrationAttemptedRef.current = false;
+	}, [isAuthenticated]);
+
+	useEffect(() => {
+		if (!isAuthenticated || isAuthLoading) return;
+		if (autoWatchRegistrationAttemptedRef.current) return;
+		const syncHealth = googleSyncHealthQuery.data;
+		if (!syncHealth?.googleConnected) return;
+		if (syncHealth.activeChannels > 0) {
+			autoWatchRegistrationAttemptedRef.current = true;
+			return;
+		}
+
+		autoWatchRegistrationAttemptedRef.current = true;
+		void ensureGoogleWatchChannels({}).catch((registrationError) => {
+			autoWatchRegistrationAttemptedRef.current = false;
+			console.error("[calendar] failed to auto-register Google watch channels", {
+				error: registrationError instanceof Error ? registrationError.message : registrationError,
+			});
+		});
+	}, [ensureGoogleWatchChannels, googleSyncHealthQuery.data, isAuthenticated, isAuthLoading]);
+
 	const syncNow = useCallback(
-		async (reason: "manual" | "auto" = "manual") => {
+		async (reason: "manual" | "auto" = "manual", overrideRange?: SyncRange) => {
 			if (!isAuthenticated || syncInFlightRef.current) return false;
+			const targetRange = {
+				start: overrideRange?.start ?? queryRange.start,
+				end: overrideRange?.end ?? queryRange.end,
+			};
 
 			syncInFlightRef.current = true;
 			setSyncStatus("syncing");
@@ -2088,10 +2324,17 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 
 			try {
 				await syncFromGoogle({
-					fullSync: false,
-					rangeStart: queryRange.start,
-					rangeEnd: queryRange.end,
+					fullSync: reason === "manual",
+					rangeStart: targetRange.start,
+					rangeEnd: targetRange.end,
 				});
+				const currentSyncedRange = syncedGoogleRangeRef.current;
+				syncedGoogleRangeRef.current = currentSyncedRange
+					? {
+							start: Math.min(currentSyncedRange.start, targetRange.start),
+							end: Math.max(currentSyncedRange.end, targetRange.end),
+						}
+					: targetRange;
 				setSyncStatus("idle");
 				setLastSyncedAt(Date.now());
 				return true;
@@ -2107,6 +2350,26 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		},
 		[isAuthenticated, queryRange.end, queryRange.start, syncFromGoogle],
 	);
+
+	useEffect(() => {
+		if (!isAuthenticated) return;
+		const targetRange: SyncRange = {
+			start: queryRange.start,
+			end: queryRange.end,
+		};
+		const currentSyncedRange = syncedGoogleRangeRef.current;
+		const rangeIsCovered = Boolean(
+			currentSyncedRange &&
+				targetRange.start >= currentSyncedRange.start &&
+				targetRange.end <= currentSyncedRange.end,
+		);
+		if (rangeIsCovered) return;
+
+		const rangeKey = `${targetRange.start}:${targetRange.end}`;
+		if (autoSyncAttemptedRangeKeyRef.current === rangeKey) return;
+		autoSyncAttemptedRangeKeyRef.current = rangeKey;
+		void syncNow("auto", targetRange);
+	}, [isAuthenticated, queryRange.end, queryRange.start, syncNow]);
 
 	const createEvent = async (payload: CalendarEventCreateInput) => {
 		const id = await createEventMutation({ input: payload });
@@ -2190,10 +2453,11 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 
 	const onSubmitEditor = async () => {
 		if (!editor) return;
-		const parsedStart = parseDateTimeInput(editor.start);
-		const parsedEnd = parseDateTimeInput(editor.end);
-		const nextStart = editor.mode === "create" ? snapToQuarterHour(parsedStart) : parsedStart;
-		const nextEnd = editor.mode === "create" ? snapToQuarterHour(parsedEnd) : parsedEnd;
+		const parsedStart = parseDateTimeInput(editor.start, scheduleXTimeZone);
+		const parsedEnd = parseDateTimeInput(editor.end, scheduleXTimeZone);
+		const nextStart =
+			editor.mode === "create" ? snapToStep(parsedStart, schedulingStepMs) : parsedStart;
+		const nextEnd = editor.mode === "create" ? snapToStep(parsedEnd, schedulingStepMs) : parsedEnd;
 		const normalizedLocation = editor.location.trim();
 		const payload = {
 			title: editor.title.trim(),
@@ -2232,13 +2496,11 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	};
 
 	const closeEditor = useCallback(() => {
-		if (editor?.mode === "create") {
-			setDragPreview(null);
-		}
+		setDragPreview(null);
 		setIsCustomRepeatDialogOpen(false);
 		setCustomRecurrenceDraft(null);
 		setEditor(null);
-	}, [editor?.mode]);
+	}, []);
 
 	const closeEventSheet = useCallback(() => {
 		setIsMobileEventSheetOpen(false);
@@ -2396,42 +2658,108 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const editorStartValue = editor?.start;
 	const editorEndValue = editor?.end;
 	const editorDurationMinutes = useMemo(() => {
-		if (!editorStartValue || !editorEndValue) return 30;
-		const start = parseDateTimeInput(editorStartValue);
-		const end = parseDateTimeInput(editorEndValue);
-		if (!Number.isFinite(start) || !Number.isFinite(end)) return 30;
-		const rawMinutes = Math.max(15, Math.round((end - start) / (1000 * 60)));
-		return Math.max(15, Math.round(rawMinutes / 15) * 15);
-	}, [editorEndValue, editorStartValue]);
+		if (!editorStartValue || !editorEndValue) return schedulingStepMinutes;
+		const start = parseDateTimeInput(editorStartValue, scheduleXTimeZone);
+		const end = parseDateTimeInput(editorEndValue, scheduleXTimeZone);
+		if (!Number.isFinite(start) || !Number.isFinite(end)) return schedulingStepMinutes;
+		const rawMinutes = Math.max(schedulingStepMinutes, Math.round((end - start) / (1000 * 60)));
+		return (
+			Math.max(
+				schedulingStepMinutes,
+				Math.round(rawMinutes / schedulingStepMinutes) * schedulingStepMinutes,
+			) || schedulingStepMinutes
+		);
+	}, [editorEndValue, editorStartValue, scheduleXTimeZone, schedulingStepMinutes]);
+	const durationPresetMinutes = useMemo(
+		() => durationPresetMultipliers.map((multiplier) => multiplier * schedulingStepMinutes),
+		[schedulingStepMinutes],
+	);
 	const editorDurationSelectValue = useMemo(
 		() =>
-			durationPresetMinutes.includes(
-				editorDurationMinutes as (typeof durationPresetMinutes)[number],
-			)
+			durationPresetMinutes.includes(editorDurationMinutes)
 				? String(editorDurationMinutes)
 				: "custom",
-		[editorDurationMinutes],
+		[durationPresetMinutes, editorDurationMinutes],
 	);
 
-	const applyEditorDurationMinutes = useCallback((minutes: number) => {
-		const normalizedMinutes = Math.max(15, Math.round(minutes / 15) * 15);
-		setEditor((current) => {
-			if (!current) return current;
-			const start = parseDateTimeInput(current.start);
-			if (!Number.isFinite(start)) return current;
-			const nextEnd = snapToQuarterHour(start + normalizedMinutes * 60 * 1000);
-			return {
-				...current,
-				end: toInputDateTime(nextEnd),
-			};
-		});
-	}, []);
+	const applyEditorDurationMinutes = useCallback(
+		(minutes: number) => {
+			const normalizedMinutes = Math.max(
+				schedulingStepMinutes,
+				Math.round(minutes / schedulingStepMinutes) * schedulingStepMinutes,
+			);
+			setEditor((current) => {
+				if (!current) return current;
+				const start = parseDateTimeInput(current.start, scheduleXTimeZone);
+				if (!Number.isFinite(start)) return current;
+				const nextEnd = snapToStep(start + normalizedMinutes * 60 * 1000, schedulingStepMs);
+				return {
+					...current,
+					end: toInputDateTime(nextEnd, scheduleXTimeZone),
+				};
+			});
+		},
+		[scheduleXTimeZone, schedulingStepMinutes, schedulingStepMs],
+	);
+
+	const dateOnlyFormatter = useMemo(
+		() =>
+			new Intl.DateTimeFormat(undefined, {
+				timeZone: scheduleXTimeZone,
+				weekday: "short",
+				day: "numeric",
+				month: "short",
+			}),
+		[scheduleXTimeZone],
+	);
+	const compactDateFormatter = useMemo(
+		() =>
+			new Intl.DateTimeFormat(undefined, {
+				timeZone: scheduleXTimeZone,
+				month: "short",
+				day: "numeric",
+			}),
+		[scheduleXTimeZone],
+	);
+	const timeOnlyFormatter = useMemo(
+		() =>
+			new Intl.DateTimeFormat(undefined, {
+				timeZone: scheduleXTimeZone,
+				hour: "numeric",
+				minute: "2-digit",
+				hour12: isTwelveHourClock,
+			}),
+		[isTwelveHourClock, scheduleXTimeZone],
+	);
 
 	const sourceButtons: CalendarSource[] = ["google", "task", "habit", "manual"];
 	const isLoading = isAuthLoading || (isAuthenticated && eventsQuery.isPending);
 	const isDetailsMode = editor?.mode === "edit" && editor.panelMode === "details";
 	const selectedEvent =
 		editor?.mode === "edit" && editor.eventId ? scheduleEventsById.get(editor.eventId) : null;
+	const defaultTravelMinutes =
+		schedulingDefaultsQuery.data?.taskQuickCreateDefaults.travelMinutes ?? 0;
+	const selectedEventSource =
+		selectedEvent?.source ?? (editor?.mode === "create" ? "manual" : undefined);
+	const isTravelBlockEvent =
+		selectedEvent?.source === "task" && Boolean(selectedEvent.sourceId?.includes(":travel:"));
+	const hasEditorLocation = Boolean(editor?.location.trim());
+	const travelBufferAppliesToEvent =
+		(selectedEventSource === "google" || selectedEventSource === "manual") &&
+		!editor?.allDay &&
+		hasEditorLocation &&
+		defaultTravelMinutes > 0;
+	const travelBufferDescription = (() => {
+		if (!editor) return "No event selected.";
+		if (isTravelBlockEvent) return "Generated travel block for a scheduled task.";
+		if (selectedEventSource !== "google" && selectedEventSource !== "manual") {
+			return "Shown for connected and manual events.";
+		}
+		if (editor.allDay) return "Not applied to all-day events.";
+		if (!hasEditorLocation) return "Add a location to apply travel buffer.";
+		if (defaultTravelMinutes <= 0) return "Set global travel time in Scheduling settings.";
+		return `${formatDuration(0, defaultTravelMinutes * 60 * 1000)} before and after this event.`;
+	})();
 	const inferredSeriesRecurrenceRule = useMemo(() => {
 		if (!selectedEvent || selectedEvent.recurrenceRule) return undefined;
 		return inferRecurrenceRule(selectedEvent, normalizedEvents);
@@ -2468,7 +2796,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	);
 	const recurrenceDisplayLabel = useMemo(() => {
 		if (!editor) return "Does not repeat";
-		const start = parseDateTimeInput(editor.start);
+		const start = parseDateTimeInput(editor.start, scheduleXTimeZone);
 		return formatRecurrenceRule(
 			effectiveRecurrenceRule || undefined,
 			start,
@@ -2481,10 +2809,13 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	}, [
 		editor,
 		effectiveRecurrenceRule,
+		scheduleXTimeZone,
 		selectedEvent?.recurringEventId,
 		selectedEventSeriesOccurrenceCount,
 	]);
-	const recurrenceStartTimestamp = editor ? parseDateTimeInput(editor.start) : Date.now();
+	const recurrenceStartTimestamp = editor
+		? parseDateTimeInput(editor.start, scheduleXTimeZone)
+		: Date.now();
 	const recurrenceWeekdayToken = toWeekdayToken(recurrenceStartTimestamp);
 	const recurrencePresetOptions = useMemo(
 		() =>
@@ -2629,15 +2960,15 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 							size="sm"
 							className="h-7 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] gap-1.5 hover:border-border hover:bg-accent hover:text-foreground"
 							onClick={() => {
-								const start = snapToQuarterHour(Date.now());
-								const end = snapToQuarterHour(start + 1000 * 60 * 30);
+								const start = snapToStep(Date.now(), schedulingStepMs);
+								const end = snapToStep(start + schedulingStepMs, schedulingStepMs);
 								setEditor({
 									mode: "create",
 									panelMode: "edit",
 									title: "",
 									description: "",
-									start: toInputDateTime(start),
-									end: toInputDateTime(end),
+									start: toInputDateTime(start, scheduleXTimeZone),
+									end: toInputDateTime(end, scheduleXTimeZone),
 									allDay: false,
 									calendarId: defaultCreateCalendarId,
 									busyStatus: "busy",
@@ -2719,7 +3050,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 						type="multiple"
 						value={sourceFilter}
 						onValueChange={(value) =>
-							setSourceFilter(value.length ? (value as CalendarSource[]) : ["google"])
+							setSourceFilter(value.length ? (value as CalendarSource[]) : DEFAULT_SOURCE_FILTER)
 						}
 						className="gap-1"
 					>
@@ -2847,16 +3178,20 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 												{isDetailsMode ? (
 													<>
 														<span className="text-foreground">
-															{timeOnlyFormatter.format(new Date(parseDateTimeInput(editor.start)))}
+															{timeOnlyFormatter.format(
+																new Date(parseDateTimeInput(editor.start, scheduleXTimeZone)),
+															)}
 														</span>
 														<ArrowRight className="size-4 text-muted-foreground" />
 														<span className="text-foreground">
-															{timeOnlyFormatter.format(new Date(parseDateTimeInput(editor.end)))}
+															{timeOnlyFormatter.format(
+																new Date(parseDateTimeInput(editor.end, scheduleXTimeZone)),
+															)}
 														</span>
 														<span className="text-muted-foreground">
 															{formatDuration(
-																parseDateTimeInput(editor.start),
-																parseDateTimeInput(editor.end),
+																parseDateTimeInput(editor.start, scheduleXTimeZone),
+																parseDateTimeInput(editor.end, scheduleXTimeZone),
 															)}
 														</span>
 													</>
@@ -2864,7 +3199,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 													<>
 														<Input
 															type="time"
-															step={900}
+															step={schedulingStepSeconds}
 															value={editorStartTime}
 															onChange={(event) =>
 																setEditor((current) =>
@@ -2881,7 +3216,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 														<ArrowRight className="size-4 text-muted-foreground" />
 														<Input
 															type="time"
-															step={900}
+															step={schedulingStepSeconds}
 															value={editorEndTime}
 															onChange={(event) =>
 																setEditor((current) =>
@@ -2897,8 +3232,8 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 														/>
 														<span className="text-muted-foreground text-[0.85rem]">
 															{formatDuration(
-																parseDateTimeInput(editor.start),
-																parseDateTimeInput(editor.end),
+																parseDateTimeInput(editor.start, scheduleXTimeZone),
+																parseDateTimeInput(editor.end, scheduleXTimeZone),
 															)}
 														</span>
 													</>
@@ -2906,7 +3241,9 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 											</div>
 											<div className="mt-0.5 text-[0.8rem] text-muted-foreground">
 												{isDetailsMode
-													? dateOnlyFormatter.format(new Date(parseDateTimeInput(editor.start)))
+													? dateOnlyFormatter.format(
+															new Date(parseDateTimeInput(editor.start, scheduleXTimeZone)),
+														)
 													: null}
 											</div>
 										</div>
@@ -2999,9 +3336,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 
 									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
 										<Globe2 className="size-4 text-muted-foreground" />
-										<div className="text-[0.95rem] text-foreground/90">
-											{Intl.DateTimeFormat().resolvedOptions().timeZone}
-										</div>
+										<div className="text-[0.95rem] text-foreground/90">{scheduleXTimeZone}</div>
 									</div>
 
 									<div className="grid grid-cols-[20px_1fr] items-start gap-3">
@@ -3352,6 +3687,16 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 											/>
 										)}
 									</div>
+									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
+										<Route className="size-4 text-muted-foreground" />
+										<div
+											className={`text-[0.95rem] ${
+												travelBufferAppliesToEvent ? "text-foreground/85" : "text-muted-foreground"
+											}`}
+										>
+											{`Travel buffer: ${travelBufferDescription}`}
+										</div>
+									</div>
 								</div>
 
 								<div className="border-t border-border px-3 py-3">
@@ -3411,7 +3756,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 											</Select>
 										)}
 									</div>
-									<div className="grid grid-cols-2 gap-2 text-[0.84rem]">
+									<div className="grid grid-cols-1 gap-2 text-[0.84rem] sm:grid-cols-2">
 										{isDetailsMode ? (
 											<>
 												<div className="text-foreground/80">
@@ -3438,7 +3783,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 												>
 													<SelectTrigger
 														size="sm"
-														className="h-8 border-border bg-background text-[0.82rem] text-foreground/85"
+														className="h-8 min-w-0 border-border bg-background text-[0.82rem] text-foreground/85"
 													>
 														<SelectValue />
 													</SelectTrigger>
@@ -3469,7 +3814,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 												>
 													<SelectTrigger
 														size="sm"
-														className="h-8 border-border bg-background text-[0.82rem] text-foreground/85"
+														className="h-8 min-w-0 border-border bg-background text-[0.82rem] text-foreground/85"
 													>
 														<SelectValue />
 													</SelectTrigger>
@@ -3498,13 +3843,13 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 											{isDetailsMode ? (
 												<div className="text-[0.92rem] text-foreground/80">
 													{formatDuration(
-														parseDateTimeInput(editor.start),
-														parseDateTimeInput(editor.end),
+														parseDateTimeInput(editor.start, scheduleXTimeZone),
+														parseDateTimeInput(editor.end, scheduleXTimeZone),
 													)}
 												</div>
 											) : (
 												<>
-													<div className="flex items-center gap-2">
+													<div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
 														<Select
 															value={editorDurationSelectValue}
 															onValueChange={(value) => {
@@ -3516,7 +3861,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 														>
 															<SelectTrigger
 																size="sm"
-																className="h-8 w-[130px] border-border bg-background text-[0.82rem] text-foreground/85"
+																className="h-8 w-full min-w-0 border-border bg-background text-[0.82rem] text-foreground/85 sm:w-[130px]"
 															>
 																<SelectValue />
 															</SelectTrigger>
@@ -3529,24 +3874,24 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 																<SelectItem value="custom">Custom</SelectItem>
 															</SelectContent>
 														</Select>
-														<div className="flex items-center gap-1.5">
+														<div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-1.5 sm:w-auto">
 															<Input
 																type="number"
-																min={15}
-																step={15}
+																min={schedulingStepMinutes}
+																step={schedulingStepMinutes}
 																value={editorDurationMinutes}
 																onChange={(event) => {
 																	const parsed = Number.parseInt(event.target.value, 10);
 																	if (!Number.isFinite(parsed)) return;
 																	applyEditorDurationMinutes(parsed);
 																}}
-																className="h-8 w-[90px] border-border bg-background text-sm"
+																className="h-8 w-full min-w-0 border-border bg-background text-sm sm:w-[90px]"
 															/>
 															<span className="text-[0.82rem] text-muted-foreground">min</span>
 														</div>
 													</div>
 													<div className="text-[0.72rem] text-muted-foreground">
-														Snaps to 15-minute increments.
+														Snaps to {schedulingStepMinutes}-minute increments.
 													</div>
 												</>
 											)}

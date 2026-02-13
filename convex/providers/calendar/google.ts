@@ -5,6 +5,7 @@ import type {
 	CalendarEventUpdateInput,
 	CalendarProvider,
 	CalendarProviderSyncResult,
+	CalendarWatchStartResult,
 	GoogleEventUpsert,
 	ProviderCalendar,
 } from "./types";
@@ -60,6 +61,13 @@ type GoogleCalendarListEntry = {
 type GoogleCalendarListResponse = {
 	items?: GoogleCalendarListEntry[];
 	nextPageToken?: string;
+};
+
+type GoogleWatchStartResponse = {
+	id?: string;
+	resourceId?: string;
+	resourceUri?: string;
+	expiration?: string;
 };
 
 const GOOGLE_CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
@@ -118,10 +126,125 @@ const toGoogleColorId = (color?: string) => {
 
 const toDateTime = (value: number) => new Date(value).toISOString();
 
+const RFC3339_OFFSET_SUFFIX_REGEX = /(z|[+-]\d{2}:\d{2})$/i;
+const LOCAL_DATE_TIME_REGEX =
+	/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(\.(\d{1,3}))?)?$/;
+const timeZoneFormatterCache = new Map<string, Intl.DateTimeFormat>();
+
+const getTimeZoneFormatter = (timeZone: string) => {
+	const existing = timeZoneFormatterCache.get(timeZone);
+	if (existing) return existing;
+	const formatter = new Intl.DateTimeFormat("en-US", {
+		timeZone,
+		hourCycle: "h23",
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+		hour: "2-digit",
+		minute: "2-digit",
+		second: "2-digit",
+	});
+	timeZoneFormatterCache.set(timeZone, formatter);
+	return formatter;
+};
+
+const getTimeZoneParts = (timestamp: number, timeZone: string) => {
+	try {
+		const formatter = getTimeZoneFormatter(timeZone);
+		const parts = formatter.formatToParts(new Date(timestamp));
+		const byType = new Map(parts.map((part) => [part.type, part.value]));
+		const year = Number.parseInt(byType.get("year") ?? "", 10);
+		const month = Number.parseInt(byType.get("month") ?? "", 10);
+		const day = Number.parseInt(byType.get("day") ?? "", 10);
+		const hour = Number.parseInt(byType.get("hour") ?? "", 10);
+		const minute = Number.parseInt(byType.get("minute") ?? "", 10);
+		const second = Number.parseInt(byType.get("second") ?? "", 10);
+		if (
+			!Number.isFinite(year) ||
+			!Number.isFinite(month) ||
+			!Number.isFinite(day) ||
+			!Number.isFinite(hour) ||
+			!Number.isFinite(minute) ||
+			!Number.isFinite(second)
+		) {
+			return null;
+		}
+		return {
+			year,
+			month,
+			day,
+			hour,
+			minute,
+			second,
+		};
+	} catch {
+		return null;
+	}
+};
+
+const parseLocalDateTimeInTimeZone = (raw: string, timeZone: string): number | undefined => {
+	const match = raw.match(LOCAL_DATE_TIME_REGEX);
+	if (!match) return undefined;
+
+	const year = Number.parseInt(match[1] ?? "", 10);
+	const month = Number.parseInt(match[2] ?? "", 10);
+	const day = Number.parseInt(match[3] ?? "", 10);
+	const hour = Number.parseInt(match[4] ?? "", 10);
+	const minute = Number.parseInt(match[5] ?? "", 10);
+	const second = Number.parseInt(match[6] ?? "0", 10);
+	const millisecond = Number.parseInt((match[8] ?? "0").padEnd(3, "0"), 10);
+
+	if (
+		!Number.isFinite(year) ||
+		!Number.isFinite(month) ||
+		!Number.isFinite(day) ||
+		!Number.isFinite(hour) ||
+		!Number.isFinite(minute) ||
+		!Number.isFinite(second) ||
+		!Number.isFinite(millisecond)
+	) {
+		return undefined;
+	}
+
+	const targetUtcValue = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
+	let candidate = targetUtcValue;
+	for (let index = 0; index < 3; index += 1) {
+		const resolved = getTimeZoneParts(candidate, timeZone);
+		if (!resolved) return undefined;
+		const observedUtcValue = Date.UTC(
+			resolved.year,
+			resolved.month - 1,
+			resolved.day,
+			resolved.hour,
+			resolved.minute,
+			resolved.second,
+			millisecond,
+		);
+		const delta = targetUtcValue - observedUtcValue;
+		candidate += delta;
+		if (delta === 0) break;
+	}
+	return candidate;
+};
+
 const maybeDateTimeToMillis = (dt?: GoogleEventDateTime): number | undefined => {
-	const raw = dt?.dateTime ?? dt?.date;
-	if (!raw) return undefined;
-	const parsed = Date.parse(raw);
+	if (dt?.dateTime) {
+		if (RFC3339_OFFSET_SUFFIX_REGEX.test(dt.dateTime)) {
+			const parsed = Date.parse(dt.dateTime);
+			return Number.isNaN(parsed) ? undefined : parsed;
+		}
+
+		if (dt.timeZone) {
+			const parsedInTimeZone = parseLocalDateTimeInTimeZone(dt.dateTime, dt.timeZone);
+			if (parsedInTimeZone !== undefined) return parsedInTimeZone;
+		}
+
+		const parsed = Date.parse(dt.dateTime);
+		return Number.isNaN(parsed) ? undefined : parsed;
+	}
+
+	if (!dt?.date) return undefined;
+	const parsed = Date.parse(`${dt.date}T00:00:00.000Z`);
 	return Number.isNaN(parsed) ? undefined : parsed;
 };
 
@@ -261,6 +384,12 @@ const callGoogle = async (
 	headers.set("Authorization", `Bearer ${token.access_token}`);
 	if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
 	return fetch(`${GOOGLE_CALENDAR_BASE}${path}`, { ...init, headers });
+};
+
+const parseWatchExpiration = (raw: string | undefined): number => {
+	const parsed = Number.parseInt(raw ?? "", 10);
+	if (Number.isFinite(parsed) && parsed > 0) return parsed;
+	return Date.now() + 7 * 24 * 60 * 60 * 1000;
 };
 
 export const googleCalendarProvider: CalendarProvider = {
@@ -544,6 +673,61 @@ export const googleCalendarProvider: CalendarProvider = {
 		);
 		if (!response.ok && response.status !== 410 && response.status !== 404) {
 			throw new Error(`Failed to delete Google event (${response.status})`);
+		}
+	},
+
+	async watchEvents({
+		refreshToken,
+		calendarId,
+		address,
+		channelId,
+		channelToken,
+		ttlSeconds = 7 * 24 * 60 * 60,
+	}): Promise<CalendarWatchStartResult> {
+		const ttl = Math.max(60, Math.min(Math.round(ttlSeconds), 7 * 24 * 60 * 60));
+		const response = await callGoogle(
+			refreshToken,
+			`/calendars/${encodeURIComponent(calendarId)}/events/watch`,
+			{
+				method: "POST",
+				body: JSON.stringify({
+					id: channelId,
+					type: "web_hook",
+					address,
+					token: channelToken,
+					params: {
+						ttl: String(ttl),
+					},
+				}),
+			},
+		);
+		if (!response.ok) {
+			throw new Error(`Failed to start Google watch channel (${response.status})`);
+		}
+		const data = (await response.json()) as GoogleWatchStartResponse;
+		const responseChannelId = data.id ?? channelId;
+		const resourceId = data.resourceId;
+		if (!resourceId) {
+			throw new Error("Google watch response missing resourceId.");
+		}
+		return {
+			channelId: responseChannelId,
+			resourceId,
+			resourceUri: data.resourceUri,
+			expirationAt: parseWatchExpiration(data.expiration),
+		};
+	},
+
+	async stopWatchChannel({ refreshToken, channelId, resourceId }) {
+		const response = await callGoogle(refreshToken, "/channels/stop", {
+			method: "POST",
+			body: JSON.stringify({
+				id: channelId,
+				resourceId,
+			}),
+		});
+		if (!response.ok && response.status !== 404 && response.status !== 410) {
+			throw new Error(`Failed to stop Google watch channel (${response.status})`);
 		}
 	},
 };

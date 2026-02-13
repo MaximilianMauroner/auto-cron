@@ -7,6 +7,8 @@ export type ConvexEnv = {
 	AUTUMN_SECRET_KEY: string;
 	GOOGLE_CLIENT_ID: string;
 	GOOGLE_CLIENT_SECRET: string;
+	GOOGLE_CALENDAR_WEBHOOK_URL?: string;
+	GOOGLE_CALENDAR_WEBHOOK_TOKEN_SECRET?: string;
 };
 
 const runtimeEnv =
@@ -28,9 +30,17 @@ const readBillingMode = (): BillingMode | undefined => {
 	return BILLING_MODES.has(value) ? (value as BillingMode) : undefined;
 };
 
+const readOptional = (name: string): string | undefined => {
+	const value = runtimeEnv[name]?.trim();
+	if (!value) return undefined;
+	return value;
+};
+
 export const env = (): ConvexEnv => ({
 	AUTUMN_BILLING_MODE: readBillingMode(),
 	AUTUMN_SECRET_KEY: readRequired("AUTUMN_SECRET_KEY"),
 	GOOGLE_CLIENT_ID: readRequired("GOOGLE_CLIENT_ID"),
 	GOOGLE_CLIENT_SECRET: readRequired("GOOGLE_CLIENT_SECRET"),
+	GOOGLE_CALENDAR_WEBHOOK_URL: readOptional("GOOGLE_CALENDAR_WEBHOOK_URL"),
+	GOOGLE_CALENDAR_WEBHOOK_TOKEN_SECRET: readOptional("GOOGLE_CALENDAR_WEBHOOK_TOKEN_SECRET"),
 });

@@ -25,10 +25,10 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 
 1. [x] Task CRUD and prioritization flows
 2. [x] Habit CRUD and scheduling preference flows
-3. [ ] Auto-scheduling engine with conflict handling
+3. [x] Auto-scheduling engine with conflict handling
 4. [x] Calendar views with drag/drop rescheduling
 5. [~] Google Calendar bidirectional sync
-6. [ ] Scheduling run history and diagnostics UI
+6. [x] Scheduling run history and diagnostics UI
 7. [~] Feature gating via Autumn `check()` in Convex functions (task/habit create only)
 
 ## Implementation roadmap
@@ -92,7 +92,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Task creation dialog (title, description, priority, estimated duration, deadline)
 - [x] Task detail/edit dialog with update capability
 - [x] Inline priority badge + deadline indicator
-- [x] Per-task hours set assignment (`hoursSetId`) + scheduling mode override (`fastest|backfacing|parallel`)
+- [x] Per-task hours set assignment (`hoursSetId`) + scheduling mode override (`fastest|balanced|packed`)
 - [ ] Bulk actions (mark done, change priority, delete)
 
 ### Phase 4: Habits system
@@ -109,17 +109,18 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 
 ### Phase 5: Auto-scheduling engine
 
-- [ ] Priority-based greedy solver: sort tasks by (deadline urgency * priority weight), place in earliest available slot
+- [x] Constraint-based slot scheduler (`convex/scheduling/*`) with two-pass solve (on-time feasibility + optimized pass)
 - [x] Hours-set model + bootstrap migration (`Work`, `Anytime (24/7)`, default enforcement)
-- [ ] Respect selected hours sets in scheduler placement logic
-- [ ] Respect existing calendar events (busy status)
-- [ ] Place habits in preferred windows when possible, fallback to any free slot
-- [ ] Trigger system: auto-reschedule on task create/update/delete, on habit change, on calendar event change
+- [x] Respect selected hours sets in scheduler placement logic
+- [x] Respect existing calendar events (busy status)
+- [x] Place habits from RRULE recurrence with preference penalties + recovery/skip policies
+- [x] Trigger system: auto-reschedule on task create/update/delete, on habit change, on calendar event change
 - [ ] Rate-limit rescheduling triggers (max 1 per 30s per user via `@convex-dev/rate-limiter`)
 - [ ] Use `@convex-dev/workpool` for priority-based job queue
 - [ ] Use `@convex-dev/workflow` for durable multi-step scheduling pipeline
-- [ ] Apply scheduling results as mutations to `calendarEvents` table
-- [ ] Scheduling run history (track in `schedulingRuns` table)
+- [x] Apply scheduling results as mutations to `calendarEvents` table
+- [x] Scheduling run history (track in `schedulingRuns` table)
+- [x] Hard infeasibility policy: no partial apply, preserve existing schedule and emit diagnostics
 - [x] Keep scheduling unlimited for all plans (remove scheduling metering)
 
 ### Phase 6: Calendar views
@@ -141,7 +142,9 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Preserve per-calendar sync tokens during refresh-token backfill/update flows
 - [x] Recover invalid sync tokens (Google 410) and persist replacement tokens
 - [ ] Use `@convex-dev/action-retrier` for Google Calendar API calls
-- [x] Periodic sync every 15 minutes via `@convex-dev/crons` component (`convex/crons.ts`)
+- [x] Queue-backed periodic fallback sync via cron (6h) for connected users
+- [x] Push-triggered sync via Google Calendar watch channels (`events.watch`) + Convex webhook
+- [x] Watch-channel renewal cron (6h) with expiring-channel refresh
 - [ ] Conflict resolution: Google events take precedence, reschedule displaced tasks
 - [x] Handle event deletions (both directions)
 - [x] Allow local event deletion when provider-side delete fails
@@ -157,7 +160,8 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 
 ### Phase 9: Analytics dashboard
 
-- [~] Settings page: hours sets manager + default task scheduling mode implemented; remaining settings sections pending (timezone, scheduling horizon, sync preferences)
+- [~] Settings page: hours sets manager + default task scheduling mode + calendar timezone/clock mode implemented; remaining sections pending (scheduling horizon, sync preferences)
+- [x] Calendar diagnostics panel with latest run, late tasks, shortfalls, and manual run trigger
 - [ ] Weekly/monthly productivity stats (tasks completed, habits maintained)
 - [ ] Time allocation breakdown (chart: tasks vs habits vs meetings vs free)
 - [ ] Streak tracking for habits

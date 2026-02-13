@@ -1,9 +1,15 @@
 import { serverEnv } from "@/env/server";
-import { getWorkOS } from "@workos-inc/authkit-nextjs";
+import { getWorkOS, withAuth } from "@workos-inc/authkit-nextjs";
 import Image from "next/image";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 export default async function SignInPage() {
+	const { user } = await withAuth();
+	if (user) {
+		redirect("/calendar");
+	}
+
 	const clientId = serverEnv.WORKOS_CLIENT_ID;
 	const redirectUri = serverEnv.NEXT_PUBLIC_WORKOS_REDIRECT_URI;
 

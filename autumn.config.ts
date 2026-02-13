@@ -38,7 +38,6 @@ export const basic = product({
 		featureItem({
 			feature_id: habits.id,
 			included_usage: 5,
-			interval: "month",
 		}),
 	],
 });
@@ -59,7 +58,6 @@ export const pro = product({
 		featureItem({
 			feature_id: habits.id,
 			included_usage: 20,
-			interval: "month",
 		}),
 	],
 });
@@ -80,7 +78,6 @@ export const premium = product({
 		featureItem({
 			feature_id: habits.id,
 			included_usage: "inf",
-			interval: "month",
 		}),
 		featureItem({
 			feature_id: analytics.id,

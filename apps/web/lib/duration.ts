@@ -45,7 +45,7 @@ export const parseDurationToMinutes = (value: string): number | null => {
 		consumedLength += segment[0]?.length ?? 0;
 	}
 
-	if (consumedLength === normalized.length && totalMinutes > 0) {
+	if (consumedLength === normalized.length && totalMinutes >= 0) {
 		return Math.round(totalMinutes);
 	}
 

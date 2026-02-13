@@ -1,8 +1,11 @@
 export const habitFrequencies = ["daily", "weekly", "biweekly", "monthly"] as const;
 export type HabitFrequency = (typeof habitFrequencies)[number];
 
-export const habitPriorities = ["low", "medium", "high"] as const;
+export const habitPriorities = ["low", "medium", "high", "critical"] as const;
 export type HabitPriority = (typeof habitPriorities)[number];
+
+export const habitRecoveryPolicies = ["skip", "recover"] as const;
+export type HabitRecoveryPolicy = (typeof habitRecoveryPolicies)[number];
 
 export const habitCategories = [
 	"health",
@@ -35,7 +38,9 @@ export type HabitDTO = {
 	description?: string;
 	priority?: HabitPriority;
 	category: HabitCategory;
-	frequency: HabitFrequency;
+	recurrenceRule?: string;
+	recoveryPolicy?: HabitRecoveryPolicy;
+	frequency?: HabitFrequency;
 	durationMinutes: number;
 	minDurationMinutes?: number;
 	maxDurationMinutes?: number;
@@ -68,7 +73,9 @@ export type HabitCreateInput = {
 	description?: string;
 	priority?: HabitPriority;
 	category: HabitCategory;
-	frequency: HabitFrequency;
+	recurrenceRule?: string;
+	recoveryPolicy?: HabitRecoveryPolicy;
+	frequency?: HabitFrequency;
 	durationMinutes: number;
 	minDurationMinutes?: number;
 	maxDurationMinutes?: number;
@@ -101,6 +108,8 @@ export type HabitUpdateInput = {
 	description?: string;
 	priority?: HabitPriority;
 	category?: HabitCategory;
+	recurrenceRule?: string;
+	recoveryPolicy?: HabitRecoveryPolicy;
 	frequency?: HabitFrequency;
 	durationMinutes?: number;
 	minDurationMinutes?: number;

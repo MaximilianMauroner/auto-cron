@@ -38,6 +38,9 @@ const taskCreateInputValidator = v.object({
 	splitAllowed: v.optional(v.boolean()),
 	minChunkMinutes: v.optional(v.number()),
 	maxChunkMinutes: v.optional(v.number()),
+	restMinutes: v.optional(v.number()),
+	travelMinutes: v.optional(v.number()),
+	location: v.optional(v.string()),
 	sendToUpNext: v.optional(v.boolean()),
 	hoursSetId: v.optional(v.id("hoursSets")),
 	schedulingMode: v.optional(taskSchedulingModeValidator),
@@ -57,9 +60,12 @@ type TaskCreateInput = {
 	splitAllowed?: boolean;
 	minChunkMinutes?: number;
 	maxChunkMinutes?: number;
+	restMinutes?: number;
+	travelMinutes?: number;
+	location?: string;
 	sendToUpNext?: boolean;
 	hoursSetId?: Id<"hoursSets">;
-	schedulingMode?: "fastest" | "backfacing" | "parallel";
+	schedulingMode?: "fastest" | "balanced" | "packed";
 	visibilityPreference?: "default" | "private";
 	preferredCalendarId?: string;
 	color?: string;

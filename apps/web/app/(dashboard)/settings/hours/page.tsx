@@ -12,6 +12,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import {
 	useActionWithStatus,
@@ -37,6 +44,14 @@ type HoursSetDraft = {
 	isSystem: boolean;
 	defaultCalendarId?: string;
 	windows: HoursWindow[];
+};
+type GoogleCalendarListItem = {
+	id: string;
+	name: string;
+	primary: boolean;
+	color?: string;
+	accessRole?: "owner" | "writer" | "reader" | "freeBusyReader";
+	isExternal: boolean;
 };
 
 const dayDefinitions = [
@@ -102,16 +117,30 @@ export default function SettingsHoursPage() {
 	const [selectedSetId, setSelectedSetId] = useState<string>("");
 	const [draft, setDraft] = useState<HoursSetDraft | null>(null);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+	const [successMessage, setSuccessMessage] = useState<string | null>(null);
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
 	const [newSetName, setNewSetName] = useState("");
 	const hasBootstrappedRef = useRef(false);
 
 	const hoursSetsQuery = useAuthenticatedQueryWithStatus(api.hours.queries.listHoursSets, {});
+	const googleCalendarsQuery = useAuthenticatedQueryWithStatus(
+		api.calendar.queries.listGoogleCalendars,
+		{},
+	);
+	const schedulingDefaultsQuery = useAuthenticatedQueryWithStatus(
+		api.hours.queries.getTaskSchedulingDefaults,
+		{},
+	);
+	const schedulingStepMinutes = schedulingDefaultsQuery.data?.schedulingStepMinutes ?? 15;
+	const schedulingStepSeconds = schedulingStepMinutes * 60;
 	const hoursSets = (hoursSetsQuery.data ?? []) as HoursSetDTO[];
+	const googleCalendars = (googleCalendarsQuery.data ?? []) as GoogleCalendarListItem[];
 
 	const { execute: bootstrapHoursSets, isPending: isBootstrapping } = useActionWithStatus(
 		api.hours.actions.bootstrapHoursSetsForUser,
 	);
+	const { execute: bootstrapDefaultPlannerData, isPending: isBootstrappingDefaults } =
+		useActionWithStatus(api.hours.actions.bootstrapDefaultPlannerDataForUser);
 	const { mutate: createHoursSet, isPending: isCreatingSet } = useMutationWithStatus(
 		api.hours.mutations.createHoursSet,
 	);
@@ -126,7 +155,12 @@ export default function SettingsHoursPage() {
 	);
 
 	const isBusy =
-		isBootstrapping || isCreatingSet || isUpdatingSet || isDeletingSet || isSettingDefault;
+		isBootstrapping ||
+		isBootstrappingDefaults ||
+		isCreatingSet ||
+		isUpdatingSet ||
+		isDeletingSet ||
+		isSettingDefault;
 
 	const hoursSetsById = useMemo(() => {
 		return new Map(hoursSets.map((hoursSet) => [hoursSet._id, hoursSet] as const));
@@ -141,6 +175,27 @@ export default function SettingsHoursPage() {
 	}, [hoursSets]);
 
 	const selectedSet = selectedSetId ? hoursSetsById.get(selectedSetId) : orderedHoursSets[0];
+	const calendarOptions = useMemo(() => {
+		const deduped = new Map<string, GoogleCalendarListItem>();
+		for (const calendar of googleCalendars) {
+			deduped.set(calendar.id, calendar);
+		}
+		if (!deduped.has("primary")) {
+			deduped.set("primary", {
+				id: "primary",
+				name: "Default",
+				primary: true,
+				color: undefined,
+				accessRole: "owner",
+				isExternal: false,
+			});
+		}
+		return Array.from(deduped.values()).sort((a, b) => {
+			if (a.primary && !b.primary) return -1;
+			if (!a.primary && b.primary) return 1;
+			return a.name.localeCompare(b.name);
+		});
+	}, [googleCalendars]);
 
 	useEffect(() => {
 		if (hasBootstrappedRef.current) return;
@@ -290,14 +345,24 @@ export default function SettingsHoursPage() {
 		if (!draft) return;
 		const source = (windowsByDay.get(day) ?? []).map((window) => ({
 			...window,
-			startMinute: Math.floor(window.startMinute / 15) * 15,
-			endMinute: Math.ceil(window.endMinute / 15) * 15,
+			startMinute: Math.floor(window.startMinute / schedulingStepMinutes) * schedulingStepMinutes,
+			endMinute: Math.ceil(window.endMinute / schedulingStepMinutes) * schedulingStepMinutes,
 		}));
 		if (source.length === 0) return;
-		const copied = dayDefinitions.flatMap(({ day: targetDay }) =>
+
+		// Copy only to currently enabled days so disabled days remain untouched.
+		const enabledDays = new Set(
+			dayDefinitions
+				.filter(({ day: targetDay }) => (windowsByDay.get(targetDay) ?? []).length > 0)
+				.map(({ day: targetDay }) => targetDay as HoursWindow["day"]),
+		);
+		if (enabledDays.size === 0) return;
+
+		const copied = Array.from(enabledDays).flatMap((targetDay) =>
 			source.map((window) => ({ ...window, day: targetDay as HoursWindow["day"] })),
 		);
-		setDraft({ ...draft, windows: normalizeWindows(copied) });
+		const preservedDisabledDays = draft.windows.filter((window) => !enabledDays.has(window.day));
+		setDraft({ ...draft, windows: normalizeWindows([...preservedDisabledDays, ...copied]) });
 	};
 
 	const onSaveHoursSet = async () => {
@@ -311,6 +376,7 @@ export default function SettingsHoursPage() {
 			return;
 		}
 		setErrorMessage(null);
+		setSuccessMessage(null);
 		try {
 			await updateHoursSet({
 				id: toHoursSetId(draft.id),
@@ -337,6 +403,7 @@ export default function SettingsHoursPage() {
 				: (orderedHoursSets.find((hoursSet) => hoursSet.isDefault)?.windows ?? defaultWorkWindows);
 
 		setErrorMessage(null);
+		setSuccessMessage(null);
 		try {
 			const createdId = await createHoursSet({
 				input: {
@@ -361,6 +428,7 @@ export default function SettingsHoursPage() {
 	const onDeleteHoursSet = async () => {
 		if (!draft) return;
 		setErrorMessage(null);
+		setSuccessMessage(null);
 		try {
 			await deleteHoursSet({ id: toHoursSetId(draft.id) });
 		} catch (error) {
@@ -371,10 +439,28 @@ export default function SettingsHoursPage() {
 	const onSetDefault = async () => {
 		if (!draft) return;
 		setErrorMessage(null);
+		setSuccessMessage(null);
 		try {
 			await setDefaultHoursSet({ id: toHoursSetId(draft.id) });
 		} catch (error) {
 			setErrorMessage(error instanceof Error ? error.message : "Could not set default hours set.");
+		}
+	};
+
+	const onSeedDefaultPlannerData = async () => {
+		setErrorMessage(null);
+		try {
+			const result = await bootstrapDefaultPlannerData({});
+			const summary =
+				result.createdTasks === 0 && result.createdHabits === 0
+					? "Starter defaults already existed."
+					: `Starter defaults created: ${result.createdTasks} tasks and ${result.createdHabits} habits.`;
+			setSuccessMessage(summary);
+		} catch (error) {
+			setSuccessMessage(null);
+			setErrorMessage(
+				error instanceof Error ? error.message : "Could not generate starter planner data.",
+			);
 		}
 	};
 
@@ -400,6 +486,14 @@ export default function SettingsHoursPage() {
 							</Button>
 							<Button
 								variant="outline"
+								onClick={() => void onSeedDefaultPlannerData()}
+								disabled={isBusy}
+								className="border-border/70 bg-background/60 text-foreground hover:bg-muted/60 hover:text-foreground"
+							>
+								Generate starter data
+							</Button>
+							<Button
+								variant="outline"
 								onClick={() => void bootstrapHoursSets({})}
 								disabled={isBusy}
 								className="border-border/70 bg-background/60 text-foreground hover:bg-muted/60 hover:text-foreground"
@@ -414,6 +508,11 @@ export default function SettingsHoursPage() {
 			{errorMessage ? (
 				<div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
 					{errorMessage}
+				</div>
+			) : null}
+			{successMessage ? (
+				<div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+					{successMessage}
 				</div>
 			) : null}
 
@@ -463,7 +562,8 @@ export default function SettingsHoursPage() {
 							</div>
 						</CardTitle>
 						<CardDescription>
-							Per-day windows use 15 minute steps. Multiple windows per day are supported.
+							Per-day windows use {schedulingStepMinutes}-minute steps. Multiple windows per day are
+							supported.
 						</CardDescription>
 					</CardHeader>
 					<CardContent className="space-y-4">
@@ -481,16 +581,35 @@ export default function SettingsHoursPage() {
 									</div>
 									<div className="space-y-2">
 										<Label>Default calendar id (optional)</Label>
-										<Input
-											placeholder="primary"
-											value={draft.defaultCalendarId ?? ""}
-											onChange={(event) =>
+										<Select
+											value={draft.defaultCalendarId ?? "__none__"}
+											onValueChange={(value) =>
 												setDraft({
 													...draft,
-													defaultCalendarId: event.target.value || undefined,
+													defaultCalendarId: value === "__none__" ? undefined : value,
 												})
 											}
-										/>
+										>
+											<SelectTrigger>
+												<SelectValue placeholder="Select calendar" />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="__none__">No default calendar</SelectItem>
+												{calendarOptions.map((calendar) => (
+													<SelectItem key={calendar.id} value={calendar.id}>
+														{calendar.primary ? `${calendar.name} (primary)` : calendar.name}
+													</SelectItem>
+												))}
+												{draft.defaultCalendarId &&
+												!calendarOptions.some(
+													(calendar) => calendar.id === draft.defaultCalendarId,
+												) ? (
+													<SelectItem value={draft.defaultCalendarId}>
+														{draft.defaultCalendarId} (unavailable)
+													</SelectItem>
+												) : null}
+											</SelectContent>
+										</Select>
 									</div>
 								</div>
 
@@ -557,7 +676,7 @@ export default function SettingsHoursPage() {
 															>
 																<Input
 																	type="time"
-																	step={900}
+																	step={schedulingStepSeconds}
 																	value={minuteToTime(window.startMinute)}
 																	onChange={(event) =>
 																		updateWindow(day, index, "startMinute", event.target.value)
@@ -567,7 +686,7 @@ export default function SettingsHoursPage() {
 																<span className="text-sm text-muted-foreground">to</span>
 																<Input
 																	type="time"
-																	step={900}
+																	step={schedulingStepSeconds}
 																	value={minuteToTime(window.endMinute)}
 																	onChange={(event) =>
 																		updateWindow(day, index, "endMinute", event.target.value)

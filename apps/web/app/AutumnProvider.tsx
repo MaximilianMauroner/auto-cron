@@ -1,6 +1,7 @@
 "use client";
 
 import { clientEnv } from "@/env/client";
+import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { AutumnProvider as BaseAutumnProvider } from "autumn-js/react";
 import type { ReactNode } from "react";
 
@@ -19,8 +20,18 @@ function resolveBackendUrl() {
 }
 
 export function AutumnProvider({ children }: { children: ReactNode }) {
+	const { user } = useAuth();
+	const name =
+		[user?.firstName, user?.lastName].filter(Boolean).join(" ").trim() || user?.email || undefined;
+	const customerData = user?.email
+		? {
+				name,
+				email: user.email,
+			}
+		: undefined;
+
 	return (
-		<BaseAutumnProvider backendUrl={resolveBackendUrl()} suppressLogs>
+		<BaseAutumnProvider backendUrl={resolveBackendUrl()} customerData={customerData} suppressLogs>
 			{children}
 		</BaseAutumnProvider>
 	);

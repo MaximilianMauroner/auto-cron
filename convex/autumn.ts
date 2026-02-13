@@ -1,5 +1,6 @@
 import { Autumn } from "@useautumn/convex";
 import { components } from "./_generated/api";
+import { authKit } from "./auth";
 import { env } from "./env";
 
 type AutumnIdentifyContext = {
@@ -10,6 +11,13 @@ type AutumnIdentifyContext = {
 			email?: string | null;
 		} | null>;
 	};
+	runQuery?: unknown;
+};
+
+const normalizeOptionalString = (value: string | null | undefined) => {
+	if (!value) return undefined;
+	const normalized = value.trim();
+	return normalized.length > 0 ? normalized : undefined;
 };
 
 // NOTE: `identify` uses manual getUserIdentity() instead of requireAuth() because:
@@ -18,15 +26,38 @@ type AutumnIdentifyContext = {
 export const autumn = new Autumn(components.autumn, {
 	secretKey: env().AUTUMN_SECRET_KEY,
 	identify: async (ctx: AutumnIdentifyContext) => {
-		const user = await ctx.auth.getUserIdentity();
-		if (!user) return null;
+		const identity = await ctx.auth.getUserIdentity();
+		if (!identity) return null;
+
+		let customerId = normalizeOptionalString(identity.subject);
+		let customerName = normalizeOptionalString(identity.name);
+		let customerEmail = normalizeOptionalString(identity.email);
+
+		if ("runQuery" in ctx && typeof ctx.runQuery === "function") {
+			const authUser = await authKit.getAuthUser(ctx as Parameters<typeof authKit.getAuthUser>[0]);
+			if (authUser) {
+				customerId = normalizeOptionalString(authUser.id) ?? customerId;
+				customerEmail = normalizeOptionalString(authUser.email) ?? customerEmail;
+				const fullName = normalizeOptionalString(
+					[authUser.firstName, authUser.lastName].filter(Boolean).join(" "),
+				);
+				customerName = fullName ?? customerName;
+			}
+		}
+
+		if (!customerId) return null;
+
+		const customerData =
+			customerName || customerEmail
+				? {
+						...(customerName ? { name: customerName } : {}),
+						...(customerEmail ? { email: customerEmail } : {}),
+					}
+				: undefined;
 
 		return {
-			customerId: user.subject,
-			customerData: {
-				name: user.name ?? "",
-				email: user.email ?? "",
-			},
+			customerId,
+			...(customerData ? { customerData } : {}),
 		};
 	},
 });

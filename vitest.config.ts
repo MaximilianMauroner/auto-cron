@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
 	test: {
 		environment: "edge-runtime",
-		include: ["convex/**/*.test.ts"],
+		include: ["tests/**/*.test.ts"],
 		env: {
 			AUTUMN_SECRET_KEY: "test-autumn-secret",
 			GOOGLE_CLIENT_ID: "test-google-client-id",
