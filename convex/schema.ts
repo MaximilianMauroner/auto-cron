@@ -96,6 +96,8 @@ export default defineSchema({
 		dateFormat: v.optional(
 			v.union(v.literal("MM/DD/YYYY"), v.literal("DD/MM/YYYY"), v.literal("YYYY-MM-DD")),
 		),
+		schedulingModelVersion: v.optional(v.number()),
+		hoursBootstrapped: v.optional(v.boolean()),
 	})
 		.index("by_userId", ["userId"])
 		.index("by_googleRefreshToken_userId", ["googleRefreshToken", "userId"]),
@@ -291,7 +293,8 @@ export default defineSchema({
 		.index("by_userId_googleEventId", ["userId", "googleEventId"])
 		.index("by_userId_calendarId_googleEventId", ["userId", "calendarId", "googleEventId"])
 		.index("by_userId_recurringEventId", ["userId", "recurringEventId"])
-		.index("by_userId_seriesId_occurrenceStart", ["userId", "seriesId", "occurrenceStart"]),
+		.index("by_userId_seriesId_occurrenceStart", ["userId", "seriesId", "occurrenceStart"])
+		.index("by_userId_source_sourceId", ["userId", "source", "sourceId"]),
 
 	calendarEventSeries: defineTable({
 		userId: v.string(),

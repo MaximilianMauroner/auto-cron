@@ -20,17 +20,20 @@ export const enqueueSchedulingRunFromMutation = async (
 ): Promise<{ enqueued: boolean; runId: Id<"schedulingRuns"> }> => {
 	const now = Date.now();
 
-	const pending = await ctx.db
-		.query("schedulingRuns")
-		.withIndex("by_userId_status_startedAt", (q) => q.eq("userId", userId).eq("status", "pending"))
-		.collect();
+	// We only need to know if *any* pending run exists to avoid creating a duplicate.
+	// The exact run returned doesn't matter — callers just get "already pending, reuse this ID".
+	const latestPending = (
+		await ctx.db
+			.query("schedulingRuns")
+			.withIndex("by_userId_status_startedAt", (q) =>
+				q.eq("userId", userId).eq("status", "pending"),
+			)
+			.order("desc")
+			.take(1)
+	)[0];
 
 	// Keep at most one pending run per user.
 	// Additional debounce below rate-limits repeated enqueue triggers while a run is running.
-	const latestPending = pending.reduce<(typeof pending)[number] | undefined>((latest, run) => {
-		if (!latest) return run;
-		return isRunNewer(run, latest) ? run : latest;
-	}, undefined);
 	if (latestPending && !force) {
 		return {
 			enqueued: false,
@@ -38,11 +41,18 @@ export const enqueueSchedulingRunFromMutation = async (
 		};
 	}
 
-	const running = await ctx.db
+	const runningWithinDebounce = await ctx.db
 		.query("schedulingRuns")
-		.withIndex("by_userId_status_startedAt", (q) => q.eq("userId", userId).eq("status", "running"))
+		.withIndex("by_userId_status_startedAt", (q) =>
+			q
+				.eq("userId", userId)
+				.eq("status", "running")
+				.gte("startedAt", now - DEBOUNCE_WINDOW_MS),
+		)
 		.collect();
-	const latestRunning = running.reduce<(typeof running)[number] | undefined>((latest, run) => {
+	const latestRunning = runningWithinDebounce.reduce<
+		(typeof runningWithinDebounce)[number] | undefined
+	>((latest, run) => {
 		if (!latest) return run;
 		return isRunNewer(run, latest) ? run : latest;
 	}, undefined);

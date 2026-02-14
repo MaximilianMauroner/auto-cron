@@ -10,11 +10,10 @@ import { withActionAuth } from "../auth";
 import { getCalendarProvider } from "../providers/calendar";
 import type { GoogleEventUpsert } from "../providers/calendar/types";
 import {
-	dedupeUserCalendarEventsInRange,
 	getCurrentUserGoogleSettings,
 	getEventById,
 	listUsersWithGoogleSync,
-	normalizeGoogleEventsInRange,
+	normalizeAndDedupeEventsInRange,
 	updateLocalEventFromGoogle,
 	upsertSyncedEventsBatch,
 	upsertSyncedEventsForUser,
@@ -329,23 +328,21 @@ const syncUserFromGoogle = async (
 		}
 	}
 
-	await normalizeGoogleEventsInRange(ctx, {
-		userId,
-		start: effectiveRangeStart,
-		end: effectiveRangeEnd,
-	});
-
 	const syncedStarts = allEvents.map((event) => event.start);
 	const syncedEnds = allEvents.map((event) => event.end);
 	const rangePaddingMs = 60 * 1000;
-	const dedupeStart =
-		syncedStarts.length > 0 ? Math.min(...syncedStarts) - rangePaddingMs : effectiveRangeStart;
-	const dedupeEnd =
-		syncedEnds.length > 0 ? Math.max(...syncedEnds) + rangePaddingMs : effectiveRangeEnd;
-	await dedupeUserCalendarEventsInRange(ctx, {
+	const combinedStart =
+		syncedStarts.length > 0
+			? Math.min(effectiveRangeStart, Math.min(...syncedStarts) - rangePaddingMs)
+			: effectiveRangeStart;
+	const combinedEnd =
+		syncedEnds.length > 0
+			? Math.max(effectiveRangeEnd, Math.max(...syncedEnds) + rangePaddingMs)
+			: effectiveRangeEnd;
+	await normalizeAndDedupeEventsInRange(ctx, {
 		userId,
-		start: dedupeStart,
-		end: dedupeEnd,
+		start: combinedStart,
+		end: combinedEnd,
 	});
 
 	return {

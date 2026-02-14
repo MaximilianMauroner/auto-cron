@@ -99,6 +99,11 @@ export const dedupeUserCalendarEventsInRange = (
 	args: { userId: string; start: number; end: number },
 ) => ctx.runMutation(internal.calendar.internal.dedupeUserCalendarEventsInRange, args);
 
+export const normalizeAndDedupeEventsInRange = (
+	ctx: ActionCtx,
+	args: { userId: string; start: number; end: number },
+) => ctx.runMutation(internal.calendar.internal.normalizeAndDedupeEventsInRange, args);
+
 export const getEventById = (ctx: ActionCtx, id: Id<"calendarEvents">) =>
 	ctx.runQuery(internal.calendar.internal.getEventById, { id });
 

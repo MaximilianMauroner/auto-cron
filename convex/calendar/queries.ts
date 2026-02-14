@@ -167,8 +167,9 @@ export const listTaskEvents = query({
 		const { userId } = ctx;
 		const events = await ctx.db
 			.query("calendarEvents")
-			.withIndex("by_userId", (q) => q.eq("userId", userId))
-			.filter((q) => q.and(q.eq(q.field("source"), "task"), q.eq(q.field("sourceId"), args.taskId)))
+			.withIndex("by_userId_source_sourceId", (q) =>
+				q.eq("userId", userId).eq("source", "task").eq("sourceId", args.taskId),
+			)
 			.collect();
 
 		const valid = events.filter((event) => event.status !== "cancelled");
@@ -328,14 +329,21 @@ export const getGoogleSyncHealth = query({
 	}),
 	handler: withQueryAuth(async (ctx) => {
 		const { userId } = ctx;
-		const settings = await ctx.db
-			.query("userSettings")
-			.withIndex("by_userId", (q) => q.eq("userId", userId))
-			.unique();
-		const channels = await ctx.db
-			.query("googleCalendarWatchChannels")
-			.withIndex("by_userId", (q) => q.eq("userId", userId))
-			.collect();
+		const [settings, channels, latestRunArr] = await Promise.all([
+			ctx.db
+				.query("userSettings")
+				.withIndex("by_userId", (q) => q.eq("userId", userId))
+				.unique(),
+			ctx.db
+				.query("googleCalendarWatchChannels")
+				.withIndex("by_userId", (q) => q.eq("userId", userId))
+				.collect(),
+			ctx.db
+				.query("googleSyncRuns")
+				.withIndex("by_userId_startedAt", (q) => q.eq("userId", userId))
+				.order("desc")
+				.take(1),
+		]);
 		const now = Date.now();
 		const activeChannels = channels.filter(
 			(channel) => channel.status === "active" && channel.expirationAt > now,
@@ -348,13 +356,7 @@ export const getGoogleSyncHealth = query({
 			if (typeof current !== "number") return latest;
 			return typeof latest === "number" ? Math.max(latest, current) : current;
 		}, undefined);
-		const latestRun = (
-			await ctx.db
-				.query("googleSyncRuns")
-				.withIndex("by_userId_startedAt", (q) => q.eq("userId", userId))
-				.order("desc")
-				.take(1)
-		)[0];
+		const latestRun = latestRunArr[0];
 		return {
 			googleConnected: Boolean(settings?.googleRefreshToken),
 			activeChannels: activeChannels.length,
