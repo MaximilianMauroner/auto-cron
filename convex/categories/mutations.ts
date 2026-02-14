@@ -14,9 +14,17 @@ export const createCategory = mutation({
 	returns: v.id("taskCategories"),
 	handler: withMutationAuth(
 		async (ctx, args: { name: string; description?: string; color?: string }) => {
+			const trimmedName = args.name.trim();
+			if (!trimmedName || trimmedName.length > 100) {
+				throw new ConvexError({
+					code: "INVALID_NAME",
+					message: "Category name must be between 1 and 100 characters",
+				});
+			}
+
 			const existing = await ctx.db
 				.query("taskCategories")
-				.withIndex("by_userId_name", (q) => q.eq("userId", ctx.userId).eq("name", args.name))
+				.withIndex("by_userId_name", (q) => q.eq("userId", ctx.userId).eq("name", trimmedName))
 				.first();
 
 			if (existing) {
@@ -37,7 +45,7 @@ export const createCategory = mutation({
 			const now = Date.now();
 			return await ctx.db.insert("taskCategories", {
 				userId: ctx.userId,
-				name: args.name,
+				name: trimmedName,
 				description: args.description,
 				color: assignedColor,
 				isSystem: false,
@@ -73,14 +81,21 @@ export const updateCategory = mutation({
 				throw new ConvexError({ code: "NOT_FOUND", message: "Category not found" });
 			}
 
-			if (category.isSystem && args.name && args.name !== category.name) {
+			const newName = args.name?.trim();
+			if (newName !== undefined && (!newName || newName.length > 100)) {
+				throw new ConvexError({
+					code: "INVALID_NAME",
+					message: "Category name must be between 1 and 100 characters",
+				});
+			}
+
+			if (category.isSystem && newName && newName !== category.name) {
 				throw new ConvexError({
 					code: "SYSTEM_CATEGORY",
 					message: "Cannot rename system categories",
 				});
 			}
 
-			const newName = args.name;
 			if (newName && newName !== category.name) {
 				const existing = await ctx.db
 					.query("taskCategories")
@@ -101,39 +116,14 @@ export const updateCategory = mutation({
 				description?: string;
 				color?: string;
 			} = { updatedAt: Date.now() };
-			if (args.name !== undefined) updates.name = args.name;
+			if (newName !== undefined) updates.name = newName;
 			if (args.description !== undefined) updates.description = args.description;
 			if (args.color !== undefined) updates.color = args.color;
 
 			await ctx.db.patch(args.categoryId, updates);
 
-			if (args.color && args.color !== category.color) {
-				const tasks = await ctx.db
-					.query("tasks")
-					.withIndex("by_userId_categoryId", (q) =>
-						q.eq("userId", ctx.userId).eq("categoryId", args.categoryId),
-					)
-					.collect();
-
-				for (const task of tasks) {
-					if (!task.color || task.color === category.color) {
-						await ctx.db.patch(task._id, { color: args.color });
-					}
-				}
-
-				const habits = await ctx.db
-					.query("habits")
-					.withIndex("by_userId_categoryId", (q) =>
-						q.eq("userId", ctx.userId).eq("categoryId", args.categoryId),
-					)
-					.collect();
-
-				for (const habit of habits) {
-					if (!habit.color || habit.color === category.color) {
-						await ctx.db.patch(habit._id, { color: args.color });
-					}
-				}
-			}
+			// Category color changes are reflected at read time via effectiveColor
+			// (task.color ?? category?.color ?? fallback), so no propagation needed.
 
 			return null;
 		},
@@ -173,10 +163,13 @@ export const deleteCategory = mutation({
 			.collect();
 
 		for (const task of tasks) {
-			await ctx.db.patch(task._id, {
+			const patch: { categoryId: Id<"taskCategories">; color?: string } = {
 				categoryId: defaultCategory._id,
-				color: defaultCategory.color,
-			});
+			};
+			if (!task.color || task.color === category.color) {
+				patch.color = defaultCategory.color;
+			}
+			await ctx.db.patch(task._id, patch);
 		}
 
 		const habits = await ctx.db
@@ -187,10 +180,13 @@ export const deleteCategory = mutation({
 			.collect();
 
 		for (const habit of habits) {
-			await ctx.db.patch(habit._id, {
+			const patch: { categoryId: Id<"taskCategories">; color?: string } = {
 				categoryId: defaultCategory._id,
-				color: defaultCategory.color,
-			});
+			};
+			if (!habit.color || habit.color === category.color) {
+				patch.color = defaultCategory.color;
+			}
+			await ctx.db.patch(habit._id, patch);
 		}
 
 		await ctx.db.delete(args.categoryId);

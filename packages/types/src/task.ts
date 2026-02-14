@@ -46,7 +46,7 @@ export type TaskDTO = {
 	visibilityPreference?: TaskVisibilityPreference;
 	preferredCalendarId?: string;
 	color?: string;
-	categoryId: string;
+	categoryId?: string;
 	effectiveColor?: string;
 };
 

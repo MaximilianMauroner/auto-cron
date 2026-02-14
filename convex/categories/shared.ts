@@ -40,39 +40,42 @@ export async function ensureDefaultCategories(
 		.withIndex("by_userId", (q) => q.eq("userId", userId))
 		.collect();
 
-	if (existing.length > 0) {
-		const personal = existing.find((c) => c.name === "Personal");
-		const travel = existing.find((c) => c.name === "Travel");
-		if (personal && travel) {
-			return { personalId: personal._id, travelId: travel._id };
-		}
+	const personal = existing.find((c) => c.name === "Personal");
+	const travel = existing.find((c) => c.name === "Travel");
+
+	if (personal && travel) {
+		return { personalId: personal._id, travelId: travel._id };
 	}
 
 	const now = Date.now();
 
-	const personalId = await ctx.db.insert("taskCategories", {
-		userId,
-		name: "Personal",
-		description: "Your personal tasks and habits",
-		color: GOOGLE_CALENDAR_COLORS[0],
-		isSystem: true,
-		isDefault: true,
-		sortOrder: 0,
-		createdAt: now,
-		updatedAt: now,
-	});
+	const personalId = personal
+		? personal._id
+		: await ctx.db.insert("taskCategories", {
+				userId,
+				name: "Personal",
+				description: "Your personal tasks and habits",
+				color: GOOGLE_CALENDAR_COLORS[0],
+				isSystem: true,
+				isDefault: !existing.some((c) => c.isDefault),
+				sortOrder: 0,
+				createdAt: now,
+				updatedAt: now,
+			});
 
-	const travelId = await ctx.db.insert("taskCategories", {
-		userId,
-		name: "Travel",
-		description: "Flights, travel, and buffer time",
-		color: GOOGLE_CALENDAR_COLORS[7],
-		isSystem: true,
-		isDefault: false,
-		sortOrder: 1,
-		createdAt: now,
-		updatedAt: now,
-	});
+	const travelId = travel
+		? travel._id
+		: await ctx.db.insert("taskCategories", {
+				userId,
+				name: "Travel",
+				description: "Flights, travel, and buffer time",
+				color: GOOGLE_CALENDAR_COLORS[7],
+				isSystem: true,
+				isDefault: false,
+				sortOrder: existing.length + (personal ? 0 : 1),
+				createdAt: now,
+				updatedAt: now,
+			});
 
 	return { personalId, travelId };
 }

@@ -8,16 +8,16 @@ const navItems = [
 	{ href: "/app/settings", label: "Display", number: "01" },
 	{ href: "/app/settings/scheduling", label: "Scheduling", number: "02" },
 	{ href: "/app/settings/hours", label: "Hours", number: "03" },
-	{ href: "/app/settings/categories", label: "Categories", number: "03" },
-	{ href: "/app/settings/account", label: "Account", number: "04" },
-	{ href: "/app/settings/notifications", label: "Alerts", number: "05" },
+	{ href: "/app/settings/categories", label: "Categories", number: "04" },
+	{ href: "/app/settings/account", label: "Account", number: "05" },
+	{ href: "/app/settings/notifications", label: "Alerts", number: "06" },
 ] as const;
 
 export function SettingsNav() {
 	const pathname = usePathname();
 
 	return (
-		<nav className="flex items-center gap-1 overflow-x-auto scrollbar-none" role="tablist">
+		<nav className="flex items-center gap-1 overflow-x-auto scrollbar-none">
 			{navItems.map((item) => {
 				const isActive =
 					pathname === item.href ||
@@ -27,8 +27,7 @@ export function SettingsNav() {
 					<Link
 						key={item.href}
 						href={item.href}
-						role="tab"
-						aria-selected={isActive}
+						aria-current={isActive ? "page" : undefined}
 						className={cn(
 							"group relative flex shrink-0 items-center gap-1.5 rounded-md px-3 py-2 text-sm transition-colors",
 							isActive
@@ -38,13 +37,13 @@ export function SettingsNav() {
 					>
 						<span
 							className={cn(
-								"font-(family-name:--font-cutive) text-[9px] tracking-[0.15em]",
+								"font-[family-name:var(--font-cutive)] text-[9px] tracking-[0.15em]",
 								isActive ? "text-accent" : "text-muted-foreground/50",
 							)}
 						>
 							{item.number}
 						</span>
-						<span className="font-(family-name:--font-outfit) text-[13px] font-medium">
+						<span className="font-[family-name:var(--font-outfit)] text-[13px] font-medium">
 							{item.label}
 						</span>
 

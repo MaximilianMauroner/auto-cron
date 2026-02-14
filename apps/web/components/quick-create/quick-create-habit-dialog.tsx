@@ -95,6 +95,10 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 			setErrorMessage("Please provide a title and valid duration.");
 			return;
 		}
+		if (!categoryId) {
+			setErrorMessage("Please select a category.");
+			return;
+		}
 		setErrorMessage(null);
 		try {
 			await createHabit({
