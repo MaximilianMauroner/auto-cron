@@ -392,6 +392,18 @@ export const updateLocalEventFromGoogle = internalMutation({
 		if (!event) return;
 		const nextSourceId = event.source === "google" ? args.googleEventId : event.sourceId;
 
+		console.log("[sync:updateLocal]", {
+			eventId: String(args.id),
+			googleEventId: args.googleEventId,
+			argsCalendarId: args.calendarId,
+			existingCalendarId: event.calendarId,
+			resolvedCalendarId: args.calendarId ?? event.calendarId,
+			existingSource: event.source,
+			existingStart: event.start,
+			existingEnd: event.end,
+			lastSyncedAt: args.lastSyncedAt,
+		});
+
 		await ctx.db.patch(args.id, {
 			googleEventId: args.googleEventId,
 			sourceId: nextSourceId,
