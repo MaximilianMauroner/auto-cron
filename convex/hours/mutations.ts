@@ -6,6 +6,16 @@ import { withMutationAuth } from "../auth";
 import { GOOGLE_CALENDAR_COLORS, ensureDefaultCategories } from "../categories/shared";
 import { getMaxHorizonDays, getMaxHorizonWeeks, isValidProductId } from "../planLimits";
 import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
+import type {
+	HabitQuickCreateSettingsShape,
+	HoursSetCreateInput,
+	HoursSetUpdateInput,
+	NormalizedHabitQuickCreateDefaults,
+	NormalizedTaskQuickCreateDefaults,
+	SeedHabitTemplate,
+	SeedTaskTemplate,
+	TaskQuickCreateSettingsShape,
+} from "./hourTypes";
 import {
 	type HourWindow,
 	anytimeWindows,
@@ -45,31 +55,6 @@ const DEFAULT_WORK_WINDOW_END = "17:00";
 const DEFAULT_WORK_DAYS = [1, 2, 3, 4, 5] as const;
 const WEEKDAY_PREFERRED_DAYS = [1, 2, 3, 4, 5] as const;
 const WEEKDAY_RECURRENCE_RULE = "RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR";
-
-type SeedTaskTemplate = {
-	title: string;
-	description: string;
-	priority: "low" | "medium" | "high" | "critical" | "blocker";
-	status: "backlog" | "queued";
-	estimatedMinutes: number;
-	splitAllowed?: boolean;
-	minChunkMinutes?: number;
-	maxChunkMinutes?: number;
-	color?: string;
-};
-
-type SeedHabitTemplate = {
-	title: string;
-	description: string;
-	priority?: "low" | "medium" | "high" | "critical";
-	recurrenceRule: string;
-	frequency?: "daily" | "weekly" | "biweekly" | "monthly";
-	durationMinutes: number;
-	preferredWindowStart?: string;
-	preferredWindowEnd?: string;
-	preferredDays?: number[];
-	color?: string;
-};
 
 const DEFAULT_SEED_TASKS: SeedTaskTemplate[] = [
 	{
@@ -219,19 +204,6 @@ const hoursSetUpdateInputValidator = v.object({
 	isDefault: v.optional(v.boolean()),
 });
 
-type HoursSetCreateInput = {
-	name: string;
-	windows: HourWindow[];
-	defaultCalendarId?: string;
-};
-
-type HoursSetUpdateInput = {
-	name?: string;
-	windows?: HourWindow[];
-	defaultCalendarId?: string;
-	isDefault?: boolean;
-};
-
 const notFoundError = () =>
 	new ConvexError({
 		code: "NOT_FOUND",
@@ -314,34 +286,6 @@ const sanitizeTaskSchedulingMode = (
 		return mode;
 	}
 	return "fastest";
-};
-
-type TaskQuickCreateSettingsShape = {
-	taskQuickCreatePriority?: string;
-	taskQuickCreateStatus?: string;
-	taskQuickCreateEstimatedMinutes?: number;
-	taskQuickCreateSplitAllowed?: boolean;
-	taskQuickCreateMinChunkMinutes?: number;
-	taskQuickCreateMaxChunkMinutes?: number;
-	taskQuickCreateRestMinutes?: number;
-	taskQuickCreateTravelMinutes?: number;
-	taskQuickCreateSendToUpNext?: boolean;
-	taskQuickCreateVisibilityPreference?: string;
-	taskQuickCreateColor?: string;
-};
-
-type NormalizedTaskQuickCreateDefaults = {
-	taskQuickCreatePriority: "low" | "medium" | "high" | "critical" | "blocker";
-	taskQuickCreateStatus: "backlog" | "queued";
-	taskQuickCreateEstimatedMinutes: number;
-	taskQuickCreateSplitAllowed: boolean;
-	taskQuickCreateMinChunkMinutes: number;
-	taskQuickCreateMaxChunkMinutes: number;
-	taskQuickCreateRestMinutes: number;
-	taskQuickCreateTravelMinutes: number;
-	taskQuickCreateSendToUpNext: boolean;
-	taskQuickCreateVisibilityPreference: "default" | "private";
-	taskQuickCreateColor: string;
 };
 
 const normalizeTaskQuickCreateColor = (color: string | undefined) => {
@@ -446,24 +390,6 @@ const sanitizeHabitPriority = (
 	if (priority === "low" || priority === "medium" || priority === "high") return priority;
 	if (priority === "critical" || priority === "blocker") return "critical";
 	return "medium";
-};
-
-type HabitQuickCreateSettingsShape = {
-	habitQuickCreatePriority?: string;
-	habitQuickCreateDurationMinutes?: number;
-	habitQuickCreateFrequency?: string;
-	habitQuickCreateRecoveryPolicy?: string;
-	habitQuickCreateVisibilityPreference?: string;
-	habitQuickCreateColor?: string;
-};
-
-type NormalizedHabitQuickCreateDefaults = {
-	habitQuickCreatePriority: "low" | "medium" | "high" | "critical" | "blocker";
-	habitQuickCreateDurationMinutes: number;
-	habitQuickCreateFrequency: "daily" | "weekly" | "biweekly" | "monthly";
-	habitQuickCreateRecoveryPolicy: "skip" | "recover";
-	habitQuickCreateVisibilityPreference: "default" | "private";
-	habitQuickCreateColor: string;
 };
 
 const normalizeHabitQuickCreateDefaults = (

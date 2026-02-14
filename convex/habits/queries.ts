@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
+import type { ListHabitsArgs } from "./habitTypes";
 
 const habitFrequencyValidator = v.union(
 	v.literal("daily"),
@@ -74,10 +75,6 @@ const habitDtoValidator = v.object({
 	isActive: v.boolean(),
 	effectiveColor: v.string(),
 });
-
-type ListHabitsArgs = {
-	activeOnly?: boolean;
-};
 
 export const listHabits = query({
 	args: {

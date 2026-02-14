@@ -2,15 +2,13 @@ import { v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
 import { query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
-
-type EventSource = "google" | "task" | "habit" | "manual";
-type ListEventsArgs = {
-	start: number;
-	end: number;
-	sourceFilter?: EventSource[];
-};
+import type { ListEventsArgs } from "./queryTypes";
 
 const MINUTE_MS = 60 * 1000;
+
+/**
+ * Floors timestamps to minute precision for stable dedupe keys.
+ */
 const normalizeToMinute = (timestamp: number) => Math.floor(timestamp / MINUTE_MS) * MINUTE_MS;
 const REMOTE_CALENDAR_ID_REGEX =
 	/(group\.(?:v\.)?calendar\.google\.com|import\.calendar\.google\.com|holiday)/i;
@@ -18,13 +16,18 @@ const REMOTE_CALENDAR_ID_REGEX =
 const recencyScore = (event: Doc<"calendarEvents">) =>
 	Math.max(event.lastSyncedAt ?? 0, event.updatedAt ?? 0, event._creationTime ?? 0);
 
+/**
+ * Resolves optional calendar ids to a concrete key.
+ */
+const resolvePrimaryCalendarId = (calendarId: string | undefined) => calendarId ?? "primary";
+
 const buildDedupeKey = (event: Doc<"calendarEvents">) => {
 	if (event.seriesId && event.occurrenceStart !== undefined && event.recurringEventId) {
 		return `series:${event.seriesId}:${event.occurrenceStart}`;
 	}
 	if (event.googleEventId) {
 		const occurrenceTs = normalizeToMinute(event.originalStartTime ?? event.start);
-		return `google:${event.calendarId ?? "primary"}:${event.googleEventId}:${occurrenceTs}`;
+		return `google:${resolvePrimaryCalendarId(event.calendarId)}:${event.googleEventId}:${occurrenceTs}`;
 	}
 	if (event.seriesId && event.occurrenceStart !== undefined) {
 		return `series:${event.seriesId}:${event.occurrenceStart}`;
@@ -50,6 +53,43 @@ const hydrateEvent = (
 	color: event.color ?? series?.color,
 	calendarId: event.calendarId ?? series?.calendarId,
 });
+
+/**
+ * Builds a lookup map of series docs keyed by id string.
+ */
+const buildSeriesById = (
+	seriesIds: Array<NonNullable<Doc<"calendarEvents">["seriesId"]>>,
+	seriesDocs: Array<Doc<"calendarEventSeries"> | null>,
+) => {
+	const seriesById = new Map<string, Doc<"calendarEventSeries"> | null>();
+	for (let index = 0; index < seriesIds.length; index += 1) {
+		seriesById.set(String(seriesIds[index]), seriesDocs[index] ?? null);
+	}
+	return seriesById;
+};
+
+/**
+ * Returns associated series document for a calendar event, if present.
+ */
+const resolveSeriesForEvent = (
+	event: Doc<"calendarEvents">,
+	seriesById: Map<string, Doc<"calendarEventSeries"> | null>,
+) => (event.seriesId ? (seriesById.get(String(event.seriesId)) ?? null) : null);
+
+/**
+ * Deduplicates events by logical key while keeping the most recent row.
+ */
+const dedupeByLatestRecency = (events: Doc<"calendarEvents">[]) => {
+	const deduped = new Map<string, Doc<"calendarEvents">>();
+	for (const event of events) {
+		const key = buildDedupeKey(event);
+		const previous = deduped.get(key);
+		if (!previous || recencyScore(event) > recencyScore(previous)) {
+			deduped.set(key, event);
+		}
+	}
+	return Array.from(deduped.values());
+};
 
 const isExternalGoogleCalendar = ({
 	id,
@@ -131,15 +171,7 @@ export const listEvents = query({
 				(!args.sourceFilter || args.sourceFilter.includes(event.source)),
 		);
 
-		const deduped = new Map<string, Doc<"calendarEvents">>();
-		for (const event of filtered) {
-			const key = buildDedupeKey(event);
-			const previous = deduped.get(key);
-			if (!previous || recencyScore(event) > recencyScore(previous)) {
-				deduped.set(key, event);
-			}
-		}
-		const dedupedEvents = Array.from(deduped.values());
+		const dedupedEvents = dedupeByLatestRecency(filtered);
 
 		const seriesIds = Array.from(
 			new Set(
@@ -149,12 +181,9 @@ export const listEvents = query({
 			),
 		);
 		const seriesDocs = await Promise.all(seriesIds.map((seriesId) => ctx.db.get(seriesId)));
-		const seriesById = new Map<string, Doc<"calendarEventSeries"> | null>();
-		for (let index = 0; index < seriesIds.length; index += 1) {
-			seriesById.set(String(seriesIds[index]), seriesDocs[index] ?? null);
-		}
+		const seriesById = buildSeriesById(seriesIds, seriesDocs);
 		const hydratedEvents = dedupedEvents.map((event) =>
-			hydrateEvent(event, event.seriesId ? (seriesById.get(String(event.seriesId)) ?? null) : null),
+			hydrateEvent(event, resolveSeriesForEvent(event, seriesById)),
 		);
 
 		return hydratedEvents.sort((a, b) => a.start - b.start);
@@ -185,27 +214,9 @@ export const listTaskEvents = query({
 			),
 		);
 		const seriesDocs = await Promise.all(seriesIds.map((id) => ctx.db.get(id)));
-		const seriesById = new Map<string, Doc<"calendarEventSeries"> | null>();
-		for (let i = 0; i < seriesIds.length; i += 1) {
-			seriesById.set(String(seriesIds[i]), seriesDocs[i] ?? null);
-		}
-
-		const deduped = new Map<string, Doc<"calendarEvents">>();
-		for (const event of valid) {
-			const key = buildDedupeKey(event);
-			const prev = deduped.get(key);
-			if (!prev || recencyScore(event) > recencyScore(prev)) {
-				deduped.set(key, event);
-			}
-		}
-
-		return Array.from(deduped.values())
-			.map((event) =>
-				hydrateEvent(
-					event,
-					event.seriesId ? (seriesById.get(String(event.seriesId)) ?? null) : null,
-				),
-			)
+		const seriesById = buildSeriesById(seriesIds, seriesDocs);
+		return dedupeByLatestRecency(valid)
+			.map((event) => hydrateEvent(event, resolveSeriesForEvent(event, seriesById)))
 			.sort((a, b) => a.start - b.start);
 	}),
 });

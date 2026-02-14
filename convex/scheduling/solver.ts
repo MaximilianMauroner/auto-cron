@@ -17,6 +17,7 @@ import {
 	taskLatenessPenalty,
 } from "./objective";
 import { type ParsedRRule, parseSupportedRRule, recurrenceFromLegacyFrequency } from "./rrule";
+import type { AvailabilityMaskCache, TaskScheduleResult } from "./solverTypes";
 import {
 	buildAllowedMask,
 	buildBusyMask,
@@ -70,17 +71,6 @@ const buildTravelSourceId = (
 	placementEnd: number,
 	segment: "before" | "after",
 ) => `task:${taskId}:travel:${segment}:${placementStart}:${placementEnd}`;
-
-type TaskScheduleResult = {
-	success: boolean;
-	reasonCode?: string;
-	blocks: ScheduledBlock[];
-	occupancyMask: boolean[];
-	completionByTaskId: Map<string, number>;
-	requiredSlotsByTaskId: Map<string, number>;
-	availabilityByTaskId: Map<string, boolean[]>;
-};
-type AvailabilityMaskCache = Map<string, boolean[]>;
 
 const sortTasksForScheduling = (tasks: SchedulingTaskInput[]) => {
 	return [...tasks].sort((left, right) => {

@@ -1,10 +1,4 @@
-import type { Id } from "../_generated/dataModel";
-
-type RunOrderComparable = {
-	_id: Id<"schedulingRuns">;
-	startedAt: number;
-	_creationTime?: number;
-};
+import type { RunOrderComparable } from "./runOrderTypes";
 
 // Deterministic strict ordering for runs:
 // 1) larger startedAt is newer

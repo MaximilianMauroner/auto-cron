@@ -1,16 +1,7 @@
+import type { PlacementSearchArgs } from "../types/scheduling";
 import type { SchedulingMode } from "./constants";
 import { isRangeAvailable } from "./time";
-
-export type PlacementSearchArgs = {
-	availabilityMask: boolean[];
-	occupancyMask: boolean[];
-	durationSlots: number;
-	earliestStartSlot: number;
-	latestEndSlot?: number;
-	downtimeSlots?: number;
-	mode: SchedulingMode;
-	slotScore?: (slot: number) => number;
-};
+export type { PlacementSearchArgs } from "../types/scheduling";
 
 const range = (start: number, end: number) => {
 	const values: number[] = [];

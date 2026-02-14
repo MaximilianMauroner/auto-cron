@@ -1,18 +1,8 @@
 import { Autumn } from "@useautumn/convex";
 import { components } from "./_generated/api";
 import { authKit } from "./auth";
+import type { AutumnIdentifyContext } from "./autumnTypes";
 import { env } from "./env";
-
-type AutumnIdentifyContext = {
-	auth: {
-		getUserIdentity: () => Promise<{
-			subject: string;
-			name?: string | null;
-			email?: string | null;
-		} | null>;
-	};
-	runQuery?: unknown;
-};
 
 const normalizeOptionalString = (value: string | null | undefined) => {
 	if (!value) return undefined;

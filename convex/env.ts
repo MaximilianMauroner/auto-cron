@@ -1,15 +1,8 @@
+import type { BillingMode, ConvexEnv } from "./types/root";
+
+export type { BillingMode, ConvexEnv } from "./types/root";
+
 const BILLING_MODES = new Set(["live", "allow_all", "deny_tasks", "deny_habits", "track_fail"]);
-
-export type BillingMode = "live" | "allow_all" | "deny_tasks" | "deny_habits" | "track_fail";
-
-export type ConvexEnv = {
-	AUTUMN_BILLING_MODE?: BillingMode;
-	AUTUMN_SECRET_KEY: string;
-	GOOGLE_CLIENT_ID: string;
-	GOOGLE_CLIENT_SECRET: string;
-	GOOGLE_CALENDAR_WEBHOOK_URL?: string;
-	GOOGLE_CALENDAR_WEBHOOK_TOKEN_SECRET?: string;
-};
 
 const runtimeEnv =
 	typeof process !== "undefined" && process.env

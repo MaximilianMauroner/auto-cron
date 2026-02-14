@@ -1,5 +1,8 @@
+import type { ProductId } from "./types/root";
+
+export type { ProductId } from "./types/root";
+
 export const VALID_PRODUCT_IDS = ["free", "basic", "plus", "pro"] as const;
-export type ProductId = (typeof VALID_PRODUCT_IDS)[number];
 
 const PLAN_HORIZON_WEEKS: Record<ProductId, number> = {
 	free: 1,

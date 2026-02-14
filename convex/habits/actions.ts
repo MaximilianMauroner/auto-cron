@@ -16,6 +16,7 @@ import {
 	startFeatureReservation,
 	trackFeatureUsage,
 } from "../billing";
+import type { CreateHabitArgs } from "./habitTypes";
 
 const habitFrequencyValidator = v.union(
 	v.literal("daily"),
@@ -85,45 +86,6 @@ const habitCreateInputValidator = v.object({
 	publicDescription: v.optional(v.string()),
 	isActive: v.optional(v.boolean()),
 });
-
-type HabitCreateInput = {
-	title: string;
-	description?: string;
-	priority?: "low" | "medium" | "high" | "critical";
-	categoryId: Id<"taskCategories">;
-	recurrenceRule?: string;
-	recoveryPolicy?: "skip" | "recover";
-	frequency?: "daily" | "weekly" | "biweekly" | "monthly";
-	durationMinutes: number;
-	minDurationMinutes?: number;
-	maxDurationMinutes?: number;
-	repeatsPerPeriod?: number;
-	idealTime?: string;
-	preferredWindowStart?: string;
-	preferredWindowEnd?: string;
-	preferredDays?: number[];
-	hoursSetId?: Id<"hoursSets">;
-	preferredCalendarId?: string;
-	color?: string;
-	location?: string;
-	startDate?: number;
-	endDate?: number;
-	visibilityPreference?: "default" | "public" | "private";
-	timeDefenseMode?: "always_free" | "auto" | "always_busy";
-	reminderMode?: "default" | "custom" | "none";
-	customReminderMinutes?: number;
-	unscheduledBehavior?: "leave_on_calendar" | "remove_from_calendar";
-	autoDeclineInvites?: boolean;
-	ccEmails?: string[];
-	duplicateAvoidKeywords?: string[];
-	dependencyNote?: string;
-	publicDescription?: string;
-	isActive?: boolean;
-};
-type CreateHabitArgs = {
-	requestId: string;
-	input: HabitCreateInput;
-};
 
 const toErrorMessage = (error: unknown) => {
 	if (error instanceof Error && error.message) return error.message;
