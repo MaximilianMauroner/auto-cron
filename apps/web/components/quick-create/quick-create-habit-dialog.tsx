@@ -178,7 +178,7 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 							</p>
 							<div className="grid grid-cols-2 gap-3">
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Duration
 									</Label>
 									<DurationInput
@@ -190,7 +190,7 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 								<div className="space-y-1.5">
 									<Label
 										htmlFor="qc-habit-frequency"
-										className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+										className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 									>
 										Frequency
 									</Label>
@@ -222,7 +222,7 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 							</p>
 							<div className="grid grid-cols-2 gap-3">
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Category
 									</Label>
 									<CategoryPicker value={categoryId} onValueChange={setCategoryId} />
@@ -230,7 +230,7 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 								<div className="space-y-1.5">
 									<Label
 										htmlFor="qc-habit-priority"
-										className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+										className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 									>
 										Priority
 									</Label>

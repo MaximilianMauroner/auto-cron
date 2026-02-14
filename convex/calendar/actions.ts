@@ -1,14 +1,44 @@
 "use node";
 
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { v } from "convex/values";
 import { ConvexError } from "convex/values";
 import { internal } from "../_generated/api";
-import type { Id } from "../_generated/dataModel";
 import { type ActionCtx, action, internalAction } from "../_generated/server";
 import { withActionAuth } from "../auth";
 import { getCalendarProvider } from "../providers/calendar";
 import type { GoogleEventUpsert } from "../providers/calendar/types";
+import {
+	type CalendarListItem,
+	type DeletedSyncEvent,
+	type RemovedGoogleEvent,
+	type ScheduledEventForGoogleSync,
+	WATCH_CHANNEL_TTL_SECONDS,
+	WATCH_RENEWAL_WINDOW_MS,
+	type WatchCalendarItem,
+	buildActiveWatchChannelMap,
+	buildSyncMutationPayload,
+	collectCalendarsToSync,
+	createChannelToken,
+	deleteRemovedGoogleEvents,
+	getWatchConfig,
+	hashWatchToken,
+	isFreshWatchChannel,
+	listCalendarColors,
+	mapProviderEventToMutationEvent,
+	pullRemoteEventsForCalendars,
+	resolveCalendarId,
+	resolveCombinedNormalizationRange,
+	resolveEffectiveSyncRange,
+	resolvePrimaryNextToken,
+	resolvePushEventPatch,
+	resolveSyncPushAction,
+	resolveSyncedCalendars,
+	resolveWatchChannelDeactivationStatus,
+	resolveWatchTargetCalendars,
+	secureEqualString,
+} from "./actionHelpers";
+import type { PushEventToGoogleArgs, SyncFromGoogleArgs } from "./actionTypes";
 import {
 	getCurrentUserGoogleSettings,
 	getEventById,
@@ -29,136 +59,6 @@ const googleSyncRunTriggerValidator = v.union(
 	v.literal("manual"),
 	v.literal("oauth_connect"),
 );
-
-type RecurrenceScope = "single" | "following" | "series";
-type BusyStatus = "free" | "busy" | "tentative";
-type Visibility = "default" | "public" | "private" | "confidential";
-
-type SyncFromGoogleArgs = {
-	fullSync?: boolean;
-	rangeStart?: number;
-	rangeEnd?: number;
-};
-
-type PushEventPatch = {
-	title?: string;
-	description?: string;
-	start?: number;
-	end?: number;
-	allDay?: boolean;
-	recurrenceRule?: string;
-	calendarId?: string;
-	busyStatus?: BusyStatus;
-	visibility?: Visibility;
-	location?: string;
-	color?: string;
-};
-
-type PushEventToGoogleArgs = {
-	eventId: Id<"calendarEvents">;
-	operation: "create" | "update" | "delete" | "moveResize";
-	scope?: RecurrenceScope;
-	previousCalendarId?: string;
-	patch?: PushEventPatch;
-};
-
-type RemovedGoogleEvent = {
-	googleEventId: string;
-	calendarId: string;
-};
-
-type ScheduledEventForGoogleSync = {
-	id: Id<"calendarEvents">;
-	source: "task" | "habit";
-	sourceId: string;
-	title: string;
-	description?: string;
-	start: number;
-	end: number;
-	allDay: boolean;
-	googleEventId?: string;
-	calendarId: string;
-	recurrenceRule?: string;
-	recurringEventId?: string;
-	originalStartTime?: number;
-	status?: "confirmed" | "tentative" | "cancelled";
-	etag?: string;
-	busyStatus: BusyStatus;
-	visibility?: Visibility;
-	location?: string;
-	color?: string;
-};
-
-const WATCH_CHANNEL_TTL_SECONDS = 7 * 24 * 60 * 60;
-const WATCH_RENEWAL_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-const normalizeWatchTokenInput = (value: string) => value.trim();
-
-const hashWatchToken = (rawToken: string, secret: string) =>
-	createHash("sha256")
-		.update(`${secret}:${normalizeWatchTokenInput(rawToken)}`)
-		.digest("hex");
-
-const secureEqualString = (left: string, right: string) => {
-	if (left.length !== right.length) return false;
-	let diff = 0;
-	for (let index = 0; index < left.length; index += 1) {
-		diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
-	}
-	return diff === 0;
-};
-
-const getWatchConfig = () => {
-	const runtimeEnv =
-		typeof process !== "undefined" && process.env
-			? (process.env as Record<string, string | undefined>)
-			: {};
-	const webhookUrl = runtimeEnv.GOOGLE_CALENDAR_WEBHOOK_URL?.trim();
-	const tokenSecret = runtimeEnv.GOOGLE_CALENDAR_WEBHOOK_TOKEN_SECRET?.trim();
-	if (!webhookUrl || !tokenSecret) return null;
-	return {
-		webhookUrl,
-		tokenSecret,
-	};
-};
-
-const createChannelToken = (tokenSecret: string) => {
-	const raw = randomUUID();
-	return {
-		raw,
-		hash: hashWatchToken(raw, tokenSecret),
-	};
-};
-
-const isWritableCalendar = (calendar: {
-	accessRole?: "owner" | "writer" | "reader" | "freeBusyReader";
-}) => calendar.accessRole === "owner" || calendar.accessRole === "writer";
-
-const normalizeOptionalString = (value: string | undefined) => {
-	const normalized = value?.trim();
-	return normalized && normalized.length > 0 ? normalized : undefined;
-};
-
-const isSyncedEventEqual = (
-	localEvent: ScheduledEventForGoogleSync,
-	remoteEvent: GoogleEventUpsert,
-) => {
-	return (
-		localEvent.title === remoteEvent.title &&
-		normalizeOptionalString(localEvent.description) ===
-			normalizeOptionalString(remoteEvent.description) &&
-		localEvent.start === remoteEvent.start &&
-		localEvent.end === remoteEvent.end &&
-		localEvent.allDay === remoteEvent.allDay &&
-		(localEvent.calendarId || "primary") === remoteEvent.calendarId &&
-		(localEvent.recurrenceRule ?? undefined) === (remoteEvent.recurrenceRule ?? undefined) &&
-		localEvent.busyStatus === remoteEvent.busyStatus &&
-		(localEvent.visibility ?? undefined) === (remoteEvent.visibility ?? undefined) &&
-		normalizeOptionalString(localEvent.location) ===
-			normalizeOptionalString(remoteEvent.location) &&
-		normalizeOptionalString(localEvent.color) === normalizeOptionalString(remoteEvent.color)
-	);
-};
 
 const syncUserFromGoogle = async (
 	ctx: ActionCtx,
@@ -181,17 +81,9 @@ const syncUserFromGoogle = async (
 	},
 ) => {
 	const now = Date.now();
-	const effectiveRangeStart = rangeStart ?? now - 1000 * 60 * 60 * 24 * 7;
-	const effectiveRangeEnd = rangeEnd ?? now + 1000 * 60 * 60 * 24 * 84;
+	const effectiveRange = resolveEffectiveSyncRange(now, rangeStart, rangeEnd);
 	const provider = getCalendarProvider();
-	let calendars: Array<{
-		id: string;
-		summary: string;
-		primary: boolean;
-		color?: string;
-		accessRole?: "owner" | "writer" | "reader" | "freeBusyReader";
-		isExternal?: boolean;
-	}> = [];
+	let calendars: CalendarListItem[] = [];
 	try {
 		calendars = await provider.listCalendars({
 			refreshToken: settings.googleRefreshToken,
@@ -209,27 +101,11 @@ const syncUserFromGoogle = async (
 	}
 
 	const allEvents: GoogleEventUpsert[] = [];
-	const allDeletedEvents: Array<{
-		googleEventId: string;
-		calendarId: string;
-		originalStartTime?: number;
-		lastSyncedAt: number;
-	}> = [];
+	const allDeletedEvents: DeletedSyncEvent[] = [];
 	const nextTokens: Array<{ calendarId: string; syncToken: string }> = [];
 	const resetCalendars = new Set<string>();
 
-	const syncedCalendars = calendars.length
-		? calendars
-		: [
-				{
-					id: "primary",
-					summary: "Primary",
-					primary: true,
-					color: undefined,
-					accessRole: "owner" as const,
-					isExternal: false,
-				},
-			];
+	const syncedCalendars = resolveSyncedCalendars(calendars);
 
 	for (const calendar of syncedCalendars) {
 		const result = await provider.syncEvents({
@@ -237,8 +113,8 @@ const syncUserFromGoogle = async (
 			calendarId: calendar.id,
 			calendarColor: calendar.color,
 			syncToken: fullSync ? undefined : syncTokenByCalendar.get(calendar.id),
-			rangeStart: effectiveRangeStart,
-			rangeEnd: effectiveRangeEnd,
+			rangeStart: effectiveRange.start,
+			rangeEnd: effectiveRange.end,
 		});
 
 		allEvents.push(...result.events);
@@ -254,70 +130,38 @@ const syncUserFromGoogle = async (
 		}
 	}
 
-	const mappedEvents = allEvents.map((event) => ({
-		googleEventId: event.googleEventId,
-		title: event.title,
-		description: event.description,
-		start: event.start,
-		end: event.end,
-		allDay: event.allDay,
-		calendarId: event.calendarId,
-		recurrenceRule: event.recurrenceRule,
-		recurringEventId: event.recurringEventId,
-		originalStartTime: event.originalStartTime,
-		status: event.status,
-		etag: event.etag,
-		busyStatus: event.busyStatus,
-		visibility: event.visibility,
-		location: event.location,
-		color: event.color,
-		lastSyncedAt: event.lastSyncedAt,
-	}));
+	const mappedEvents = allEvents.map(mapProviderEventToMutationEvent);
 
 	// Batch events into chunks to avoid OCC (Optimistic Concurrency Control)
 	// failures when syncing large numbers of calendar events.
 	const BATCH_SIZE = 50;
 	if (mappedEvents.length <= BATCH_SIZE) {
 		// Small sync — single mutation handles everything.
-		await upsertSyncedEventsForUser(ctx, {
-			userId,
-			resetCalendars: Array.from(resetCalendars),
-			events: mappedEvents,
-			deletedEvents: allDeletedEvents,
-			nextSyncToken:
-				nextTokens.find((token) => token.calendarId === "primary")?.syncToken ??
-				nextTokens[0]?.syncToken,
-			syncTokens: nextTokens,
-			connectedCalendars: syncedCalendars.map((calendar) => ({
-				calendarId: calendar.id,
-				name: calendar.summary,
-				primary: calendar.primary,
-				color: calendar.color,
-				accessRole: calendar.accessRole,
-				isExternal: calendar.isExternal,
-			})),
-		});
+		await upsertSyncedEventsForUser(
+			ctx,
+			buildSyncMutationPayload({
+				userId,
+				resetCalendars,
+				events: mappedEvents,
+				deletedEvents: allDeletedEvents,
+				nextTokens,
+				calendars: syncedCalendars,
+			}),
+		);
 	} else {
 		// Large sync — first handle reset, deleted events, and settings update
 		// without events to keep the transaction small.
-		await upsertSyncedEventsForUser(ctx, {
-			userId,
-			resetCalendars: Array.from(resetCalendars),
-			events: [],
-			deletedEvents: allDeletedEvents,
-			nextSyncToken:
-				nextTokens.find((token) => token.calendarId === "primary")?.syncToken ??
-				nextTokens[0]?.syncToken,
-			syncTokens: nextTokens,
-			connectedCalendars: syncedCalendars.map((calendar) => ({
-				calendarId: calendar.id,
-				name: calendar.summary,
-				primary: calendar.primary,
-				color: calendar.color,
-				accessRole: calendar.accessRole,
-				isExternal: calendar.isExternal,
-			})),
-		});
+		await upsertSyncedEventsForUser(
+			ctx,
+			buildSyncMutationPayload({
+				userId,
+				resetCalendars,
+				events: [],
+				deletedEvents: allDeletedEvents,
+				nextTokens,
+				calendars: syncedCalendars,
+			}),
+		);
 
 		// Then upsert events in batches to avoid OCC conflicts.
 		for (let i = 0; i < mappedEvents.length; i += BATCH_SIZE) {
@@ -328,30 +172,18 @@ const syncUserFromGoogle = async (
 		}
 	}
 
-	const syncedStarts = allEvents.map((event) => event.start);
-	const syncedEnds = allEvents.map((event) => event.end);
-	const rangePaddingMs = 60 * 1000;
-	const combinedStart =
-		syncedStarts.length > 0
-			? Math.min(effectiveRangeStart, Math.min(...syncedStarts) - rangePaddingMs)
-			: effectiveRangeStart;
-	const combinedEnd =
-		syncedEnds.length > 0
-			? Math.max(effectiveRangeEnd, Math.max(...syncedEnds) + rangePaddingMs)
-			: effectiveRangeEnd;
+	const combinedRange = resolveCombinedNormalizationRange(allEvents, effectiveRange);
 	await normalizeAndDedupeEventsInRange(ctx, {
 		userId,
-		start: combinedStart,
-		end: combinedEnd,
+		start: combinedRange.start,
+		end: combinedRange.end,
 	});
 
 	return {
 		imported: allEvents.length,
 		deleted: allDeletedEvents.length,
 		resetCalendars: Array.from(resetCalendars),
-		nextSyncToken:
-			nextTokens.find((token) => token.calendarId === "primary")?.syncToken ??
-			nextTokens[0]?.syncToken,
+		nextSyncToken: resolvePrimaryNextToken(nextTokens),
 	};
 };
 
@@ -569,12 +401,7 @@ export const ensureWatchChannelsForUser: ReturnType<typeof internalAction> = int
 		}
 
 		const provider = getCalendarProvider();
-		let calendars: Array<{
-			id: string;
-			summary: string;
-			primary: boolean;
-			accessRole?: "owner" | "writer" | "reader" | "freeBusyReader";
-		}> = [];
+		let calendars: WatchCalendarItem[] = [];
 		try {
 			calendars = await provider.listCalendars({
 				refreshToken: settings.googleRefreshToken,
@@ -598,30 +425,13 @@ export const ensureWatchChannelsForUser: ReturnType<typeof internalAction> = int
 			];
 		}
 
-		const writableCalendars = calendars.filter(
-			(calendar) => isWritableCalendar(calendar) || (calendar.primary && !calendar.accessRole),
-		);
-		const targetCalendars = writableCalendars.length
-			? writableCalendars
-			: [
-					{
-						id: "primary",
-						summary: "Primary",
-						primary: true,
-						accessRole: "owner" as const,
-					},
-				];
+		const targetCalendars = resolveWatchTargetCalendars(calendars);
 
 		const now = Date.now();
 		const channels = await ctx.runQuery(internal.calendar.internal.listWatchChannelsForUser, {
 			userId: args.userId,
 		});
-		const activeByCalendarId = new Map(
-			channels
-				.filter((channel) => channel.status === "active")
-				.sort((a, b) => b.updatedAt - a.updatedAt)
-				.map((channel) => [channel.calendarId, channel] as const),
-		);
+		const activeByCalendarId = buildActiveWatchChannelMap(channels);
 		const targetCalendarIds = new Set(targetCalendars.map((calendar) => calendar.id));
 		let created = 0;
 		let reused = 0;
@@ -629,7 +439,7 @@ export const ensureWatchChannelsForUser: ReturnType<typeof internalAction> = int
 
 		for (const calendar of targetCalendars) {
 			const existing = activeByCalendarId.get(calendar.id);
-			const isStillFresh = existing && existing.expirationAt - now > WATCH_RENEWAL_WINDOW_MS;
+			const isStillFresh = isFreshWatchChannel(existing, now);
 			if (isStillFresh) {
 				reused += 1;
 				continue;
@@ -647,7 +457,7 @@ export const ensureWatchChannelsForUser: ReturnType<typeof internalAction> = int
 				}
 				await ctx.runMutation(internal.calendar.mutations.deactivateWatchChannel, {
 					watchChannelId: existing._id,
-					status: existing.expirationAt <= now ? "expired" : "stopped",
+					status: resolveWatchChannelDeactivationStatus(existing, now),
 				});
 				deactivated += 1;
 			}
@@ -998,79 +808,27 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 			},
 		)) as ScheduledEventForGoogleSync[];
 
-		const calendarsToSync = new Set<string>();
-		for (const event of scheduledEvents) {
-			calendarsToSync.add(event.calendarId || "primary");
-		}
-		for (const removed of args.removedGoogleEvents) {
-			calendarsToSync.add(removed.calendarId || "primary");
-		}
+		const calendarsToSync = collectCalendarsToSync(scheduledEvents, args.removedGoogleEvents);
 
 		const provider = getCalendarProvider();
-		let calendars: Array<{
-			id: string;
-			color?: string;
-		}> = [];
-		try {
-			const availableCalendars = await provider.listCalendars({
-				refreshToken: settings.googleRefreshToken,
-			});
-			calendars = availableCalendars.map((calendar) => ({
-				id: calendar.id,
-				color: calendar.color,
-			}));
-		} catch {
-			calendars = [];
-		}
-		const calendarColorById = new Map(calendars.map((calendar) => [calendar.id, calendar.color]));
-
-		const remoteByGoogleEventId = new Map<string, GoogleEventUpsert>();
-		for (const calendarId of calendarsToSync) {
-			try {
-				const synced = await provider.syncEvents({
-					refreshToken: settings.googleRefreshToken,
-					calendarId,
-					calendarColor: calendarColorById.get(calendarId),
-					rangeStart: args.horizonStart,
-					rangeEnd: args.horizonEnd,
-				});
-				for (const remoteEvent of synced.events) {
-					remoteByGoogleEventId.set(remoteEvent.googleEventId, remoteEvent);
-				}
-			} catch (error) {
-				console.error("[calendar] failed to pull events before scheduler push", {
-					userId: args.userId,
-					calendarId,
-					error: error instanceof Error ? error.message : error,
-				});
-			}
-		}
-
-		const seenRemoved = new Set<string>();
-		let deleted = 0;
-		for (const removed of args.removedGoogleEvents) {
-			const dedupeKey = `${removed.calendarId}:${removed.googleEventId}`;
-			if (seenRemoved.has(dedupeKey)) continue;
-			seenRemoved.add(dedupeKey);
-			if (!remoteByGoogleEventId.has(removed.googleEventId)) continue;
-
-			await provider.deleteEvent({
-				refreshToken: settings.googleRefreshToken,
-				calendarId: removed.calendarId || "primary",
-				event: {
-					_id: dedupeKey,
-					title: "Scheduled block",
-					start: args.horizonStart,
-					end: args.horizonEnd,
-					allDay: false,
-					googleEventId: removed.googleEventId,
-					calendarId: removed.calendarId || "primary",
-					busyStatus: "busy",
-				},
-				scope: "single",
-			});
-			deleted += 1;
-		}
+		const calendarColorById = await listCalendarColors(provider, settings.googleRefreshToken);
+		const remoteByGoogleEventId = await pullRemoteEventsForCalendars({
+			provider,
+			refreshToken: settings.googleRefreshToken,
+			userId: args.userId,
+			calendarIds: calendarsToSync,
+			calendarColorById,
+			horizonStart: args.horizonStart,
+			horizonEnd: args.horizonEnd,
+		});
+		const deleted = await deleteRemovedGoogleEvents({
+			provider,
+			refreshToken: settings.googleRefreshToken,
+			removedGoogleEvents: args.removedGoogleEvents,
+			remoteByGoogleEventId,
+			horizonStart: args.horizonStart,
+			horizonEnd: args.horizonEnd,
+		});
 
 		let created = 0;
 		let updated = 0;
@@ -1080,19 +838,34 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 			const remote = event.googleEventId
 				? remoteByGoogleEventId.get(event.googleEventId)
 				: undefined;
+			const action = resolveSyncPushAction(event, remote);
 
-			if (!event.googleEventId || !remote) {
+			console.log("[sync:pushToGoogle]", {
+				eventId: String(event.id),
+				title: event.title,
+				start: event.start,
+				end: event.end,
+				googleEventId: event.googleEventId,
+				calendarId: event.calendarId,
+				hasRemote: Boolean(remote),
+				remoteStart: remote?.start,
+				remoteEnd: remote?.end,
+				action,
+			});
+
+			if (action === "create") {
 				const createdEvent = await provider.createEvent({
 					refreshToken: settings.googleRefreshToken,
-					calendarId: event.calendarId || "primary",
+					calendarId: resolveCalendarId(event.calendarId),
 					event: {
 						title: event.title,
 						description: event.description,
 						start: event.start,
 						end: event.end,
 						allDay: event.allDay,
+						appSourceKey: event.sourceId,
 						recurrenceRule: event.recurrenceRule,
-						calendarId: event.calendarId || "primary",
+						calendarId: resolveCalendarId(event.calendarId),
 						busyStatus: event.busyStatus,
 						visibility: event.visibility,
 						location: event.location,
@@ -1110,14 +883,14 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 				continue;
 			}
 
-			if (isSyncedEventEqual(event, remote)) {
+			if (action === "unchanged") {
 				unchanged += 1;
 				continue;
 			}
 
 			const updatedEvent = await provider.updateEvent({
 				refreshToken: settings.googleRefreshToken,
-				calendarId: remote.calendarId || event.calendarId || "primary",
+				calendarId: resolveCalendarId(remote?.calendarId ?? event.calendarId),
 				event: {
 					_id: String(event.id),
 					title: event.title,
@@ -1127,7 +900,7 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 					allDay: event.allDay,
 					sourceId: event.sourceId,
 					googleEventId: event.googleEventId,
-					calendarId: remote.calendarId || event.calendarId || "primary",
+					calendarId: resolveCalendarId(remote?.calendarId ?? event.calendarId),
 					recurrenceRule: event.recurrenceRule,
 					recurringEventId: event.recurringEventId,
 					originalStartTime: event.originalStartTime,
@@ -1145,7 +918,7 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 					end: event.end,
 					allDay: event.allDay,
 					recurrenceRule: event.recurrenceRule,
-					calendarId: event.calendarId || "primary",
+					calendarId: resolveCalendarId(event.calendarId),
 					busyStatus: event.busyStatus,
 					visibility: event.visibility,
 					location: event.location,
@@ -1240,7 +1013,7 @@ export const pushEventToGoogle = action({
 		if (args.operation === "delete") {
 			await provider.deleteEvent({
 				refreshToken: settings.googleRefreshToken,
-				calendarId: event.calendarId ?? "primary",
+				calendarId: resolveCalendarId(event.calendarId),
 				event,
 				scope: args.scope ?? "single",
 			});
@@ -1250,13 +1023,14 @@ export const pushEventToGoogle = action({
 		if (args.operation === "create") {
 			const created = await provider.createEvent({
 				refreshToken: settings.googleRefreshToken,
-				calendarId: event.calendarId ?? "primary",
+				calendarId: resolveCalendarId(event.calendarId),
 				event: {
 					title: event.title,
 					description: event.description,
 					start: event.start,
 					end: event.end,
 					allDay: event.allDay,
+					appSourceKey: event.sourceId,
 					recurrenceRule: event.recurrenceRule,
 					calendarId: event.calendarId,
 					busyStatus: event.busyStatus,
@@ -1276,14 +1050,11 @@ export const pushEventToGoogle = action({
 			return { status: "created" as const };
 		}
 
-		const patch =
-			args.operation === "moveResize"
-				? { start: event.start, end: event.end, allDay: event.allDay }
-				: (args.patch ?? {});
+		const patch = resolvePushEventPatch(args.operation, event, args.patch);
 
 		const updated = await provider.updateEvent({
 			refreshToken: settings.googleRefreshToken,
-			calendarId: args.previousCalendarId ?? event.calendarId ?? "primary",
+			calendarId: resolveCalendarId(args.previousCalendarId ?? event.calendarId),
 			event,
 			patch,
 			scope: args.scope ?? "single",

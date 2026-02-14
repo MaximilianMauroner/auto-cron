@@ -16,6 +16,21 @@ export const PALETTE_COLORS = [
 	"#14b8a6",
 ] as const;
 
+export const GOOGLE_CALENDAR_COLORS = [
+	"#7ba0e6",
+	"#5cc9a0",
+	"#b08ce6",
+	"#d97b74",
+	"#d4b84e",
+	"#d9a066",
+	"#4bb8bd",
+	"#a0a4aa",
+	"#5b82d4",
+	"#3aad72",
+	"#c44a4e",
+	"#d47e9a",
+] as const;
+
 type ColorPaletteProps = {
 	value: string;
 	onChange: (color: string) => void;

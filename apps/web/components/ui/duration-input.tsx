@@ -10,6 +10,7 @@ type DurationInputProps = {
 	onChange: (value: string) => void;
 	placeholder?: string;
 	className?: string;
+	allowZero?: boolean;
 };
 
 export function DurationInput({
@@ -17,6 +18,7 @@ export function DurationInput({
 	onChange,
 	placeholder = "e.g. 30 mins, 2 hrs, 1h30m",
 	className,
+	allowZero = false,
 }: DurationInputProps) {
 	const [error, setError] = useState<string | null>(null);
 
@@ -28,7 +30,7 @@ export function DurationInput({
 			return;
 		}
 		const parsed = parseDurationToMinutes(trimmed);
-		if (!parsed || parsed <= 0) {
+		if (parsed === null || parsed < 0 || (!allowZero && parsed === 0)) {
 			setError("Invalid duration. Use formats like 30 mins, 2 hrs, 1h30m.");
 			return;
 		}

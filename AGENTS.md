@@ -82,9 +82,9 @@ bun run typecheck
 
 Notes:
 
-- `build` and `dev` are turbo root tasks.
+- `build` is a turbo root task.
+- `dev` starts both web dev and Convex dev from the root script.
 - There is currently no root `test` script in `package.json` (TODO to add when tests are introduced).
-- Convex dev (`npx convex dev`) is listed as roadmap TODO, not yet standardized as a root script.
 
 ## Task completion gates
 
@@ -141,3 +141,15 @@ Keep these docs updated whenever related behavior changes:
 
 - See `docs/gotchas.md`.
 - If a non-obvious issue is discovered/fixed, add a short entry there.
+
+
+# Coding Guidelines
+
+- Use TypeScript across all apps and packages.
+- Follow Biome formatting and linting rules.
+- Keep UI styling consistent with the Swiss modern system outlined in `docs/ui-styling.md`
+- Try to create reusable components and utilities when possible, especially in the shared `packages/` directory.
+- For Convex functions, keep the nesting to a minimum and prefer flat structures for readability.
+- Soft limit files to about 1000 lines for maintainability. If a file grows too large, consider splitting it into smaller modules.(and while you are search for opportunities to create reusable components and utilities)
+- When working on the frontend, prioritize accessibility and responsive design.
+- For API routes and backend code, ensure proper error handling and input validation.

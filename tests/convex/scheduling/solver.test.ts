@@ -820,6 +820,117 @@ describe("scheduling solver", () => {
 			expect(block.start).toBeLessThan(block.end);
 		}
 	});
+
+	test("travel blocks use travel color instead of task color", () => {
+		const input = baseInput();
+		input.tasks.push({
+			...taskDefaults(input),
+			id: asTaskId("task-travel-color"),
+			estimatedMinutes: 60,
+			travelMinutes: 15,
+			color: "#f59e0b",
+			travelColor: "#14b8a6",
+			location: "Office",
+		});
+
+		const solved = solveSchedule(input);
+		const travelBlocks = solved.blocks.filter(
+			(block) =>
+				block.source === "task" && block.sourceId.startsWith("task:task-travel-color:travel:"),
+		);
+		expect(travelBlocks.length).toBeGreaterThan(0);
+		expect(travelBlocks.every((block) => block.color === "#14b8a6")).toBe(true);
+	});
+
+	test("travel blocks are not created when travelMinutes is set without location", () => {
+		const input = baseInput();
+		input.tasks.push({
+			...taskDefaults(input),
+			id: asTaskId("task-travel-no-location"),
+			estimatedMinutes: 60,
+			travelMinutes: 15,
+			location: undefined,
+		});
+
+		const solved = solveSchedule(input);
+		const taskBlock = solved.blocks.find(
+			(block) => block.source === "task" && block.sourceId === "task-travel-no-location",
+		);
+		const travelBlocks = solved.blocks
+			.filter(
+				(block) =>
+					block.source === "task" &&
+					block.sourceId.startsWith("task:task-travel-no-location:travel:"),
+			)
+			.sort((a, b) => a.start - b.start);
+
+		expect(taskBlock).toBeDefined();
+		expect(travelBlocks).toHaveLength(0);
+		const core = ensureDefined(taskBlock, "travelNoLocationCoreTask");
+		expect(core.location).toBeUndefined();
+	});
+
+	test("travel buffer does not stack with rest when deriving downtime", () => {
+		const input = baseInput();
+		input.downtimeMinutes = 15;
+		input.tasks.push(
+			{
+				...taskDefaults(input),
+				id: asTaskId("task-travel-buffered"),
+				estimatedMinutes: 60,
+				restMinutes: 20,
+				travelMinutes: 30,
+				location: "Office",
+			},
+			{
+				...taskDefaults(input),
+				id: asTaskId("task-no-travel"),
+				estimatedMinutes: 60,
+			},
+		);
+
+		const solved = solveSchedule(input);
+		const travelTaskBlock = solved.blocks.find(
+			(block) => block.source === "task" && block.sourceId === "task-travel-buffered",
+		);
+		const noTravelTaskBlock = solved.blocks.find(
+			(block) => block.source === "task" && block.sourceId === "task-no-travel",
+		);
+
+		expect(travelTaskBlock).toBeDefined();
+		expect(noTravelTaskBlock).toBeDefined();
+
+		const travelEnd = ensureDefined(travelTaskBlock, "travelBufferedTask").end;
+		const noTravelStart = ensureDefined(noTravelTaskBlock, "noTravelTask").start;
+		expect(noTravelStart - travelEnd).toBe(45 * 60 * 1000);
+	});
+
+	test("does not emit duplicate travel blocks with the same sourceId", () => {
+		const input = baseInput();
+		input.tasks.push({
+			...taskDefaults(input),
+			id: asTaskId("task-duplicate-travel-window"),
+			estimatedMinutes: 120,
+			splitAllowed: true,
+			minChunkMinutes: 60,
+			maxChunkMinutes: 60,
+			travelMinutes: 30,
+			location: "Office",
+		});
+
+		const solved = solveSchedule(input);
+		const travelBlocks = solved.blocks.filter(
+			(block) =>
+				block.source === "task" &&
+				block.sourceId.startsWith("task:task-duplicate-travel-window:travel:"),
+		);
+
+		const seenSourceIds = new Set<string>();
+		for (const block of travelBlocks) {
+			expect(seenSourceIds.has(block.sourceId)).toBe(false);
+			seenSourceIds.add(block.sourceId);
+		}
+	});
 });
 
 describe("rrule and slot utilities", () => {

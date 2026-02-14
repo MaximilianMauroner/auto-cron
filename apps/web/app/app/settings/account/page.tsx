@@ -163,7 +163,7 @@ export default function AccountSettingsPage() {
 	return (
 		<>
 			<SettingsSectionHeader
-				sectionNumber="04"
+				sectionNumber="06"
 				sectionLabel="Account"
 				title="Account & Sync"
 				description="Manage your subscription, usage limits, connected services, and billing."

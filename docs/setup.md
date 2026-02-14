@@ -44,17 +44,11 @@ See [environment.md](./environment.md) for the source of truth.
 
 ## 3. Start local development
 
-Terminal 1 (monorepo dev tasks):
-
 ```bash
 bun run dev
 ```
 
-Terminal 2 (Convex backend):
-
-```bash
-npx convex dev
-```
+`bun run dev` starts both web dev and Convex dev.
 
 ## 3.1 Scheduler migration + normalization (recommended once per user)
 

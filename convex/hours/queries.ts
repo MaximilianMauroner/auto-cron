@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
+import type { HabitQuickCreateDefaults, TaskQuickCreateDefaults } from "./hourTypes";
 import {
 	dateFormatValidator,
 	defaultHabitQuickCreateSettings,
@@ -43,20 +44,6 @@ const taskQuickCreateDefaultsValidator = v.object({
 	visibilityPreference: taskVisibilityPreferenceValidator,
 	color: v.string(),
 });
-
-type TaskQuickCreateDefaults = {
-	priority: "low" | "medium" | "high" | "critical" | "blocker";
-	status: "backlog" | "queued";
-	estimatedMinutes: number;
-	splitAllowed: boolean;
-	minChunkMinutes: number;
-	maxChunkMinutes: number;
-	restMinutes: number;
-	travelMinutes: number;
-	sendToUpNext: boolean;
-	visibilityPreference: "default" | "private";
-	color: string;
-};
 
 const sanitizeTaskQuickCreateDefaults = (
 	settings: {
@@ -163,15 +150,6 @@ const habitQuickCreateDefaultsValidator = v.object({
 	color: v.string(),
 });
 
-type HabitQuickCreateDefaults = {
-	priority: "low" | "medium" | "high" | "critical" | "blocker";
-	durationMinutes: number;
-	frequency: "daily" | "weekly" | "biweekly" | "monthly";
-	recoveryPolicy: "skip" | "recover";
-	visibilityPreference: "default" | "private";
-	color: string;
-};
-
 const sanitizeHabitQuickCreateDefaults = (
 	settings: {
 		habitQuickCreatePriority?: string;
@@ -253,7 +231,8 @@ export const getTaskSchedulingDefaults = query({
 		schedulingStepMinutes: schedulingStepMinutesValidator,
 		taskQuickCreateDefaults: taskQuickCreateDefaultsValidator,
 		habitQuickCreateDefaults: habitQuickCreateDefaultsValidator,
-		schedulingHorizonDays: v.number(),
+		schedulingHorizonWeeks: v.number(),
+		activeProductId: v.optional(v.string()),
 		weekStartsOn: weekStartsOnValidator,
 		dateFormat: dateFormatValidator,
 		timeFormatPreference: v.union(v.literal("12h"), v.literal("24h")),
@@ -271,7 +250,8 @@ export const getTaskSchedulingDefaults = query({
 			schedulingStepMinutes: normalizeSchedulingStepMinutes(settings?.schedulingStepMinutes),
 			taskQuickCreateDefaults: sanitizeTaskQuickCreateDefaults(settings),
 			habitQuickCreateDefaults: sanitizeHabitQuickCreateDefaults(settings),
-			schedulingHorizonDays: settings?.schedulingHorizonDays ?? 75,
+			schedulingHorizonWeeks: Math.max(1, Math.floor((settings?.schedulingHorizonDays ?? 70) / 7)),
+			activeProductId: settings?.activeProductId,
 			weekStartsOn: normalizeWeekStartsOn(settings?.weekStartsOn) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
 			dateFormat: normalizeDateFormat(settings?.dateFormat) as
 				| "MM/DD/YYYY"

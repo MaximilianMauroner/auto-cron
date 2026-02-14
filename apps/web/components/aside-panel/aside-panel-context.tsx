@@ -1,7 +1,8 @@
 "use client";
 
 import { useIsMobile } from "@/hooks/use-mobile";
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 const ASIDE_COOKIE_NAME = "aside_panel_state";
 const ASIDE_COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
@@ -17,18 +18,40 @@ const AsidePanelContext = createContext<AsidePanelContextValue | null>(null);
 
 export function AsidePanelProvider({
 	defaultOpen = true,
+	open: openProp,
+	onOpenChange: setOpenProp,
 	children,
 }: {
 	defaultOpen?: boolean;
+	open?: boolean;
+	onOpenChange?: (open: boolean) => void;
 	children: React.ReactNode;
 }) {
 	const isMobile = useIsMobile();
-	const [open, _setOpen] = useState(defaultOpen);
+	const pathname = usePathname();
+	const isCalendar = pathname.startsWith("/app/calendar");
+	const [_open, _setOpen] = useState(defaultOpen);
+	const open = openProp ?? _open;
+	const prevPathRef = useRef(pathname);
 
-	const setOpen = useCallback((value: boolean) => {
-		_setOpen(value);
-		document.cookie = `${ASIDE_COOKIE_NAME}=${value}; path=/; max-age=${ASIDE_COOKIE_MAX_AGE}; SameSite=Lax; Secure`;
-	}, []);
+	const setOpen = useCallback(
+		(value: boolean) => {
+			if (setOpenProp) {
+				setOpenProp(value);
+			} else {
+				_setOpen(value);
+			}
+			document.cookie = `${ASIDE_COOKIE_NAME}=${value}; path=/; max-age=${ASIDE_COOKIE_MAX_AGE}; SameSite=Lax; Secure`;
+		},
+		[setOpenProp],
+	);
+
+	// Auto-open on calendar, auto-close on other routes
+	useEffect(() => {
+		if (pathname === prevPathRef.current) return;
+		prevPathRef.current = pathname;
+		setOpen(isCalendar);
+	}, [pathname, isCalendar, setOpen]);
 
 	const toggle = useCallback(() => {
 		setOpen(!open);

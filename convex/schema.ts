@@ -79,7 +79,8 @@ export default defineSchema({
 				}),
 			),
 		),
-		schedulingHorizonDays: v.number(), // default: 75
+		activeProductId: v.optional(v.string()),
+		schedulingHorizonDays: v.number(), // default: 70
 		schedulingDowntimeMinutes: v.optional(v.number()),
 		schedulingStepMinutes: v.optional(v.union(v.literal(15), v.literal(30), v.literal(60))),
 		weekStartsOn: v.optional(
@@ -288,6 +289,7 @@ export default defineSchema({
 	})
 		.index("by_userId", ["userId"])
 		.index("by_userId_start", ["userId", "start"])
+		.index("by_userId_start_source", ["userId", "start", "source"])
 		.index("by_userId_timeRange", ["userId", "start", "end"])
 		.index("by_googleEventId", ["googleEventId"])
 		.index("by_userId_googleEventId", ["userId", "googleEventId"])

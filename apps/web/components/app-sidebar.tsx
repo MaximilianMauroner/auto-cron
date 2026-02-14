@@ -32,6 +32,7 @@ import {
 	ChevronsUpDown,
 	Clock3,
 	CreditCard,
+	Layers,
 	LogOut,
 	Moon,
 	Plus,
@@ -44,13 +45,14 @@ import {
 import { useTheme } from "next-themes";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 
 const navItems = [
 	{ title: "Calendar", href: "/app/calendar", icon: Calendar },
 	{ title: "Tasks", href: "/app/tasks", icon: CheckSquare },
 	{ title: "Habits", href: "/app/habits", icon: Repeat },
+	{ title: "Priorities", href: "/app/priorities", icon: Layers },
 ];
 
 type GoogleCalendarListItem = {
@@ -137,6 +139,28 @@ export function AppSidebar() {
 		});
 	}, [calendarAccounts]);
 
+	const [hiddenCalendarIds, setHiddenCalendarIds] = useState<Set<string>>(new Set());
+
+	useEffect(() => {
+		const onHiddenChanged = (rawEvent: Event) => {
+			const { hiddenCalendarIds: ids } =
+				(rawEvent as CustomEvent<{ hiddenCalendarIds?: string[] }>).detail ?? {};
+			if (ids) setHiddenCalendarIds(new Set(ids));
+		};
+		window.addEventListener("calendar:hidden-calendars-changed", onHiddenChanged);
+		return () => {
+			window.removeEventListener("calendar:hidden-calendars-changed", onHiddenChanged);
+		};
+	}, []);
+
+	const toggleCalendar = useCallback((calendarId: string) => {
+		window.dispatchEvent(
+			new CustomEvent("calendar:toggle-calendar", {
+				detail: { calendarId },
+			}),
+		);
+	}, []);
+
 	const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "User";
 	const initials =
 		[user?.firstName?.[0], user?.lastName?.[0]].filter(Boolean).join("").toUpperCase() || "U";
@@ -146,7 +170,7 @@ export function AppSidebar() {
 		if (isSigningOut) return;
 		setIsSigningOut(true);
 		try {
-			await signOut({ returnTo: "/sign-in" });
+			await signOut({ returnTo: "/" });
 		} finally {
 			setIsSigningOut(false);
 		}
@@ -218,32 +242,48 @@ export function AppSidebar() {
 										Loading calendars…
 									</div>
 								) : (
-									orderedCalendars.map((calendar) => (
-										<div
-											key={calendar.id}
-											title={calendar.name}
-											className="flex min-w-0 items-center rounded-md px-1.5 py-1 text-[0.74rem] text-sidebar-foreground/80 hover:bg-sidebar-accent"
-										>
-											<div className="flex min-w-0 flex-1 items-center gap-2">
-												{calendar.isRemote ? (
-													<Rss className="size-3.5 shrink-0" style={{ color: calendar.color }} />
-												) : (
-													<span
-														className="size-2.5 rounded-[4px] shrink-0"
-														style={{ backgroundColor: calendar.color }}
-													/>
-												)}
-												<span className="font-[family-name:var(--font-outfit)] truncate">
-													{calendar.name}
-												</span>
+									orderedCalendars.map((calendar) => {
+										const isHidden = hiddenCalendarIds.has(calendar.id);
+										return (
+											<div
+												key={calendar.id}
+												title={calendar.name}
+												className={`flex min-w-0 items-center rounded-md px-1.5 py-1 text-[0.74rem] text-sidebar-foreground/80 hover:bg-sidebar-accent ${isHidden ? "opacity-40" : ""}`}
+											>
+												<button
+													type="button"
+													onClick={() => toggleCalendar(calendar.id)}
+													className="shrink-0 cursor-pointer rounded p-0.5 hover:bg-sidebar-border/50 transition-opacity"
+													title={isHidden ? `Show ${calendar.name}` : `Hide ${calendar.name}`}
+												>
+													{calendar.isRemote ? (
+														<Rss
+															className="size-3.5"
+															style={{ color: isHidden ? undefined : calendar.color }}
+														/>
+													) : (
+														<span
+															className="block size-2.5 rounded-[4px]"
+															style={{
+																backgroundColor: isHidden ? "transparent" : calendar.color,
+																border: isHidden ? `1.5px solid ${calendar.color}` : undefined,
+															}}
+														/>
+													)}
+												</button>
+												<div className="flex min-w-0 flex-1 items-center gap-2 ml-1.5">
+													<span className="font-[family-name:var(--font-outfit)] truncate">
+														{calendar.name}
+													</span>
+												</div>
+												{calendar.isDefault ? (
+													<span className="font-[family-name:var(--font-cutive)] ml-2 shrink-0 text-[0.66rem] text-muted-foreground">
+														Default
+													</span>
+												) : null}
 											</div>
-											{calendar.isDefault ? (
-												<span className="font-[family-name:var(--font-cutive)] ml-2 shrink-0 text-[0.66rem] text-muted-foreground">
-													Default
-												</span>
-											) : null}
-										</div>
-									))
+										);
+									})
 								)}
 								<button
 									type="button"

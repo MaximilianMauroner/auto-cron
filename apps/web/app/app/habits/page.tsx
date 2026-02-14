@@ -2,6 +2,7 @@
 
 import PaywallDialog from "@/components/autumn/paywall-dialog";
 import { CategoryPicker } from "@/components/category-picker";
+import { QuickCreateHabitDialog } from "@/components/quick-create/quick-create-habit-dialog";
 import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import {
 	Accordion,
@@ -1158,19 +1159,7 @@ export default function HabitsPage() {
 				)}
 			</div>
 
-			<HabitDialog
-				open={isCreateOpen}
-				onOpenChange={setIsCreateOpen}
-				title="Create habit"
-				compactCreate
-				value={createForm}
-				onChange={setCreateForm}
-				onSubmit={onCreateHabit}
-				submitLabel={isCreatingHabit ? "Creating..." : "Create habit"}
-				busy={busy}
-				hoursSets={hoursSets}
-				calendars={editableGoogleCalendars}
-			/>
+			<QuickCreateHabitDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} />
 
 			<HabitDialog
 				open={isEditOpen}
@@ -1314,7 +1303,7 @@ function HabitCard({
 			</div>
 
 			{habit.preferredDays && habit.preferredDays.length > 0 && (
-				<div className="mt-2 font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.12em] text-muted-foreground/60">
+				<div className="mt-2 font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.12em] text-muted-foreground/80">
 					{formatDays(habit.preferredDays)}
 				</div>
 			)}
@@ -1428,7 +1417,7 @@ function HabitDialog({
 							<div className="space-y-1.5">
 								<Label
 									htmlFor="quick-habit-name"
-									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 								>
 									Habit name
 								</Label>
@@ -1445,7 +1434,7 @@ function HabitDialog({
 
 							<div className="grid gap-4 md:grid-cols-3">
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Repeat
 									</Label>
 									<Select
@@ -1467,7 +1456,7 @@ function HabitDialog({
 									</Select>
 								</div>
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Count
 									</Label>
 									<Input
@@ -1481,7 +1470,7 @@ function HabitDialog({
 									/>
 								</div>
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Duration
 									</Label>
 									<DurationInput
@@ -1493,7 +1482,7 @@ function HabitDialog({
 							</div>
 
 							<div className="space-y-1.5">
-								<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+								<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 									Preferred days
 								</Label>
 								<div className="flex flex-wrap gap-1.5">
@@ -1521,7 +1510,7 @@ function HabitDialog({
 							<div className="h-px bg-border/30" />
 
 							<div className="space-y-1.5">
-								<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+								<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 									Color
 								</Label>
 								<div className="flex flex-wrap gap-2">
@@ -1572,7 +1561,7 @@ function HabitDialog({
 								</AccordionTrigger>
 								<AccordionContent className="space-y-5 pb-5">
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Habit name
 										</Label>
 										<Input
@@ -1587,7 +1576,7 @@ function HabitDialog({
 
 									<div className="grid gap-4 md:grid-cols-2">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Priority
 											</Label>
 											<Select
@@ -1610,7 +1599,7 @@ function HabitDialog({
 										</div>
 
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Calendar
 											</Label>
 											<Select
@@ -1635,7 +1624,7 @@ function HabitDialog({
 
 									<div className="grid gap-4 md:grid-cols-[180px_1fr]">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Color
 											</Label>
 											<div className="flex flex-wrap gap-2 rounded-lg border border-border/40 p-2">
@@ -1657,7 +1646,7 @@ function HabitDialog({
 											</div>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Category
 											</Label>
 											<CategoryPicker
@@ -1670,7 +1659,7 @@ function HabitDialog({
 									<div className="h-px bg-border/30" />
 
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Notes
 										</Label>
 										<Textarea
@@ -1682,7 +1671,7 @@ function HabitDialog({
 									</div>
 
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Location
 										</Label>
 										<Input
@@ -1716,7 +1705,7 @@ function HabitDialog({
 								<AccordionContent className="space-y-5 pb-5">
 									<div className="grid gap-4 md:grid-cols-[minmax(260px,1fr)_auto] md:items-end">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Hours
 											</Label>
 											<Select
@@ -1746,7 +1735,7 @@ function HabitDialog({
 									</div>
 
 									<div className="space-y-2">
-										<p className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<p className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Eligible days based on Hours selection
 										</p>
 										<EligibleHoursGrid hoursSet={selectedHoursSet} />
@@ -1756,7 +1745,7 @@ function HabitDialog({
 
 									<div className="grid gap-4 md:grid-cols-[1fr_140px_auto] md:items-end">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Repeat
 											</Label>
 											<Select
@@ -1778,7 +1767,7 @@ function HabitDialog({
 											</Select>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Count
 											</Label>
 											<Input
@@ -1798,7 +1787,7 @@ function HabitDialog({
 									</div>
 
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Ideal days
 										</Label>
 										<div className="flex flex-wrap gap-1.5">
@@ -1827,7 +1816,7 @@ function HabitDialog({
 
 									<div className="grid gap-4 md:grid-cols-3">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Ideal time
 											</Label>
 											<Input
@@ -1837,7 +1826,7 @@ function HabitDialog({
 											/>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Minimum duration
 											</Label>
 											<div className="flex items-center gap-2">
@@ -1870,7 +1859,7 @@ function HabitDialog({
 											</div>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Maximum duration
 											</Label>
 											<div className="flex items-center gap-2">
@@ -1906,7 +1895,7 @@ function HabitDialog({
 
 									<div className="grid gap-4 md:grid-cols-2">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Start date
 											</Label>
 											<DateTimePicker
@@ -1917,7 +1906,7 @@ function HabitDialog({
 											/>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												End date
 											</Label>
 											<DateTimePicker
@@ -1951,7 +1940,7 @@ function HabitDialog({
 								</AccordionTrigger>
 								<AccordionContent className="space-y-5 pb-5">
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Reminders
 										</Label>
 										<RadioGroup
@@ -1981,7 +1970,7 @@ function HabitDialog({
 										</RadioGroup>
 										{value.reminderMode === "custom" ? (
 											<div className="space-y-1.5 pt-2">
-												<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 													Custom reminder minutes
 												</Label>
 												<Input
@@ -2000,7 +1989,7 @@ function HabitDialog({
 									<div className="h-px bg-border/30" />
 
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											If your habit can&apos;t be scheduled
 										</Label>
 										<RadioGroup
@@ -2036,7 +2025,7 @@ function HabitDialog({
 									<div className="h-px bg-border/30" />
 
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Recovery policy
 										</Label>
 										<p className="font-[family-name:var(--font-outfit)] text-[0.76rem] text-muted-foreground">
@@ -2075,7 +2064,7 @@ function HabitDialog({
 									<div className="h-px bg-border/30" />
 
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Visibility
 										</Label>
 										<p className="font-[family-name:var(--font-outfit)] text-[0.76rem] text-muted-foreground">
@@ -2126,7 +2115,7 @@ function HabitDialog({
 									<div className="h-px bg-border/30" />
 
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Time defense
 										</Label>
 										<p className="font-[family-name:var(--font-outfit)] text-[0.76rem] text-muted-foreground">
@@ -2184,7 +2173,7 @@ function HabitDialog({
 
 									<div className="grid gap-4 md:grid-cols-3">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												CC others
 											</Label>
 											<Input
@@ -2195,7 +2184,7 @@ function HabitDialog({
 											/>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Avoid duplicate keywords
 											</Label>
 											<Input
@@ -2208,7 +2197,7 @@ function HabitDialog({
 											/>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Dependency note
 											</Label>
 											<Input

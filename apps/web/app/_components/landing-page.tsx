@@ -61,32 +61,32 @@ const STEPS = [
 
 const PLANS = [
 	{
-		name: "Basic",
-		price: "5",
-		features: ["50 tasks", "5 habits", "Unlimited scheduling", "Google Calendar sync"],
+		name: "Free",
+		price: "0",
+		features: ["28 tasks / month", "1-week horizon", "Google Calendar sync"],
 		highlight: false,
 	},
 	{
-		name: "Pro",
-		price: "8",
+		name: "Basic",
+		price: "4.99",
+		features: ["100 tasks / month", "10 habits", "4-week horizon", "Google Calendar sync"],
+		highlight: false,
+	},
+	{
+		name: "Plus",
+		price: "7.99",
 		features: [
-			"200 tasks",
-			"20 habits",
-			"Unlimited scheduling",
-			"Smart rescheduling",
-			"Priority support",
+			"Unlimited tasks & habits",
+			"8-week horizon",
+			"Analytics dashboard",
+			"Google Calendar sync",
 		],
 		highlight: true,
 	},
 	{
-		name: "Premium",
-		price: "16",
-		features: [
-			"Unlimited everything",
-			"Analytics dashboard",
-			"75-day horizon",
-			"Dedicated support",
-		],
+		name: "Pro",
+		price: "15.99",
+		features: ["Everything in Plus", "12-week horizon", "Priority support"],
 		highlight: false,
 	},
 ];
@@ -212,6 +212,12 @@ export function LandingPage({ logoHref = "/" }: LandingPageProps) {
 										{item}
 									</a>
 								))}
+								<a
+									href="/sign-in"
+									className="font-[family-name:var(--font-outfit)] text-[11px] font-medium tracking-[0.04em] text-lp-navy/60 hover:text-lp-navy transition-colors"
+								>
+									Log in
+								</a>
 								<a href="#cta" className="lp-btn-gold !py-2.5 !px-7 !text-[11px]">
 									Get Started
 								</a>
@@ -619,7 +625,7 @@ export function LandingPage({ logoHref = "/" }: LandingPageProps) {
 						</div>
 
 						<div
-							className="lp-pricing-grid grid grid-cols-3 gap-[clamp(16px,2vw,28px)] items-start"
+							className="lp-pricing-grid grid grid-cols-2 md:grid-cols-4 gap-[clamp(16px,2vw,28px)] items-start"
 							data-reveal
 						>
 							{PLANS.map((plan) => (
@@ -697,7 +703,7 @@ export function LandingPage({ logoHref = "/" }: LandingPageProps) {
 									<div className="px-[clamp(24px,2.5vw,36px)] pb-[clamp(28px,3vw,40px)]">
 										{plan.highlight ? (
 											<a href="#cta" className="lp-btn-gold w-full text-center block">
-												Choose Pro
+												Choose {plan.name}
 											</a>
 										) : (
 											<a href="#cta" className="lp-pricing-link w-full text-center">
@@ -775,9 +781,9 @@ export function LandingPage({ logoHref = "/" }: LandingPageProps) {
 								<a href="/sign-in" className="lp-btn-gold !text-sm !py-[18px] !px-14">
 									Start Free
 								</a>
-								<span className="font-[family-name:var(--font-cutive)] text-[11px] tracking-[0.12em] uppercase text-lp-parchment opacity-25">
-									Setup in 2 minutes
-								</span>
+								<a href="/sign-in" className="lp-btn-outline !text-sm !py-[18px] !px-10">
+									Log in
+								</a>
 							</div>
 						</div>
 					</div>

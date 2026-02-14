@@ -4,42 +4,21 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { internalMutation, internalQuery } from "./_generated/server";
+import type { BillingCheckFailedError, BillingLockError, FeatureLimitError } from "./billingTypes";
 import { env } from "./env";
+import type { BillableEntityType, BillableFeatureId, BillingReservationStatus } from "./types/root";
 
-export type BillableFeatureId = "tasks" | "habits";
-export type BillableEntityType = "task" | "habit";
-export type BillingReservationStatus = "reserved" | "committed" | "rolled_back" | "rollback_failed";
+export type { BillableEntityType, BillableFeatureId, BillingReservationStatus } from "./types/root";
 
 const BILLING_LOCK_TTL_MS = 15_000;
-
-type FeatureLimitError = {
-	code: "FEATURE_LIMIT_REACHED";
-	message: string;
-	featureId: BillableFeatureId;
-	scenario?: string;
-	preview?: string;
-};
-
-type BillingCheckFailedError = {
-	code: "BILLING_CHECK_FAILED";
-	message: string;
-	featureId: BillableFeatureId;
-	providerCode?: string;
-};
-
-type BillingLockError = {
-	code: "BILLING_LOCKED";
-	message: string;
-	featureId: BillableFeatureId;
-};
 
 const getBillingMode = () => env().AUTUMN_BILLING_MODE?.trim().toLowerCase() ?? "live";
 
 const featureLimitMessage = (featureId: BillableFeatureId) => {
 	if (featureId === "habits") {
-		return "You've reached your total habits limit for your current plan.";
+		return "Habits are available on the Basic plan and above. Upgrade to get started.";
 	}
-	return "You've reached your tasks limit for the current billing cycle.";
+	return "You've reached your task limit for the current billing cycle. Upgrade for more.";
 };
 
 const normalizeOptionalString = (value: unknown): string | undefined => {

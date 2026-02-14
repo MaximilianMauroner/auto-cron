@@ -1,7 +1,16 @@
 "use client";
 
 import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
-import { Input } from "@/components/ui/input";
+import {
+	Command,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+	CommandSeparator,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
 	Select,
 	SelectContent,
@@ -13,11 +22,18 @@ import {
 	detectLocalTimeFormatPreference,
 	detectLocalTimeZone,
 } from "@/components/user-preferences-context";
-import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
+import {
+	useActionWithStatus,
+	useAuthenticatedQueryWithStatus,
+	useMutationWithStatus,
+} from "@/hooks/use-convex-status";
 import { cn } from "@/lib/utils";
-import { Check, Globe, Hash, Pencil } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCustomer } from "autumn-js/react";
+import { ArrowUpRight, Check, ChevronsUpDown, Globe, Hash, Pencil } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
+import { getMaxHorizonWeeks, isValidProductId } from "../../../../../convex/planLimits";
 
 type EditingRow = "timezone" | "horizon" | "weekStart" | "dateFormat" | "timeFormat" | null;
 
@@ -43,13 +59,13 @@ const timeFormatExamples: Record<string, string> = {
 };
 
 const horizonOptions = [
-	{ days: 7, label: "1 week" },
-	{ days: 14, label: "2 weeks" },
-	{ days: 21, label: "3 weeks" },
-	{ days: 28, label: "4 weeks" },
-	{ days: 42, label: "6 weeks" },
-	{ days: 56, label: "8 weeks" },
-	{ days: 84, label: "12 weeks" },
+	{ weeks: 1, label: "1 week" },
+	{ weeks: 2, label: "2 weeks" },
+	{ weeks: 3, label: "3 weeks" },
+	{ weeks: 4, label: "4 weeks" },
+	{ weeks: 6, label: "6 weeks" },
+	{ weeks: 8, label: "8 weeks" },
+	{ weeks: 12, label: "12 weeks" },
 ];
 
 const isValidTimeZone = (value: string) => {
@@ -87,12 +103,10 @@ const getSupportedTimeZones = (detectedTimeZone: string) => {
 	return [detectedTimeZone, ...fallback];
 };
 
-function formatHorizon(days: number): string {
-	const match = horizonOptions.find((opt) => opt.days === days);
+function formatHorizon(weeks: number): string {
+	const match = horizonOptions.find((opt) => opt.weeks === weeks);
 	if (match) return match.label;
-	const weeks = Math.round(days / 7);
-	if (weeks > 0 && days % 7 === 0) return `${weeks} week${weeks > 1 ? "s" : ""}`;
-	return `${days} days`;
+	return `${weeks} week${weeks !== 1 ? "s" : ""}`;
 }
 
 export default function GeneralSettingsPage() {
@@ -115,26 +129,64 @@ export default function GeneralSettingsPage() {
 		{},
 	);
 
+	const { customer, attach } = useCustomer({ errorOnNotFound: false });
+	const autumnProductId = useMemo(() => {
+		const products = customer?.products ?? [];
+		const active = products.filter((p) => ["active", "trialing", "past_due"].includes(p.status));
+		const primary = active.find((p) => !p.is_add_on) ?? active[0];
+		return primary?.id && isValidProductId(primary.id) ? primary.id : undefined;
+	}, [customer?.products]);
+
 	const timezone = preferencesQuery.data?.timezone ?? detectedTimeZone;
 	const timeFormatPreference =
 		preferencesQuery.data?.timeFormatPreference ?? detectedTimeFormatPreference;
-	const schedulingHorizonDays = schedulingDefaultsQuery.data?.schedulingHorizonDays ?? 75;
+	const dbActiveProductId = schedulingDefaultsQuery.data?.activeProductId;
+	const effectiveProductId = autumnProductId ?? dbActiveProductId;
+	const maxHorizonWeeks = useMemo(
+		() => getMaxHorizonWeeks(effectiveProductId),
+		[effectiveProductId],
+	);
+	const filteredHorizonOptions = useMemo(
+		() => horizonOptions.filter((opt) => opt.weeks <= maxHorizonWeeks),
+		[maxHorizonWeeks],
+	);
+
+	// Sync DB activeProductId with Autumn's actual subscription.
+	// If the customer has no plan at all, auto-attach the free plan.
+	const { execute: syncActiveProduct } = useActionWithStatus(api.hours.actions.syncActiveProduct);
+	const hasSynced = useRef(false);
+	useEffect(() => {
+		if (hasSynced.current || !customer) return;
+
+		if (!autumnProductId) {
+			// Customer exists but has no active plan — attach free
+			hasSynced.current = true;
+			void (async () => {
+				try {
+					await attach({ productId: "free" });
+				} catch {
+					// Best-effort; the backend still enforces limits
+				}
+				void syncActiveProduct({ productId: "free" });
+			})();
+		} else if (autumnProductId && autumnProductId !== dbActiveProductId) {
+			// Plan mismatch (or DB value missing) — sync DB to match Autumn
+			hasSynced.current = true;
+			void syncActiveProduct({ productId: autumnProductId });
+		}
+	}, [autumnProductId, dbActiveProductId, customer, attach, syncActiveProduct]);
+	const schedulingHorizonWeeks = Math.min(
+		schedulingDefaultsQuery.data?.schedulingHorizonWeeks ?? maxHorizonWeeks,
+		maxHorizonWeeks,
+	);
 	const weekStartsOn = schedulingDefaultsQuery.data?.weekStartsOn ?? 1;
 	const dateFormat = schedulingDefaultsQuery.data?.dateFormat ?? "MM/DD/YYYY";
-
-	const [timezoneDraft, setTimezoneDraft] = useState(timezone);
-
-	useEffect(() => {
-		if (preferencesQuery.data?.timezone) {
-			setTimezoneDraft(preferencesQuery.data.timezone);
-		}
-	}, [preferencesQuery.data?.timezone]);
 
 	const { mutate: setCalendarDisplayPreferences } = useMutationWithStatus(
 		api.hours.mutations.setCalendarDisplayPreferences,
 	);
-	const { mutate: persistSchedulingHorizonDays } = useMutationWithStatus(
-		api.hours.mutations.setSchedulingHorizonDays,
+	const { mutate: persistSchedulingHorizonWeeks } = useMutationWithStatus(
+		api.hours.mutations.setSchedulingHorizonWeeks,
 	);
 	const { mutate: persistWeekStartsOn } = useMutationWithStatus(
 		api.hours.mutations.setWeekStartsOn,
@@ -149,32 +201,34 @@ export default function GeneralSettingsPage() {
 		setTimeout(() => setSavedRow(null), 1200);
 	}, []);
 
-	const saveTimezone = useCallback(async () => {
-		const normalized = timezoneDraft.trim();
-		if (!isValidTimeZone(normalized)) return;
-		try {
-			await setCalendarDisplayPreferences({
-				timezone: normalized,
-				timeFormatPreference,
-			});
-			flashSaved("timezone");
-		} catch {
-			/* mutation error handled by convex */
-		}
-		setEditing(null);
-	}, [timezoneDraft, timeFormatPreference, setCalendarDisplayPreferences, flashSaved]);
+	const saveTimezone = useCallback(
+		async (tz: string) => {
+			if (!isValidTimeZone(tz)) return;
+			try {
+				await setCalendarDisplayPreferences({
+					timezone: tz,
+					timeFormatPreference,
+				});
+				flashSaved("timezone");
+			} catch {
+				/* mutation error handled by convex */
+			}
+			setEditing(null);
+		},
+		[timeFormatPreference, setCalendarDisplayPreferences, flashSaved],
+	);
 
 	const saveHorizon = useCallback(
-		async (days: number) => {
+		async (weeks: number) => {
 			try {
-				await persistSchedulingHorizonDays({ days });
+				await persistSchedulingHorizonWeeks({ weeks });
 				flashSaved("horizon");
 			} catch {
 				/* mutation error handled by convex */
 			}
 			setEditing(null);
 		},
-		[persistSchedulingHorizonDays, flashSaved],
+		[persistSchedulingHorizonWeeks, flashSaved],
 	);
 
 	const saveWeekStart = useCallback(
@@ -222,66 +276,114 @@ export default function GeneralSettingsPage() {
 		icon: React.ReactNode;
 		displayValue: string;
 		editor: React.ReactNode;
+		hint?: React.ReactNode;
 	}[] = [
 		{
 			key: "timezone",
 			label: "Timezone",
-			icon: <Globe className="size-4 text-muted-foreground/60" />,
+			icon: <Globe className="size-4 text-muted-foreground/80" />,
 			displayValue: timezone,
 			editor: (
-				<div className="flex items-center gap-2">
-					<Input
-						list="tz-general-options"
-						value={timezoneDraft}
-						onChange={(e) => setTimezoneDraft(e.target.value)}
-						onKeyDown={(e) => {
-							if (e.key === "Enter") void saveTimezone();
-							if (e.key === "Escape") setEditing(null);
-						}}
-						placeholder="e.g. America/New_York"
-						className="max-w-[260px]"
-						autoFocus
-					/>
-					<datalist id="tz-general-options">
-						{timeZoneOptions.map((zone) => (
-							<option key={zone} value={zone} />
-						))}
-					</datalist>
-				</div>
+				<Popover
+					open
+					onOpenChange={(open) => {
+						if (!open) setEditing(null);
+					}}
+				>
+					<PopoverTrigger asChild>
+						<button
+							type="button"
+							className="inline-flex h-9 w-full max-w-[280px] cursor-pointer items-center justify-between rounded-md border border-input bg-transparent px-3 text-sm"
+						>
+							{timezone}
+							<ChevronsUpDown className="ml-2 size-3.5 shrink-0 opacity-50" />
+						</button>
+					</PopoverTrigger>
+					<PopoverContent className="w-[280px] p-0" align="start">
+						<Command>
+							<CommandInput placeholder="Search timezones..." />
+							<CommandList>
+								<CommandEmpty>No timezone found.</CommandEmpty>
+								<CommandGroup heading="Detected">
+									<CommandItem
+										value={`${detectedTimeZone} browser detected`}
+										onSelect={() => void saveTimezone(detectedTimeZone)}
+									>
+										<Globe className="size-4 text-accent" />
+										{detectedTimeZone}
+										{timezone === detectedTimeZone && <Check className="ml-auto size-4" />}
+									</CommandItem>
+								</CommandGroup>
+								<CommandSeparator />
+								<CommandGroup heading="All timezones">
+									{timeZoneOptions.map((zone) => (
+										<CommandItem key={zone} value={zone} onSelect={() => void saveTimezone(zone)}>
+											{zone}
+											{timezone === zone && <Check className="ml-auto size-4" />}
+										</CommandItem>
+									))}
+								</CommandGroup>
+							</CommandList>
+						</Command>
+					</PopoverContent>
+				</Popover>
 			),
 		},
 		{
 			key: "horizon",
 			label: "Scheduling window",
-			icon: <Hash className="size-4 text-muted-foreground/60" />,
-			displayValue: formatHorizon(schedulingHorizonDays),
-			editor: (
-				<Select
-					value={String(schedulingHorizonDays)}
-					onValueChange={(value) => void saveHorizon(Number(value))}
-				>
-					<SelectTrigger className="max-w-[180px]">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						{horizonOptions.map((opt) => (
-							<SelectItem key={opt.days} value={String(opt.days)}>
-								{opt.label}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
-			),
+			icon: <Hash className="size-4 text-muted-foreground/80" />,
+			displayValue: formatHorizon(schedulingHorizonWeeks),
+			editor:
+				filteredHorizonOptions.length <= 1 ? (
+					<p className="text-[13px] text-muted-foreground">
+						{formatHorizon(schedulingHorizonWeeks)} (plan maximum)
+					</p>
+				) : (
+					<Select
+						defaultOpen
+						value={String(schedulingHorizonWeeks)}
+						onValueChange={(value) => void saveHorizon(Number(value))}
+						onOpenChange={(open) => {
+							if (!open) setEditing(null);
+						}}
+					>
+						<SelectTrigger className="max-w-[180px]">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent>
+							{filteredHorizonOptions.map((opt) => (
+								<SelectItem key={opt.weeks} value={String(opt.weeks)}>
+									{opt.label}
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				),
+			hint:
+				maxHorizonWeeks < 12 ? (
+					<Link
+						href="/app/pricing"
+						className="group/cta mt-1.5 inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-accent/20 bg-accent/5 px-2.5 py-0.5 text-[11px] font-medium text-accent/80 transition-all hover:border-accent/40 hover:bg-accent/10 hover:text-accent"
+					>
+						Upgrade for longer windows
+						<ArrowUpRight className="size-3 transition-transform group-hover/cta:-translate-y-px group-hover/cta:translate-x-px" />
+					</Link>
+				) : null,
 		},
 		{
 			key: "weekStart",
 			label: "Start of week",
-			icon: <Hash className="size-4 text-muted-foreground/60" />,
+			icon: <Hash className="size-4 text-muted-foreground/80" />,
 			displayValue: weekDayLabels[weekStartsOn] ?? "Monday",
 			editor: (
 				<Select
+					defaultOpen
 					value={String(weekStartsOn)}
 					onValueChange={(value) => void saveWeekStart(Number(value) as 0 | 1 | 2 | 3 | 4 | 5 | 6)}
+					onOpenChange={(open) => {
+						if (!open) setEditing(null);
+					}}
 				>
 					<SelectTrigger className="max-w-[180px]">
 						<SelectValue />
@@ -299,14 +401,18 @@ export default function GeneralSettingsPage() {
 		{
 			key: "dateFormat",
 			label: "Date format",
-			icon: <Hash className="size-4 text-muted-foreground/60" />,
+			icon: <Hash className="size-4 text-muted-foreground/80" />,
 			displayValue: dateFormatExamples[dateFormat] ?? dateFormat,
 			editor: (
 				<Select
+					defaultOpen
 					value={dateFormat}
 					onValueChange={(value) =>
 						void saveDateFormat(value as "MM/DD/YYYY" | "DD/MM/YYYY" | "YYYY-MM-DD")
 					}
+					onOpenChange={(open) => {
+						if (!open) setEditing(null);
+					}}
 				>
 					<SelectTrigger className="max-w-[180px]">
 						<SelectValue />
@@ -322,12 +428,16 @@ export default function GeneralSettingsPage() {
 		{
 			key: "timeFormat",
 			label: "Time format",
-			icon: <Hash className="size-4 text-muted-foreground/60" />,
+			icon: <Hash className="size-4 text-muted-foreground/80" />,
 			displayValue: timeFormatExamples[timeFormatPreference] ?? timeFormatPreference,
 			editor: (
 				<Select
+					defaultOpen
 					value={timeFormatPreference}
 					onValueChange={(value) => void saveTimeFormat(value as "12h" | "24h")}
+					onOpenChange={(open) => {
+						if (!open) setEditing(null);
+					}}
 				>
 					<SelectTrigger className="max-w-[180px]">
 						<SelectValue />
@@ -377,20 +487,19 @@ export default function GeneralSettingsPage() {
 											{row.displayValue}
 										</p>
 									)}
+									{row.hint}
 								</div>
 								<button
 									type="button"
 									onClick={() => {
 										if (isEditing) {
-											if (row.key === "timezone") void saveTimezone();
-											else setEditing(null);
+											setEditing(null);
 										} else {
-											if (row.key === "timezone") setTimezoneDraft(timezone);
 											setEditing(row.key);
 										}
 									}}
-									className="shrink-0 rounded-md p-1.5 text-muted-foreground/40 transition-colors hover:bg-muted/60 hover:text-foreground"
-									aria-label={isEditing ? `Save ${row.label}` : `Edit ${row.label}`}
+									className="shrink-0 cursor-pointer rounded-md p-1.5 text-muted-foreground/40 transition-colors hover:bg-muted/60 hover:text-foreground"
+									aria-label={isEditing ? `Done editing ${row.label}` : `Edit ${row.label}`}
 								>
 									{isEditing ? <Check className="size-4" /> : <Pencil className="size-3.5" />}
 								</button>

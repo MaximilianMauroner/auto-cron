@@ -4,12 +4,9 @@ import { ConvexError } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { DataModel } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
+import type { UnauthorizedError } from "./authTypes";
 
 export const authKit = new AuthKit<DataModel>(components.workOSAuthKit);
-type UnauthorizedError = {
-	code: "UNAUTHORIZED";
-	message: string;
-};
 export type AuthenticatedContext<TContext> = TContext & { userId: string };
 
 const unauthorizedError = () =>
@@ -78,6 +75,13 @@ export const { authKitEvent } = authKit.events({
 	"user.created": async (ctx, event) => {
 		await ctx.runMutation(internal.hours.mutations.internalBootstrapDefaultPlannerDataForUser, {
 			userId: event.data.id,
+		});
+
+		const fullName = [event.data.firstName, event.data.lastName].filter(Boolean).join(" ");
+		await ctx.scheduler.runAfter(0, internal.customers.createAutumnCustomer, {
+			customerId: event.data.id,
+			name: fullName || undefined,
+			email: event.data.email ?? undefined,
 		});
 	},
 	"user.deleted": async (ctx, event) => {

@@ -3,6 +3,7 @@ import type { Id } from "../_generated/dataModel";
 import { query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
 import { taskSchedulingModeValidator } from "../hours/shared";
+import type { ListTasksArgs, TaskStatus } from "./taskTypes";
 
 const taskStatusValidator = v.union(
 	v.literal("backlog"),
@@ -52,12 +53,6 @@ const taskDtoValidator = v.object({
 	categoryId: v.optional(v.id("taskCategories")),
 	effectiveColor: v.string(),
 });
-
-type TaskStatus = "backlog" | "queued" | "scheduled" | "in_progress" | "done";
-
-type ListTasksArgs = {
-	statusFilter?: TaskStatus[];
-};
 
 const statusOrder: Record<TaskStatus, number> = {
 	backlog: 0,

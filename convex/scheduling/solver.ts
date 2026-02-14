@@ -17,6 +17,7 @@ import {
 	taskLatenessPenalty,
 } from "./objective";
 import { type ParsedRRule, parseSupportedRRule, recurrenceFromLegacyFrequency } from "./rrule";
+import type { AvailabilityMaskCache, TaskScheduleResult } from "./solverTypes";
 import {
 	buildAllowedMask,
 	buildBusyMask,
@@ -70,17 +71,6 @@ const buildTravelSourceId = (
 	placementEnd: number,
 	segment: "before" | "after",
 ) => `task:${taskId}:travel:${segment}:${placementStart}:${placementEnd}`;
-
-type TaskScheduleResult = {
-	success: boolean;
-	reasonCode?: string;
-	blocks: ScheduledBlock[];
-	occupancyMask: boolean[];
-	completionByTaskId: Map<string, number>;
-	requiredSlotsByTaskId: Map<string, number>;
-	availabilityByTaskId: Map<string, boolean[]>;
-};
-type AvailabilityMaskCache = Map<string, boolean[]>;
 
 const sortTasksForScheduling = (tasks: SchedulingTaskInput[]) => {
 	return [...tasks].sort((left, right) => {
@@ -158,6 +148,7 @@ const scheduleTasks = (
 	const tasks = sortTasksForScheduling(input.tasks);
 	const occupancyMask = [...busyMask];
 	const blocks: ScheduledBlock[] = [];
+	const emittedTravelSourceIds = new Set<string>();
 	const completionByTaskId = new Map<string, number>();
 	const requiredSlotsByTaskId = new Map<string, number>();
 	const availabilityByTaskId = new Map<string, boolean[]>();
@@ -197,10 +188,10 @@ const scheduleTasks = (
 			availabilityCache,
 		);
 		availabilityByTaskId.set(String(task.id), availability);
-		const hasLocation = Boolean(task.location?.trim());
 		const restSlots = toDowntimeSlots(task.restMinutes);
+		const hasLocation = Boolean(task.location?.trim());
 		const travelSlots = hasLocation ? toDowntimeSlots(task.travelMinutes) : 0;
-		const taskDowntimeSlots = Math.max(downtimeSlots, restSlots + travelSlots);
+		const taskDowntimeSlots = Math.max(downtimeSlots, restSlots, travelSlots);
 
 		const earliestStartSlot = Math.max(
 			0,
@@ -256,9 +247,11 @@ const scheduleTasks = (
 		for (const placement of chunkPlacements) {
 			const start = timestampForSlot(horizonStart, placement.startSlot);
 			const end = timestampForSlot(horizonStart, placement.startSlot + placement.durationSlots);
+			const taskId = String(task.id);
+			const resolvedTravelColor = task.travelColor ?? task.color;
 			blocks.push({
 				source: "task",
-				sourceId: String(task.id),
+				sourceId: taskId,
 				title: task.title,
 				start,
 				end,
@@ -267,35 +260,43 @@ const scheduleTasks = (
 				color: task.color,
 				location: task.location,
 			});
-			if (hasLocation && travelSlots > 0) {
+			if (travelSlots > 0) {
 				const travelDurationMs = travelSlots * SLOT_MS;
 				const beforeStart = Math.max(horizonStart, start - travelDurationMs);
 				if (beforeStart < start) {
-					blocks.push({
-						source: "task",
-						sourceId: buildTravelSourceId(String(task.id), start, end, "before"),
-						title: `Travel: ${task.title}`,
-						start: beforeStart,
-						end: start,
-						priority: task.priority,
-						calendarId: task.preferredCalendarId,
-						color: task.color,
-						location: task.location,
-					});
+					const beforeTravelSourceId = buildTravelSourceId(taskId, start, end, "before");
+					if (!emittedTravelSourceIds.has(beforeTravelSourceId)) {
+						emittedTravelSourceIds.add(beforeTravelSourceId);
+						blocks.push({
+							source: "task",
+							sourceId: beforeTravelSourceId,
+							title: `Travel: ${task.title}`,
+							start: beforeStart,
+							end: start,
+							priority: task.priority,
+							calendarId: task.preferredCalendarId,
+							color: resolvedTravelColor,
+							location: task.location,
+						});
+					}
 				}
 				const afterEnd = Math.min(horizonEnd, end + travelDurationMs);
 				if (end < afterEnd) {
-					blocks.push({
-						source: "task",
-						sourceId: buildTravelSourceId(String(task.id), start, end, "after"),
-						title: `Travel: ${task.title}`,
-						start: end,
-						end: afterEnd,
-						priority: task.priority,
-						calendarId: task.preferredCalendarId,
-						color: task.color,
-						location: task.location,
-					});
+					const afterTravelSourceId = buildTravelSourceId(taskId, start, end, "after");
+					if (!emittedTravelSourceIds.has(afterTravelSourceId)) {
+						emittedTravelSourceIds.add(afterTravelSourceId);
+						blocks.push({
+							source: "task",
+							sourceId: afterTravelSourceId,
+							title: `Travel: ${task.title}`,
+							start: end,
+							end: afterEnd,
+							priority: task.priority,
+							calendarId: task.preferredCalendarId,
+							color: resolvedTravelColor,
+							location: task.location,
+						});
+					}
 				}
 			}
 		}

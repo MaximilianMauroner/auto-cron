@@ -2,7 +2,10 @@
 
 import PaywallDialog from "@/components/autumn/paywall-dialog";
 import { CategoryPicker } from "@/components/category-picker";
+import { DragOverlayCard, DroppableColumn, SortableItem } from "@/components/dnd";
+import { QuickCreateTaskDialog } from "@/components/quick-create/quick-create-task-dialog";
 import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
+import { TaskCard } from "@/components/tasks/task-card";
 import {
 	Accordion,
 	AccordionContent,
@@ -39,12 +42,14 @@ import {
 	useAuthenticatedQueryWithStatus,
 	useMutationWithStatus,
 } from "@/hooks/use-convex-status";
+import { useDndKanban } from "@/hooks/use-dnd-kanban";
 import { getConvexErrorPayload } from "@/lib/convex-errors";
 import {
 	formatDurationCompact,
 	formatDurationFromMinutes,
 	parseDurationToMinutes,
 } from "@/lib/duration";
+import { priorityClass, priorityLabels, statusPipelineOrder } from "@/lib/scheduling-constants";
 import { cn } from "@/lib/utils";
 import type {
 	HoursSetDTO,
@@ -55,8 +60,10 @@ import type {
 	TaskVisibilityPreference,
 } from "@auto-cron/types";
 import { GOOGLE_CALENDAR_COLORS } from "@auto-cron/types";
+import { DndContext, DragOverlay } from "@dnd-kit/core";
+import { arrayMove } from "@dnd-kit/sortable";
 import { ArrowDown, ArrowUp, ChevronDown, Clock3, Plus } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
@@ -112,24 +119,6 @@ type GoogleCalendarListItem = {
 	accessRole?: "owner" | "writer" | "reader" | "freeBusyReader";
 	isExternal: boolean;
 };
-
-const priorityClass: Record<Priority, string> = {
-	low: "bg-emerald-500/15 text-emerald-700 border-emerald-500/25",
-	medium: "bg-sky-500/15 text-sky-700 border-sky-500/25",
-	high: "bg-amber-500/15 text-amber-700 border-amber-500/25",
-	critical: "bg-orange-500/15 text-orange-700 border-orange-500/25",
-	blocker: "bg-rose-500/15 text-rose-700 border-rose-500/25",
-};
-
-const priorityLabels: Record<Priority, string> = {
-	low: "Low",
-	medium: "Medium",
-	high: "High",
-	critical: "Critical",
-	blocker: "Blocker",
-};
-
-const statusOrder: TaskStatus[] = ["backlog", "queued", "scheduled", "in_progress", "done"];
 
 const statusTitles: Record<TaskStatus, string> = {
 	backlog: "Backlog",
@@ -371,7 +360,7 @@ export default function TasksPage() {
 		for (const task of tasks) {
 			grouped[task.status].push(task);
 		}
-		for (const status of statusOrder) {
+		for (const status of statusPipelineOrder) {
 			grouped[status] = [...grouped[status]].sort((a, b) => {
 				if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
 				return a._creationTime - b._creationTime;
@@ -396,6 +385,93 @@ export default function TasksPage() {
 			return next;
 		});
 	};
+
+	const moveTask = useCallback(
+		async (task: TaskDTO, nextStatus: TaskStatus) => {
+			if (task.status === nextStatus) return;
+			const nextSortOrder = tasksByStatus[nextStatus].reduce(
+				(maxSortOrder, current) => Math.max(maxSortOrder, current.sortOrder),
+				-1,
+			);
+			await updateTask({
+				id: asTaskId(task._id),
+				patch: { status: nextStatus, sortOrder: nextSortOrder + 1 },
+			});
+		},
+		[tasksByStatus, updateTask],
+	);
+
+	// ── DnD ──
+
+	const getColumnForItem = useCallback(
+		(itemId: string) => {
+			for (const status of statusPipelineOrder) {
+				if (tasksByStatus[status].some((t) => t._id === itemId)) return status;
+			}
+			return null;
+		},
+		[tasksByStatus],
+	);
+
+	const onDndMoveItem = useCallback(
+		(itemId: string, _fromColumn: string, toColumn: string) => {
+			const task = tasks.find((t) => t._id === itemId);
+			if (task) void moveTask(task, toColumn as TaskStatus);
+		},
+		[tasks, moveTask],
+	);
+
+	const onDndReorder = useCallback(
+		(columnId: string, activeId: string, overId: string) => {
+			const status = columnId as TaskStatus;
+			const current = tasksByStatus[status];
+			const oldIndex = current.findIndex((t) => t._id === activeId);
+			const newIndex = current.findIndex((t) => t._id === overId);
+			if (oldIndex < 0 || newIndex < 0) return;
+			const reordered = arrayMove(current, oldIndex, newIndex);
+			void reorderTasks({
+				items: reordered.map((task, sortOrder) => ({
+					id: asTaskId(task._id),
+					sortOrder,
+					status,
+				})),
+			});
+		},
+		[tasksByStatus, reorderTasks],
+	);
+
+	const dndState = useDndKanban({
+		onMoveItem: onDndMoveItem,
+		onReorderInColumn: onDndReorder,
+		getColumnForItem,
+	});
+
+	const activeTask = useMemo(
+		() => (dndState.activeId ? (tasks.find((t) => t._id === dndState.activeId) ?? null) : null),
+		[dndState.activeId, tasks],
+	);
+
+	// Optimistic display: move items to target status before server confirms
+	const displayTasksByStatus = useMemo(() => {
+		if (dndState.pendingMoves.size === 0) return tasksByStatus;
+		const movedToStatus = new Map<string, TaskDTO[]>();
+		for (const [itemId, target] of dndState.pendingMoves) {
+			const task = tasks.find((t) => t._id === itemId);
+			if (task) {
+				const arr = movedToStatus.get(target) ?? [];
+				arr.push(task);
+				movedToStatus.set(target, arr);
+			}
+		}
+		const result = { ...tasksByStatus };
+		for (const status of statusPipelineOrder) {
+			result[status] = [
+				...tasksByStatus[status].filter((t) => !dndState.pendingMoves.has(t._id)),
+				...(movedToStatus.get(status) ?? []),
+			];
+		}
+		return result;
+	}, [tasksByStatus, dndState.pendingMoves, tasks]);
 
 	const applyBillingAwareError = (error: unknown) => {
 		const payload = getConvexErrorPayload(error);
@@ -554,39 +630,6 @@ export default function TasksPage() {
 		}
 	};
 
-	const moveTask = async (task: TaskDTO, nextStatus: TaskStatus) => {
-		if (task.status === nextStatus) return;
-		const nextSortOrder = tasksByStatus[nextStatus].reduce(
-			(maxSortOrder, current) => Math.max(maxSortOrder, current.sortOrder),
-			-1,
-		);
-		await updateTask({
-			id: asTaskId(task._id),
-			patch: { status: nextStatus, sortOrder: nextSortOrder + 1 },
-		});
-	};
-
-	const reorderWithinStatus = async (status: TaskStatus, id: string, direction: -1 | 1) => {
-		const current = tasksByStatus[status];
-		const index = current.findIndex((item) => item._id === id);
-		if (index < 0) return;
-		const targetIndex = index + direction;
-		if (targetIndex < 0 || targetIndex >= current.length) return;
-
-		const reordered = [...current];
-		const [moved] = reordered.splice(index, 1);
-		if (!moved) return;
-		reordered.splice(targetIndex, 0, moved);
-
-		await reorderTasks({
-			items: reordered.map((task, sortOrder) => ({
-				id: asTaskId(task._id),
-				sortOrder,
-				status,
-			})),
-		});
-	};
-
 	const openEdit = (task: TaskDTO) => {
 		setEditForm({
 			id: task._id,
@@ -672,116 +715,127 @@ export default function TasksPage() {
 						</Button>
 					</Empty>
 				) : (
-					<div className="grid gap-6 lg:flex-1 lg:grid-cols-[0.95fr_1.45fr] lg:min-h-0">
-						{/* Backlog column */}
-						<div className="flex flex-col lg:min-h-0">
-							<div className="mb-4 shrink-0">
-								<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
-									01 / Backlog
-								</p>
-								<div className="mt-2 flex items-center justify-between">
-									<h2 className="text-lg font-semibold">Backlog</h2>
-									<span className="text-xs tabular-nums text-muted-foreground">
-										{tasksByStatus.backlog.length}
-									</span>
+					<DndContext
+						sensors={dndState.sensors}
+						collisionDetection={dndState.collisionDetection}
+						onDragStart={dndState.handleDragStart}
+						onDragEnd={dndState.handleDragEnd}
+						onDragCancel={dndState.handleDragCancel}
+					>
+						<div className="grid gap-6 lg:flex-1 lg:grid-cols-[0.95fr_1.45fr] lg:min-h-0">
+							{/* Backlog column */}
+							<div className="flex flex-col lg:min-h-0">
+								<div className="mb-4 shrink-0">
+									<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+										01 / Backlog
+									</p>
+									<div className="mt-2 flex items-center justify-between">
+										<h2 className="text-lg font-semibold">Backlog</h2>
+										<span className="text-xs tabular-nums text-muted-foreground">
+											{displayTasksByStatus.backlog.length}
+										</span>
+									</div>
+									<div className="mt-2 h-px bg-border/60" />
 								</div>
-								<div className="mt-2 h-px bg-border/60" />
+								<DroppableColumn
+									id="backlog"
+									items={displayTasksByStatus.backlog.map((t) => t._id)}
+									className="space-y-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+								>
+									{displayTasksByStatus.backlog.length === 0 ? (
+										<p className="text-sm text-muted-foreground">No backlog tasks.</p>
+									) : (
+										displayTasksByStatus.backlog.map((task) => (
+											<SortableItem key={task._id} id={task._id}>
+												<TaskCard
+													task={task}
+													onEdit={() => openEdit(task)}
+													onDelete={() => deleteTask({ id: asTaskId(task._id) })}
+													onMove={(nextStatus) => moveTask(task, nextStatus)}
+													isBusy={busy}
+												/>
+											</SortableItem>
+										))
+									)}
+								</DroppableColumn>
 							</div>
-							<div className="space-y-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-								{tasksByStatus.backlog.length === 0 ? (
-									<p className="text-sm text-muted-foreground">No backlog tasks.</p>
-								) : (
-									tasksByStatus.backlog.map((task) => (
-										<TaskCard
-											key={task._id}
-											task={task}
-											onEdit={() => openEdit(task)}
-											onDelete={() => deleteTask({ id: asTaskId(task._id) })}
-											onMove={(nextStatus) => moveTask(task, nextStatus)}
-											onReorder={(direction) =>
-												reorderWithinStatus(task.status, task._id, direction)
-											}
-											isBusy={busy}
-										/>
-									))
-								)}
-							</div>
-						</div>
 
-						{/* Execution lanes column */}
-						<div className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">
-							{rightLaneColumns.map((column, index) => {
-								const isCollapsed = collapsedLanes.has(column.key);
-								const columnTasks = tasksByStatus[column.key];
-								return (
-									<div key={column.key}>
-										<button
-											type="button"
-											onClick={() => toggleLaneCollapsed(column.key)}
-											className="mb-3 w-full text-left"
-										>
-											<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
-												{String(index + 2).padStart(2, "0")} / {column.title}
-											</p>
-											<div className="mt-2 flex items-center justify-between">
-												<h2 className="text-lg font-semibold">{column.title}</h2>
-												<div className="flex items-center gap-2">
-													<span className="text-xs tabular-nums text-muted-foreground">
-														{columnTasks.length}
-													</span>
-													<ChevronDown
-														className={cn(
-															"size-4 text-muted-foreground transition-transform",
-															isCollapsed && "-rotate-90",
-														)}
-													/>
+							{/* Execution lanes column */}
+							<div className="flex flex-col gap-4 lg:min-h-0 lg:overflow-y-auto">
+								{rightLaneColumns.map((column, index) => {
+									const isCollapsed = collapsedLanes.has(column.key);
+									const columnTasks = displayTasksByStatus[column.key];
+									return (
+										<div key={column.key}>
+											<button
+												type="button"
+												onClick={() => toggleLaneCollapsed(column.key)}
+												className="mb-3 w-full text-left"
+											>
+												<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+													{String(index + 2).padStart(2, "0")} / {column.title}
+												</p>
+												<div className="mt-2 flex items-center justify-between">
+													<h2 className="text-lg font-semibold">{column.title}</h2>
+													<div className="flex items-center gap-2">
+														<span className="text-xs tabular-nums text-muted-foreground">
+															{columnTasks.length}
+														</span>
+														<ChevronDown
+															className={cn(
+																"size-4 text-muted-foreground transition-transform",
+																isCollapsed && "-rotate-90",
+															)}
+														/>
+													</div>
 												</div>
-											</div>
-											<div className="mt-2 h-px bg-border/60" />
-										</button>
-										{!isCollapsed && (
-											<div className="space-y-2">
+												<div className="mt-2 h-px bg-border/60" />
+											</button>
+											<DroppableColumn
+												id={column.key}
+												items={columnTasks.map((t) => t._id)}
+												className={cn("space-y-2", isCollapsed && "hidden")}
+											>
 												{columnTasks.length === 0 ? (
 													<p className="text-sm text-muted-foreground">{column.empty}</p>
 												) : (
 													columnTasks.map((task) => (
-														<TaskCard
-															key={task._id}
-															task={task}
-															onEdit={() => openEdit(task)}
-															onDelete={() => deleteTask({ id: asTaskId(task._id) })}
-															onMove={(nextStatus) => moveTask(task, nextStatus)}
-															onReorder={(direction) =>
-																reorderWithinStatus(task.status, task._id, direction)
-															}
-															isBusy={busy}
-														/>
+														<SortableItem key={task._id} id={task._id}>
+															<TaskCard
+																task={task}
+																onEdit={() => openEdit(task)}
+																onDelete={() => deleteTask({ id: asTaskId(task._id) })}
+																onMove={(nextStatus) => moveTask(task, nextStatus)}
+																isBusy={busy}
+															/>
+														</SortableItem>
 													))
 												)}
-											</div>
-										)}
-									</div>
-								);
-							})}
+											</DroppableColumn>
+										</div>
+									);
+								})}
+							</div>
 						</div>
-					</div>
+
+						<DragOverlay dropAnimation={null}>
+							{dndState.activeId && activeTask ? (
+								<DragOverlayCard>
+									<TaskCard
+										task={activeTask}
+										onEdit={() => {}}
+										onDelete={() => {}}
+										onMove={() => {}}
+										isBusy
+									/>
+								</DragOverlayCard>
+							) : null}
+						</DragOverlay>
+					</DndContext>
 				)}
 			</div>
 
-			<TaskDialog
-				open={isCreateOpen}
-				onOpenChange={setIsCreateOpen}
-				title="Create task"
-				compactCreate
-				value={createForm}
-				onChange={setCreateForm}
-				onSubmit={onCreateTask}
-				submitLabel={isCreatingTask ? "Creating..." : "Create task"}
-				busy={busy}
-				calendars={editableGoogleCalendars}
-				hoursSets={hoursSets}
-				defaultTaskSchedulingMode={defaultTaskSchedulingMode}
-			/>
+			<QuickCreateTaskDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} />
 
 			<TaskDialog
 				open={isEditOpen}
@@ -824,120 +878,6 @@ function MetricTile({ label, value }: { label: string; value: string | number })
 			<p className="mt-2 font-[family-name:var(--font-outfit)] text-3xl font-bold tabular-nums">
 				{value}
 			</p>
-		</div>
-	);
-}
-
-function TaskCard({
-	task,
-	onEdit,
-	onDelete,
-	onMove,
-	onReorder,
-	isBusy,
-}: {
-	task: TaskDTO;
-	onEdit: () => void;
-	onDelete: () => void;
-	onMove: (status: TaskStatus) => void;
-	onReorder: (direction: -1 | 1) => void;
-	isBusy: boolean;
-}) {
-	const { hour12 } = useUserPreferences();
-	return (
-		<div
-			className="group rounded-xl border border-border/60 bg-card/60 p-4 transition-colors hover:border-border hover:bg-card/90"
-			style={{
-				borderLeftWidth: 3,
-				borderLeftColor: task.effectiveColor ?? task.color ?? "#f59e0b",
-			}}
-		>
-			<div className="flex items-start justify-between gap-3">
-				<p className="text-sm font-semibold leading-snug">{task.title}</p>
-				<Badge className={priorityClass[task.priority]} variant="outline">
-					{priorityLabels[task.priority]}
-				</Badge>
-			</div>
-
-			{task.description && (
-				<p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{task.description}</p>
-			)}
-
-			<div className="mt-3 flex flex-wrap items-center gap-1.5">
-				<span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">
-					<Clock3 className="size-3" /> {formatDurationCompact(task.estimatedMinutes)}
-				</span>
-				{task.deadline && (
-					<span className="text-[11px] text-muted-foreground">
-						Due {readableDeadline(task.deadline, hour12)}
-					</span>
-				)}
-				{task.splitAllowed && (
-					<span className="text-[11px] text-muted-foreground">
-						Split {formatDurationCompact(task.minChunkMinutes ?? 30)}-
-						{formatDurationCompact(task.maxChunkMinutes ?? 180)}
-					</span>
-				)}
-				{task.location && (
-					<span className="text-[11px] text-muted-foreground">At {task.location}</span>
-				)}
-				{task.visibilityPreference === "private" && (
-					<span className="text-[11px] text-muted-foreground">Private</span>
-				)}
-			</div>
-
-			<div className="mt-3 flex items-center justify-between border-t border-border/30 pt-3">
-				<Select value={task.status} onValueChange={(value) => onMove(value as TaskStatus)}>
-					<SelectTrigger className="h-8 w-auto min-w-[120px]">
-						<SelectValue />
-					</SelectTrigger>
-					<SelectContent>
-						{statusOrder.map((status) => (
-							<SelectItem key={status} value={status}>
-								{statusTitles[status]}
-							</SelectItem>
-						))}
-					</SelectContent>
-				</Select>
-				<div className="flex items-center gap-1">
-					<Button
-						size="icon"
-						variant="ghost"
-						className="size-7"
-						disabled={isBusy}
-						onClick={() => onReorder(-1)}
-					>
-						<ArrowUp className="size-3.5" />
-					</Button>
-					<Button
-						size="icon"
-						variant="ghost"
-						className="size-7"
-						disabled={isBusy}
-						onClick={() => onReorder(1)}
-					>
-						<ArrowDown className="size-3.5" />
-					</Button>
-					<Button
-						size="sm"
-						variant="ghost"
-						disabled={isBusy}
-						onClick={onEdit}
-						className="h-7 px-2 text-xs"
-					>
-						Edit
-					</Button>
-					<Button
-						size="sm"
-						variant="ghost"
-						disabled={isBusy}
-						onClick={onDelete}
-						className="h-7 px-2 text-xs text-destructive"
-					>
-						Delete
-					</Button>
-				</div>
-			</div>
 		</div>
 	);
 }
@@ -1019,7 +959,7 @@ function TaskDialog({
 							<div className="space-y-1.5">
 								<Label
 									htmlFor="quick-task-name"
-									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 								>
 									Task name
 								</Label>
@@ -1034,7 +974,7 @@ function TaskDialog({
 							<div className="space-y-1.5">
 								<Label
 									htmlFor="quick-task-location"
-									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 								>
 									Location (optional)
 								</Label>
@@ -1051,7 +991,7 @@ function TaskDialog({
 
 							<div className="grid gap-4 md:grid-cols-2">
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Time needed
 									</Label>
 									<DurationInput
@@ -1060,7 +1000,7 @@ function TaskDialog({
 									/>
 								</div>
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Due date
 									</Label>
 									<DateTimePicker
@@ -1074,7 +1014,7 @@ function TaskDialog({
 
 							<div className="grid gap-4 md:grid-cols-2">
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Priority
 									</Label>
 									<Select
@@ -1145,7 +1085,7 @@ function TaskDialog({
 									<div className="space-y-1.5">
 										<Label
 											htmlFor="task-name"
-											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 										>
 											Task name
 										</Label>
@@ -1161,7 +1101,7 @@ function TaskDialog({
 									<div className="h-px bg-border/30" />
 
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Category
 										</Label>
 										<CategoryPicker
@@ -1171,7 +1111,7 @@ function TaskDialog({
 									</div>
 									<div className="grid gap-4 md:grid-cols-3">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Color
 											</Label>
 											<div className="flex flex-wrap gap-2 rounded-lg border border-border/40 p-2">
@@ -1193,7 +1133,7 @@ function TaskDialog({
 											</div>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Hours
 											</Label>
 											<Select
@@ -1214,7 +1154,7 @@ function TaskDialog({
 											</Select>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Calendar
 											</Label>
 											<Select
@@ -1242,7 +1182,7 @@ function TaskDialog({
 									<div className="space-y-1.5">
 										<Label
 											htmlFor="task-notes"
-											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 										>
 											Notes
 										</Label>
@@ -1257,7 +1197,7 @@ function TaskDialog({
 									<div className="space-y-1.5">
 										<Label
 											htmlFor="task-location"
-											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 										>
 											Location
 										</Label>
@@ -1296,7 +1236,7 @@ function TaskDialog({
 								<AccordionContent className="space-y-5 pb-5">
 									<div className="grid gap-4 md:grid-cols-2">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Priority
 											</Label>
 											<Select
@@ -1318,7 +1258,7 @@ function TaskDialog({
 											</Select>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Status
 											</Label>
 											<Select
@@ -1331,7 +1271,7 @@ function TaskDialog({
 													<SelectValue placeholder="Status" />
 												</SelectTrigger>
 												<SelectContent>
-													{statusOrder.map((status) => (
+													{statusPipelineOrder.map((status) => (
 														<SelectItem key={status} value={status}>
 															{statusTitles[status]}
 														</SelectItem>
@@ -1342,7 +1282,7 @@ function TaskDialog({
 									</div>
 
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Scheduling mode
 										</Label>
 										<Select
@@ -1377,7 +1317,7 @@ function TaskDialog({
 
 									<div className="grid gap-4 md:grid-cols-[1fr_auto]">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Time needed
 											</Label>
 											<div className="flex items-center gap-2 rounded-lg border border-border/40 px-3 py-2">
@@ -1425,7 +1365,7 @@ function TaskDialog({
 
 									<div className="grid gap-4 md:grid-cols-2">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Min chunk
 											</Label>
 											<DurationInput
@@ -1435,7 +1375,7 @@ function TaskDialog({
 											/>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Max chunk
 											</Label>
 											<DurationInput
@@ -1447,25 +1387,26 @@ function TaskDialog({
 									</div>
 									<div className="grid gap-4 md:grid-cols-2">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Rest time
 											</Label>
 											<DurationInput
 												value={value.restMinutes}
 												onChange={(restMinutes) => onChange({ ...value, restMinutes })}
+												allowZero
 											/>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Travel duration (each side)
 											</Label>
 											<DurationInput
 												value={value.travelMinutes}
 												onChange={(travelMinutes) => onChange({ ...value, travelMinutes })}
-												className={cn(!value.location.trim() && "pointer-events-none opacity-60")}
+												allowZero
 											/>
 											<p className="font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground">
-												Used only when location is set.
+												Adds before/after travel blocks around each scheduled task block.
 											</p>
 										</div>
 									</div>
@@ -1474,7 +1415,7 @@ function TaskDialog({
 
 									<div className="grid gap-4 md:grid-cols-2">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Schedule after
 											</Label>
 											<DateTimePicker
@@ -1485,7 +1426,7 @@ function TaskDialog({
 											/>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Due date
 											</Label>
 											<DateTimePicker

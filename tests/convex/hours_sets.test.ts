@@ -240,6 +240,42 @@ describe("hours sets", () => {
 		expect(updatedDefaults.schedulingStepMinutes).toBe(30);
 	});
 
+	test("scheduling input uses assigned hours set default calendar for tasks", async () => {
+		const testConvex = createTestConvex();
+		const userId = "hours_set_default_calendar_for_tasks";
+		const user = testConvex.withIdentity({ subject: userId });
+		await user.action(api.hours.actions.bootstrapHoursSetsForUser, {});
+
+		const customHoursSetId = await user.mutation(api.hours.mutations.createHoursSet, {
+			input: {
+				name: "Work - Team Calendar",
+				windows: [{ day: 1, startMinute: 9 * 60, endMinute: 17 * 60 }],
+				defaultCalendarId: "team-calendar",
+			},
+		});
+
+		const taskId = await user.action(api.tasks.actions.createTask, {
+			requestId: "hours-calendar-task",
+			input: {
+				title: "Task via hours calendar",
+				estimatedMinutes: 30,
+				status: "queued",
+				hoursSetId: customHoursSetId,
+			},
+		});
+
+		const schedulingInput = await testConvex.query(
+			internal.scheduling.queries.getSchedulingInputForUser,
+			{
+				userId,
+				now: Date.now(),
+			},
+		);
+
+		const task = schedulingInput.tasks.find((entry) => entry.id === taskId);
+		expect(task?.preferredCalendarId).toBe("team-calendar");
+	});
+
 	test("system hours sets are not deletable", async () => {
 		const testConvex = createTestConvex();
 		const user = testConvex.withIdentity({ subject: "hours_system_delete" });
