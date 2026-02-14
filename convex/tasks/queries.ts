@@ -71,6 +71,27 @@ const sanitizeTaskSchedulingMode = (
 	return "fastest";
 };
 
+const resolveDisplayStatus = (
+	task: {
+		status: TaskStatus;
+		scheduledStart?: number;
+		completedAt?: number;
+	},
+	now: number,
+): TaskStatus => {
+	if (task.completedAt !== undefined || task.status === "done") return "done";
+	if (task.status === "backlog") return "backlog";
+	if (task.status === "queued") {
+		if (task.scheduledStart === undefined) return "queued";
+		return now >= task.scheduledStart ? "in_progress" : "scheduled";
+	}
+	if (task.status === "scheduled" || task.status === "in_progress") {
+		if (task.scheduledStart === undefined) return "queued";
+		return now >= task.scheduledStart ? "in_progress" : "scheduled";
+	}
+	return task.status;
+};
+
 export const getTask = query({
 	args: {
 		id: v.id("tasks"),
@@ -84,11 +105,13 @@ export const getTask = query({
 			.query("userSettings")
 			.withIndex("by_userId", (q) => q.eq("userId", userId))
 			.unique();
+		const now = Date.now();
 		const defaultMode = sanitizeTaskSchedulingMode(settings?.defaultTaskSchedulingMode);
 		const category = task.categoryId ? await ctx.db.get(task.categoryId) : null;
 		const effectiveColor = task.color ?? category?.color ?? "#f59e0b";
 		return {
 			...task,
+			status: resolveDisplayStatus(task, now),
 			schedulingMode: task.schedulingMode
 				? sanitizeTaskSchedulingMode(task.schedulingMode)
 				: undefined,
@@ -111,6 +134,7 @@ export const listTasks = query({
 			.query("userSettings")
 			.withIndex("by_userId", (q) => q.eq("userId", userId))
 			.unique();
+		const now = Date.now();
 		const defaultTaskSchedulingMode = sanitizeTaskSchedulingMode(
 			settings?.defaultTaskSchedulingMode,
 		);
@@ -152,6 +176,7 @@ export const listTasks = query({
 				const category = task.categoryId ? (categoryMap.get(task.categoryId) ?? null) : null;
 				return {
 					...task,
+					status: resolveDisplayStatus(task, now),
 					schedulingMode: task.schedulingMode
 						? sanitizeTaskSchedulingMode(task.schedulingMode)
 						: undefined,

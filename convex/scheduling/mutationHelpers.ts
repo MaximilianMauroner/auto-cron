@@ -199,4 +199,10 @@ export const resolveGoogleCalendarId = (calendarId: string | undefined) => calen
 
 export const resolveScheduledTaskStatus = (
 	status: "backlog" | "queued" | "scheduled" | "in_progress" | "done",
-): "backlog" | "scheduled" | "in_progress" | "done" => (status === "queued" ? "scheduled" : status);
+	scheduledStart: number,
+	now: number,
+): "backlog" | "scheduled" | "in_progress" | "done" => {
+	if (status === "done") return "done";
+	if (status === "backlog") return "backlog";
+	return now >= scheduledStart ? "in_progress" : "scheduled";
+};

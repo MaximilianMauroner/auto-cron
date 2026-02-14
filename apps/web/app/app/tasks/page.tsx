@@ -49,7 +49,13 @@ import {
 	formatDurationFromMinutes,
 	parseDurationToMinutes,
 } from "@/lib/duration";
-import { priorityClass, priorityLabels, statusPipelineOrder } from "@/lib/scheduling-constants";
+import {
+	isManuallyAssignableTaskStatus,
+	manuallyAssignableTaskStatuses,
+	priorityClass,
+	priorityLabels,
+	statusPipelineOrder,
+} from "@/lib/scheduling-constants";
 import { cn } from "@/lib/utils";
 import type {
 	HoursSetDTO,
@@ -389,6 +395,7 @@ export default function TasksPage() {
 	const moveTask = useCallback(
 		async (task: TaskDTO, nextStatus: TaskStatus) => {
 			if (task.status === nextStatus) return;
+			if (!isManuallyAssignableTaskStatus(nextStatus)) return;
 			const nextSortOrder = tasksByStatus[nextStatus].reduce(
 				(maxSortOrder, current) => Math.max(maxSortOrder, current.sortOrder),
 				-1,
@@ -444,6 +451,8 @@ export default function TasksPage() {
 		onMoveItem: onDndMoveItem,
 		onReorderInColumn: onDndReorder,
 		getColumnForItem,
+		canMoveItem: (_itemId, _fromColumn, toColumn) =>
+			isManuallyAssignableTaskStatus(toColumn as TaskStatus),
 	});
 
 	const activeTask = useMemo(
@@ -1272,7 +1281,11 @@ function TaskDialog({
 												</SelectTrigger>
 												<SelectContent>
 													{statusPipelineOrder.map((status) => (
-														<SelectItem key={status} value={status}>
+														<SelectItem
+															key={status}
+															value={status}
+															disabled={!manuallyAssignableTaskStatuses.includes(status)}
+														>
 															{statusTitles[status]}
 														</SelectItem>
 													))}

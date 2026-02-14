@@ -23,7 +23,7 @@ import { useMutationWithStatus } from "@/hooks/use-convex-status";
 import type { FunctionReference } from "convex/server";
 import { Check, MessageSquare, Send } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 
 type FeedbackCategory = "bug" | "idea" | "general";
@@ -61,6 +61,13 @@ export function FeedbackButton() {
 			message.trim(),
 		].join("\n");
 	}, [category, message, subject]);
+
+	// Allow opening the feedback dialog from other components via custom event
+	useEffect(() => {
+		const onOpen = () => setIsDialogOpen(true);
+		window.addEventListener("open-feedback-dialog", onOpen);
+		return () => window.removeEventListener("open-feedback-dialog", onOpen);
+	}, []);
 
 	if (!pathname.startsWith("/app")) return null;
 

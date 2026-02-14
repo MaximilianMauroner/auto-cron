@@ -36,6 +36,11 @@ export const statusPipelineOrder: TaskStatus[] = [
 	"done",
 ];
 
+export const manuallyAssignableTaskStatuses: TaskStatus[] = ["backlog", "queued", "done"];
+
+export const isManuallyAssignableTaskStatus = (status: TaskStatus) =>
+	manuallyAssignableTaskStatuses.includes(status);
+
 export const statusLabels: Record<TaskStatus, string> = {
 	backlog: "Backlog",
 	queued: "Up Next",

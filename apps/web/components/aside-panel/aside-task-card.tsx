@@ -14,7 +14,12 @@ import {
 } from "@/components/ui/context-menu";
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
 import { formatDurationCompact } from "@/lib/duration";
-import { priorityClass, priorityLabels, statusLabels } from "@/lib/scheduling-constants";
+import {
+	manuallyAssignableTaskStatuses,
+	priorityClass,
+	priorityLabels,
+	statusLabels,
+} from "@/lib/scheduling-constants";
 import type { CalendarEventDTO, TaskDTO, TaskStatus } from "@auto-cron/types";
 import { Check, ChevronDown, CircleDot, Clock3, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -128,7 +133,7 @@ export function AsideTaskCard({ task, onEditTask }: AsideTaskCardProps) {
 						Change status
 					</ContextMenuSubTrigger>
 					<ContextMenuSubContent className="w-40">
-						{(["backlog", "queued", "in_progress"] as const).map((s) => (
+						{manuallyAssignableTaskStatuses.map((s) => (
 							<ContextMenuItem
 								key={s}
 								onClick={() => handleStatusChange(s)}

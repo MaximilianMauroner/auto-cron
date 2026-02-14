@@ -212,10 +212,7 @@ export function LandingPage({ logoHref = "/" }: LandingPageProps) {
 										{item}
 									</a>
 								))}
-								<a
-									href="/sign-in"
-									className="font-[family-name:var(--font-outfit)] text-[11px] font-medium tracking-[0.04em] text-lp-navy/60 hover:text-lp-navy transition-colors"
-								>
+								<a href="/sign-in" className="lp-nav-link opacity-60 hover:opacity-100">
 									Log in
 								</a>
 								<a href="#cta" className="lp-btn-gold !py-2.5 !px-7 !text-[11px]">

@@ -342,10 +342,16 @@ export const applySchedulingBlocks = internalMutation({
 		for (const task of tasks) {
 			const placements = tasksById.get(String(task._id));
 			if (!placements) {
-				if (task.scheduledStart !== undefined || task.scheduledEnd !== undefined) {
+				const shouldResetStatus = task.status === "scheduled" || task.status === "in_progress";
+				if (
+					task.scheduledStart !== undefined ||
+					task.scheduledEnd !== undefined ||
+					shouldResetStatus
+				) {
 					await ctx.db.patch(task._id, {
 						scheduledStart: undefined,
 						scheduledEnd: undefined,
+						...(shouldResetStatus ? { status: "queued" as const } : {}),
 					});
 				}
 				continue;
@@ -355,7 +361,7 @@ export const applySchedulingBlocks = internalMutation({
 			await ctx.db.patch(task._id, {
 				scheduledStart,
 				scheduledEnd,
-				status: resolveScheduledTaskStatus(task.status),
+				status: resolveScheduledTaskStatus(task.status, scheduledStart, now),
 			});
 		}
 

@@ -207,6 +207,7 @@ const scheduleTasks = (
 			const startSlot = findPlacementSlot({
 				availabilityMask: availability,
 				occupancyMask,
+				beforeDowntimeMask: busyMask,
 				durationSlots,
 				earliestStartSlot,
 				latestEndSlot: enforceDue ? dueEndSlot : undefined,
@@ -232,8 +233,6 @@ const scheduleTasks = (
 			}
 			occupyRange(occupancyMask, startSlot, durationSlots);
 			if (taskDowntimeSlots > 0) {
-				const bufBefore = Math.max(0, startSlot - taskDowntimeSlots);
-				occupyRange(occupancyMask, bufBefore, startSlot - bufBefore);
 				const bufAfterEnd = Math.min(slotCount, startSlot + durationSlots + taskDowntimeSlots);
 				occupyRange(
 					occupancyMask,
@@ -414,6 +413,7 @@ const scheduleHabits = (
 					if (
 						!isRangeSchedulable(
 							availability,
+							busyMask,
 							occupancyMask,
 							candidate.startSlot,
 							finalDuration,
@@ -425,6 +425,7 @@ const scheduleHabits = (
 						if (
 							!isRangeSchedulable(
 								availability,
+								busyMask,
 								occupancyMask,
 								candidate.startSlot,
 								finalDuration,
@@ -437,8 +438,6 @@ const scheduleHabits = (
 					usedStarts.add(candidate.startSlot);
 					occupyRange(occupancyMask, candidate.startSlot, finalDuration);
 					if (downtimeSlots > 0) {
-						const bufBefore = Math.max(0, candidate.startSlot - downtimeSlots);
-						occupyRange(occupancyMask, bufBefore, candidate.startSlot - bufBefore);
 						const bufAfterEnd = Math.min(
 							occupancyMask.length,
 							candidate.startSlot + finalDuration + downtimeSlots,
@@ -516,6 +515,7 @@ const scheduleHabits = (
 
 const isRangeSchedulable = (
 	availabilityMask: boolean[],
+	beforeDowntimeMask: boolean[],
 	occupancyMask: boolean[],
 	startSlot: number,
 	durationSlots: number,
@@ -529,7 +529,7 @@ const isRangeSchedulable = (
 	if (downtimeSlots > 0) {
 		const gapBeforeStart = Math.max(0, startSlot - downtimeSlots);
 		for (let slot = gapBeforeStart; slot < startSlot; slot += 1) {
-			if (occupancyMask[slot]) return false;
+			if (beforeDowntimeMask[slot]) return false;
 		}
 		const gapAfterEnd = Math.min(occupancyMask.length, endSlot + downtimeSlots);
 		for (let slot = endSlot; slot < gapAfterEnd; slot += 1) {

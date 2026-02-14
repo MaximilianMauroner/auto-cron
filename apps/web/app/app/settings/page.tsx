@@ -1,6 +1,7 @@
 "use client";
 
 import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
+import { Button } from "@/components/ui/button";
 import {
 	Command,
 	CommandEmpty,
@@ -29,7 +30,15 @@ import {
 } from "@/hooks/use-convex-status";
 import { cn } from "@/lib/utils";
 import { useCustomer } from "autumn-js/react";
-import { ArrowUpRight, Check, ChevronsUpDown, Globe, Hash, Pencil } from "lucide-react";
+import {
+	ArrowUpRight,
+	Check,
+	ChevronsUpDown,
+	FlaskConical,
+	Globe,
+	Hash,
+	Pencil,
+} from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
@@ -167,12 +176,16 @@ export default function GeneralSettingsPage() {
 				} catch {
 					// Best-effort; the backend still enforces limits
 				}
-				void syncActiveProduct({ productId: "free" });
+				void syncActiveProduct({ productId: "free" }).catch(() => {
+					// Best-effort sync; product gates are still enforced server-side
+				});
 			})();
 		} else if (autumnProductId && autumnProductId !== dbActiveProductId) {
 			// Plan mismatch (or DB value missing) — sync DB to match Autumn
 			hasSynced.current = true;
-			void syncActiveProduct({ productId: autumnProductId });
+			void syncActiveProduct({ productId: autumnProductId }).catch(() => {
+				// Best-effort sync; product gates are still enforced server-side
+			});
 		}
 	}, [autumnProductId, dbActiveProductId, customer, attach, syncActiveProduct]);
 	const schedulingHorizonWeeks = Math.min(
@@ -195,6 +208,11 @@ export default function GeneralSettingsPage() {
 	const { mutate: persistTimeFormatPreference } = useMutationWithStatus(
 		api.hours.mutations.setTimeFormatPreference,
 	);
+	const { mutate: seedDevTasks, isPending: isSeedingDevTasks } = useMutationWithStatus(
+		api.tasks.mutations.seedDevTasks,
+	);
+	const [devSeedMessage, setDevSeedMessage] = useState<string | null>(null);
+	const isDev = process.env.NODE_ENV === "development";
 
 	const flashSaved = useCallback((row: EditingRow) => {
 		setSavedRow(row);
@@ -269,6 +287,16 @@ export default function GeneralSettingsPage() {
 		},
 		[persistTimeFormatPreference, flashSaved],
 	);
+
+	const onSeedFiveTasks = useCallback(async () => {
+		setDevSeedMessage(null);
+		try {
+			const result = await seedDevTasks({ count: 5 });
+			setDevSeedMessage(`Created ${result.created} task${result.created === 1 ? "" : "s"}.`);
+		} catch (error) {
+			setDevSeedMessage(error instanceof Error ? error.message : "Could not seed dev tasks.");
+		}
+	}, [seedDevTasks]);
 
 	const rows: {
 		key: EditingRow & string;
@@ -508,6 +536,36 @@ export default function GeneralSettingsPage() {
 					);
 				})}
 			</div>
+			{isDev ? (
+				<div className="mt-6">
+					<SettingsSectionHeader
+						sectionNumber="99"
+						sectionLabel="Development"
+						title="Quick Seed"
+						description="Create sample tasks instantly for local testing."
+					/>
+					<div className="rounded-xl border border-border/60 px-5 py-4">
+						<div className="flex items-center justify-between gap-3">
+							<div className="flex items-center gap-2 text-sm text-muted-foreground">
+								<FlaskConical className="size-4" />
+								Seed sample task data
+							</div>
+							<Button
+								type="button"
+								variant="outline"
+								size="sm"
+								onClick={() => void onSeedFiveTasks()}
+								disabled={isSeedingDevTasks}
+							>
+								{isSeedingDevTasks ? "Seeding..." : "Seed 5 tasks"}
+							</Button>
+						</div>
+						{devSeedMessage ? (
+							<p className="mt-3 text-xs text-muted-foreground">{devSeedMessage}</p>
+						) : null}
+					</div>
+				</div>
+			) : null}
 		</>
 	);
 }

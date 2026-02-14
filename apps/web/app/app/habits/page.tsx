@@ -46,6 +46,18 @@ import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duratio
 import { cn } from "@/lib/utils";
 import type { HabitDTO, HabitFrequency, HabitPriority, HoursSetDTO } from "@auto-cron/types";
 
+import { DayPillGroup } from "@/components/recurrence/day-pill-group";
+import { RecurrenceSelect } from "@/components/recurrence/recurrence-select";
+import {
+	DAY_OPTIONS,
+	type RecurrenceState,
+	defaultRecurrenceState,
+	describeRecurrence,
+	recurrenceStateToLegacyFrequency,
+	recurrenceStateToRRule,
+	rruleToRecurrenceState,
+} from "@/lib/recurrence";
+
 import { Plus, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
@@ -64,6 +76,7 @@ type HabitEditorState = {
 	priority: HabitPriority;
 	categoryId: string;
 	frequency: HabitFrequency;
+	recurrenceState: RecurrenceState;
 	repeatsPerPeriod: string;
 	minDurationMinutes: string;
 	maxDurationMinutes: string;
@@ -178,15 +191,7 @@ const defenseModeLabels: Record<HabitTimeDefenseMode, string> = {
 	always_busy: "Always busy",
 };
 
-const dayOptions = [
-	{ value: 1, short: "Mo", label: "Monday" },
-	{ value: 2, short: "Tu", label: "Tuesday" },
-	{ value: 3, short: "We", label: "Wednesday" },
-	{ value: 4, short: "Th", label: "Thursday" },
-	{ value: 5, short: "Fr", label: "Friday" },
-	{ value: 6, short: "Sa", label: "Saturday" },
-	{ value: 0, short: "Su", label: "Sunday" },
-] as const;
+const dayOptions = DAY_OPTIONS;
 
 const habitColors = [
 	"#f59e0b",
@@ -438,6 +443,7 @@ const initialForm: HabitEditorState = {
 	priority: "medium",
 	categoryId: "",
 	frequency: "weekly",
+	recurrenceState: defaultRecurrenceState(),
 	repeatsPerPeriod: "1",
 	minDurationMinutes: "30 mins",
 	maxDurationMinutes: "30 mins",
@@ -501,37 +507,8 @@ const addMinutesToTime = (time: string, minutesToAdd: number) => {
 	return `${String(nextHours).padStart(2, "0")}:${String(nextMinutes).padStart(2, "0")}`;
 };
 
-const recurrenceFromFrequency = (frequency: HabitFrequency) => {
-	switch (frequency) {
-		case "daily":
-			return "RRULE:FREQ=DAILY;INTERVAL=1";
-		case "weekly":
-			return "RRULE:FREQ=WEEKLY;INTERVAL=1";
-		case "biweekly":
-			return "RRULE:FREQ=WEEKLY;INTERVAL=2";
-		case "monthly":
-			return "RRULE:FREQ=MONTHLY;INTERVAL=1";
-		default:
-			return "RRULE:FREQ=WEEKLY;INTERVAL=1";
-	}
-};
-
 const frequencyFromRecurrenceRule = (rule: string | undefined): HabitFrequency => {
-	if (!rule) return "weekly";
-	const normalized = rule.trim().replace(/^RRULE:/i, "");
-	const fields = new Map<string, string>();
-	for (const chunk of normalized.split(";")) {
-		const [key, value] = chunk.split("=", 2);
-		if (!key || !value) continue;
-		fields.set(key.toUpperCase(), value.toUpperCase());
-	}
-	const freq = fields.get("FREQ");
-	const interval = Number.parseInt(fields.get("INTERVAL") ?? "1", 10);
-	if (freq === "DAILY") return "daily";
-	if (freq === "WEEKLY" && interval >= 2) return "biweekly";
-	if (freq === "WEEKLY") return "weekly";
-	if (freq === "MONTHLY") return "monthly";
-	return "weekly";
+	return recurrenceStateToLegacyFrequency(rruleToRecurrenceState(rule));
 };
 
 const parseCsv = (value: string) =>
@@ -744,9 +721,9 @@ export default function HabitsPage() {
 			description: form.description.trim() || undefined,
 			priority: form.priority,
 			categoryId: form.categoryId as Id<"taskCategories">,
-			recurrenceRule: recurrenceFromFrequency(form.frequency),
+			recurrenceRule: recurrenceStateToRRule(form.recurrenceState),
 			recoveryPolicy: form.recoveryPolicy,
-			frequency: form.frequency,
+			frequency: recurrenceStateToLegacyFrequency(form.recurrenceState),
 			durationMinutes: maxDurationMinutes,
 			minDurationMinutes,
 			maxDurationMinutes,
@@ -835,6 +812,15 @@ export default function HabitsPage() {
 	};
 
 	const openEdit = (habit: HabitDTO) => {
+		const parsedRecurrence = rruleToRecurrenceState(habit.recurrenceRule, habit.frequency);
+		// If the habit has preferredDays but the RRULE didn't capture them, merge them in
+		if (
+			habit.preferredDays?.length &&
+			parsedRecurrence.byDay.length === 0 &&
+			parsedRecurrence.unit === "week"
+		) {
+			parsedRecurrence.byDay = habit.preferredDays;
+		}
 		setEditForm({
 			id: habit._id,
 			title: habit.title,
@@ -842,6 +828,7 @@ export default function HabitsPage() {
 			priority: habit.priority ?? "medium",
 			categoryId: habit.categoryId ?? "",
 			frequency: habit.frequency ?? frequencyFromRecurrenceRule(habit.recurrenceRule),
+			recurrenceState: parsedRecurrence,
 			repeatsPerPeriod: String(habit.repeatsPerPeriod ?? 1),
 			minDurationMinutes: formatDurationFromMinutes(
 				habit.minDurationMinutes ?? habit.durationMinutes,
@@ -875,6 +862,10 @@ export default function HabitsPage() {
 
 	const applyTemplate = (template: HabitTemplate) => {
 		setErrorMessage(null);
+		const templateRecurrence = rruleToRecurrenceState(undefined, template.frequency);
+		if (template.preferredDays.length > 0 && templateRecurrence.unit === "week") {
+			templateRecurrence.byDay = template.preferredDays;
+		}
 		setCreateForm({
 			...initialForm,
 			title: template.name,
@@ -882,6 +873,7 @@ export default function HabitsPage() {
 			priority: template.priority,
 			categoryId: "",
 			frequency: template.frequency,
+			recurrenceState: templateRecurrence,
 			repeatsPerPeriod: "1",
 			minDurationMinutes: formatDurationFromMinutes(template.minDurationMinutes),
 			maxDurationMinutes: formatDurationFromMinutes(template.maxDurationMinutes),
@@ -1437,23 +1429,20 @@ function HabitDialog({
 									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Repeat
 									</Label>
-									<Select
-										value={value.frequency}
-										onValueChange={(frequency) =>
-											onChange({ ...value, frequency: frequency as HabitFrequency })
+									<RecurrenceSelect
+										value={value.recurrenceState}
+										onChange={(recurrenceState) =>
+											onChange({
+												...value,
+												recurrenceState,
+												frequency: recurrenceStateToLegacyFrequency(recurrenceState),
+												preferredDays:
+													recurrenceState.unit === "week"
+														? recurrenceState.byDay
+														: value.preferredDays,
+											})
 										}
-									>
-										<SelectTrigger>
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{Object.entries(frequencyLabels).map(([frequency, label]) => (
-												<SelectItem key={frequency} value={frequency}>
-													{label}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
+									/>
 								</div>
 								<div className="space-y-1.5">
 									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
@@ -1485,26 +1474,10 @@ function HabitDialog({
 								<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 									Preferred days
 								</Label>
-								<div className="flex flex-wrap gap-1.5">
-									{dayOptions.map((day) => {
-										const selected = value.preferredDays.includes(day.value);
-										return (
-											<Button
-												key={day.value}
-												type="button"
-												size="sm"
-												variant={selected ? "default" : "outline"}
-												className={cn(
-													"h-9 min-w-9 rounded-full px-3 font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium",
-													selected && "bg-accent text-accent-foreground hover:bg-accent/90",
-												)}
-												onClick={() => toggleDay(day.value)}
-											>
-												{day.short}
-											</Button>
-										);
-									})}
-								</div>
+								<DayPillGroup
+									selectedDays={value.preferredDays}
+									onChange={(days) => onChange({ ...value, preferredDays: days })}
+								/>
 							</div>
 
 							<div className="h-px bg-border/30" />
@@ -1748,23 +1721,20 @@ function HabitDialog({
 											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Repeat
 											</Label>
-											<Select
-												value={value.frequency}
-												onValueChange={(frequency) =>
-													onChange({ ...value, frequency: frequency as HabitFrequency })
+											<RecurrenceSelect
+												value={value.recurrenceState}
+												onChange={(recurrenceState) =>
+													onChange({
+														...value,
+														recurrenceState,
+														frequency: recurrenceStateToLegacyFrequency(recurrenceState),
+														preferredDays:
+															recurrenceState.unit === "week"
+																? recurrenceState.byDay
+																: value.preferredDays,
+													})
 												}
-											>
-												<SelectTrigger>
-													<SelectValue />
-												</SelectTrigger>
-												<SelectContent>
-													{Object.entries(frequencyLabels).map(([frequency, label]) => (
-														<SelectItem key={frequency} value={frequency}>
-															{label}
-														</SelectItem>
-													))}
-												</SelectContent>
-											</Select>
+											/>
 										</div>
 										<div className="space-y-1.5">
 											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
@@ -1790,26 +1760,10 @@ function HabitDialog({
 										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Ideal days
 										</Label>
-										<div className="flex flex-wrap gap-1.5">
-											{dayOptions.map((day) => {
-												const selected = value.preferredDays.includes(day.value);
-												return (
-													<Button
-														key={day.value}
-														type="button"
-														size="sm"
-														variant={selected ? "default" : "outline"}
-														className={cn(
-															"h-9 min-w-9 rounded-full px-3 font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium",
-															selected && "bg-accent text-accent-foreground hover:bg-accent/90",
-														)}
-														onClick={() => toggleDay(day.value)}
-													>
-														{day.short}
-													</Button>
-												);
-											})}
-										</div>
+										<DayPillGroup
+											selectedDays={value.preferredDays}
+											onChange={(days) => onChange({ ...value, preferredDays: days })}
+										/>
 									</div>
 
 									<div className="h-px bg-border/30" />

@@ -974,8 +974,8 @@ const upsertSingleSyncedEvent = async ({
 	});
 
 	if (primary.source === "task" && primary.sourceId && !localIsNewer) {
-		const startChanged = primary.start !== event.start;
-		const endChanged = primary.end !== event.end;
+		const startChanged = normalizeToMinute(primary.start) !== normalizeToMinute(event.start);
+		const endChanged = normalizeToMinute(primary.end) !== normalizeToMinute(event.end);
 		if ((startChanged || endChanged) && !primary.sourceId.includes(":travel:")) {
 			log?.("[sync:upsert] pinning task event", {
 				primaryId: String(primary._id),

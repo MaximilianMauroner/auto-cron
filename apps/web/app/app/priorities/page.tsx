@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
 import { useDndKanban } from "@/hooks/use-dnd-kanban";
 import {
+	isManuallyAssignableTaskStatus,
 	priorityClass,
 	priorityLabels,
 	priorityOrder,
@@ -326,6 +327,7 @@ function StatusKanbanView({ tasks, setEditingTaskId }: StatusKanbanViewProps) {
 	const onMoveItem = useCallback(
 		(itemId: string, _fromColumn: string, toColumn: string) => {
 			const targetStatus = toColumn as TaskStatus;
+			if (!isManuallyAssignableTaskStatus(targetStatus)) return;
 			const targetColumn = tasksByStatus[targetStatus];
 			const nextSortOrder = targetColumn.reduce(
 				(maxSortOrder, current) => Math.max(maxSortOrder, current.sortOrder),
@@ -342,6 +344,8 @@ function StatusKanbanView({ tasks, setEditingTaskId }: StatusKanbanViewProps) {
 	const dndState = useDndKanban({
 		onMoveItem,
 		getColumnForItem,
+		canMoveItem: (_itemId, _fromColumn, toColumn) =>
+			isManuallyAssignableTaskStatus(toColumn as TaskStatus),
 	});
 
 	const activeTask = useMemo(

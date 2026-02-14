@@ -29,6 +29,9 @@ const taskStatusValidator = v.union(
 	v.literal("done"),
 );
 
+const isManualTaskStatus = (status: TaskStatus) =>
+	status === "backlog" || status === "queued" || status === "done";
+
 const taskPriorityValidator = v.union(
 	v.literal("low"),
 	v.literal("medium"),
@@ -233,6 +236,13 @@ export const updateTask = mutation({
 		}
 
 		if (args.patch.status !== undefined && args.patch.completedAt === undefined) {
+			if (!isManualTaskStatus(args.patch.status) && args.patch.status !== task.status) {
+				throw new ConvexError({
+					code: "INVALID_STATUS_TRANSITION",
+					message:
+						"Tasks can only be moved manually to Backlog, Up Next, or Done. Scheduled and In Progress are automatic.",
+				});
+			}
 			if (args.patch.status === "done") {
 				nextPatch.completedAt = Date.now();
 			}
@@ -304,6 +314,66 @@ export const reorderTasks = mutation({
 			triggeredBy: "task_change",
 		});
 		return null;
+	}),
+});
+
+export const seedDevTasks = mutation({
+	args: {
+		count: v.optional(v.number()),
+	},
+	returns: v.object({
+		created: v.number(),
+	}),
+	handler: withMutationAuth(async (ctx, args: { count?: number }): Promise<{ created: number }> => {
+		const seedCount = Math.max(1, Math.min(20, Math.floor(args.count ?? 5)));
+		const hoursSetId = await resolveHoursSetForTask(ctx, ctx.userId, undefined);
+		const { personalId } = await ensureDefaultCategories(ctx, ctx.userId);
+
+		let sortOrder = await resolveNextSortOrder(ctx, ctx.userId, "backlog");
+		const now = Date.now();
+		let created = 0;
+
+		for (let index = 0; index < seedCount; index += 1) {
+			const taskNumber = index + 1;
+			await ctx.db.insert("tasks", {
+				userId: ctx.userId,
+				title: `Seed task ${taskNumber} · ${new Date(now).toISOString().slice(11, 19)}`,
+				description: "Generated from dev settings quick seed.",
+				priority: "medium",
+				status: "backlog",
+				estimatedMinutes: 30 + (index % 4) * 15,
+				deadline: undefined,
+				scheduleAfter: undefined,
+				scheduledStart: undefined,
+				scheduledEnd: undefined,
+				completedAt: undefined,
+				sortOrder,
+				splitAllowed: false,
+				minChunkMinutes: undefined,
+				maxChunkMinutes: undefined,
+				restMinutes: undefined,
+				travelMinutes: undefined,
+				location: undefined,
+				sendToUpNext: false,
+				hoursSetId,
+				schedulingMode: undefined,
+				visibilityPreference: "default",
+				preferredCalendarId: "primary",
+				color: undefined,
+				categoryId: personalId,
+			});
+			sortOrder += 1;
+			created += 1;
+		}
+
+		if (created > 0) {
+			await enqueueSchedulingRunFromMutation(ctx, {
+				userId: ctx.userId,
+				triggeredBy: "task_change",
+			});
+		}
+
+		return { created };
 	}),
 });
 

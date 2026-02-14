@@ -18,6 +18,7 @@ type UseDndKanbanOptions = {
 	onMoveItem: (itemId: string, fromColumn: string, toColumn: string) => void;
 	onReorderInColumn?: (columnId: string, activeId: string, overId: string) => void;
 	getColumnForItem: (itemId: string) => string | null;
+	canMoveItem?: (itemId: string, fromColumn: string, toColumn: string) => boolean;
 };
 
 /** pointerWithin first (reliable for kanban), closestCorners fallback */
@@ -31,6 +32,7 @@ export function useDndKanban({
 	onMoveItem,
 	onReorderInColumn,
 	getColumnForItem,
+	canMoveItem,
 }: UseDndKanbanOptions) {
 	const [activeId, setActiveId] = useState<string | null>(null);
 	const [pendingMoves, setPendingMoves] = useState<Map<string, string>>(new Map());
@@ -78,6 +80,9 @@ export function useDndKanban({
 			const toColumn = overColumn ?? overId;
 
 			if (fromColumn !== toColumn) {
+				if (canMoveItem && !canMoveItem(activeItemId, fromColumn, toColumn)) {
+					return;
+				}
 				// Track optimistic move before firing mutation
 				setPendingMoves((prev) => {
 					const next = new Map(prev);
@@ -89,7 +94,7 @@ export function useDndKanban({
 				onReorderInColumn(fromColumn, activeItemId, overId);
 			}
 		},
-		[onMoveItem, onReorderInColumn, getColumnForItem],
+		[onMoveItem, onReorderInColumn, getColumnForItem, canMoveItem],
 	);
 
 	const handleDragCancel = useCallback(() => {

@@ -9,6 +9,7 @@ import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/
 import { useDndKanban } from "@/hooks/use-dnd-kanban";
 import { formatDurationCompact } from "@/lib/duration";
 import {
+	isManuallyAssignableTaskStatus,
 	priorityClass,
 	priorityLabels,
 	statusClass,
@@ -61,6 +62,7 @@ export function TasksTabContent() {
 
 	const onMoveItem = useCallback(
 		(itemId: string, _fromColumn: string, toColumn: string) => {
+			if (!isManuallyAssignableTaskStatus(toColumn as TaskStatus)) return;
 			void updateTask({
 				id: itemId as Id<"tasks">,
 				patch: { status: toColumn as TaskStatus },
@@ -72,6 +74,8 @@ export function TasksTabContent() {
 	const dndState = useDndKanban({
 		onMoveItem,
 		getColumnForItem,
+		canMoveItem: (_itemId, _fromColumn, toColumn) =>
+			isManuallyAssignableTaskStatus(toColumn as TaskStatus),
 	});
 
 	const activeTask = useMemo(
@@ -162,14 +166,7 @@ export function TasksTabContent() {
 											</DroppableColumn>
 										</CollapsibleContent>
 									</Collapsible>
-								) : (
-									<DroppableColumn
-										key={group.status}
-										id={group.status}
-										items={[]}
-										className="min-h-[2rem]"
-									/>
-								),
+								) : null,
 							)}
 						</div>
 

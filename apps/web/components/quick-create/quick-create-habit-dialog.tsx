@@ -2,6 +2,8 @@
 
 import PaywallDialog from "@/components/autumn/paywall-dialog";
 import { CategoryPicker } from "@/components/category-picker";
+import { DayPillGroup } from "@/components/recurrence/day-pill-group";
+import { RecurrenceSelect } from "@/components/recurrence/recurrence-select";
 import { Button } from "@/components/ui/button";
 import { DurationInput } from "@/components/ui/duration-input";
 import { Input } from "@/components/ui/input";
@@ -17,39 +19,23 @@ import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/com
 import { useActionWithStatus, useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import { getConvexErrorPayload } from "@/lib/convex-errors";
 import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duration";
-import type { HabitFrequency, HabitPriority } from "@auto-cron/types";
+import {
+	type RecurrenceState,
+	defaultRecurrenceState,
+	recurrenceStateToLegacyFrequency,
+	recurrenceStateToRRule,
+} from "@/lib/recurrence";
+import type { HabitPriority } from "@auto-cron/types";
 import { ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-
-const frequencyLabels: Record<HabitFrequency, string> = {
-	daily: "Daily",
-	weekly: "Weekly",
-	biweekly: "Biweekly",
-	monthly: "Monthly",
-};
 
 const priorityLabels: Record<HabitPriority, string> = {
 	low: "Low",
 	medium: "Medium",
 	high: "High",
 	critical: "Critical",
-};
-
-const recurrenceFromFrequency = (frequency: HabitFrequency) => {
-	switch (frequency) {
-		case "daily":
-			return "RRULE:FREQ=DAILY;INTERVAL=1";
-		case "weekly":
-			return "RRULE:FREQ=WEEKLY;INTERVAL=1";
-		case "biweekly":
-			return "RRULE:FREQ=WEEKLY;INTERVAL=2";
-		case "monthly":
-			return "RRULE:FREQ=MONTHLY;INTERVAL=1";
-		default:
-			return "RRULE:FREQ=WEEKLY;INTERVAL=1";
-	}
 };
 
 const createRequestId = () => {
@@ -68,8 +54,9 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 	const [title, setTitle] = useState("");
 	const [durationMinutes, setDurationMinutes] = useState("");
 	const [categoryId, setCategoryId] = useState<string>("");
-	const [frequency, setFrequency] = useState<HabitFrequency>("weekly");
+	const [recurrence, setRecurrence] = useState<RecurrenceState>(defaultRecurrenceState);
 	const [priority, setPriority] = useState<HabitPriority>("medium");
+	const [idealTime, setIdealTime] = useState("");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [paywallOpen, setPaywallOpen] = useState(false);
 
@@ -84,8 +71,9 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 		setTitle("");
 		setDurationMinutes(formatDurationFromMinutes(30));
 		setCategoryId(defaultCategoryQuery.data?._id ?? "");
-		setFrequency("weekly");
+		setRecurrence(defaultRecurrenceState());
 		setPriority("medium");
+		setIdealTime("");
 		setErrorMessage(null);
 	}, [open, defaultCategoryQuery.data]);
 
@@ -100,6 +88,12 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 			return;
 		}
 		setErrorMessage(null);
+
+		const frequency = recurrenceStateToLegacyFrequency(recurrence);
+		const recurrenceRule = recurrenceStateToRRule(recurrence);
+		const preferredDays =
+			recurrence.unit === "week" && recurrence.byDay.length > 0 ? recurrence.byDay : undefined;
+
 		try {
 			await createHabit({
 				requestId: createRequestId(),
@@ -107,12 +101,14 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 					title: title.trim(),
 					categoryId: categoryId as Id<"taskCategories">,
 					frequency,
-					recurrenceRule: recurrenceFromFrequency(frequency),
+					recurrenceRule,
 					priority,
 					durationMinutes: parsed,
 					minDurationMinutes: parsed,
 					maxDurationMinutes: parsed,
 					repeatsPerPeriod: 1,
+					preferredDays,
+					idealTime: idealTime || undefined,
 					isActive: true,
 				},
 			});
@@ -127,6 +123,8 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 			setErrorMessage(payload?.message ?? "Could not create habit.");
 		}
 	};
+
+	const showDayPills = recurrence.unit === "week";
 
 	return (
 		<>
@@ -188,28 +186,42 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 									/>
 								</div>
 								<div className="space-y-1.5">
-									<Label
-										htmlFor="qc-habit-frequency"
-										className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
-									>
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Frequency
 									</Label>
-									<Select
-										value={frequency}
-										onValueChange={(v) => setFrequency(v as HabitFrequency)}
-									>
-										<SelectTrigger id="qc-habit-frequency">
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{(["daily", "weekly", "biweekly", "monthly"] as const).map((f) => (
-												<SelectItem key={f} value={f}>
-													{frequencyLabels[f]}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
+									<RecurrenceSelect value={recurrence} onChange={setRecurrence} />
 								</div>
+							</div>
+
+							{/* ── Day pills (shown for weekly/biweekly) ── */}
+							{showDayPills && (
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
+										Preferred days
+									</Label>
+									<DayPillGroup
+										selectedDays={recurrence.byDay}
+										onChange={(byDay) => setRecurrence((r) => ({ ...r, byDay }))}
+										size="sm"
+									/>
+								</div>
+							)}
+
+							{/* ── Ideal time (optional) ── */}
+							<div className="space-y-1.5">
+								<Label
+									htmlFor="qc-habit-time"
+									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
+								>
+									Ideal time (optional)
+								</Label>
+								<Input
+									id="qc-habit-time"
+									type="time"
+									value={idealTime}
+									onChange={(e) => setIdealTime(e.target.value)}
+									className="w-fit font-[family-name:var(--font-outfit)] text-[0.82rem]"
+								/>
 							</div>
 						</div>
 
@@ -275,7 +287,7 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 							disabled={isPending}
 							className="gap-2 bg-accent font-[family-name:var(--font-outfit)] text-[0.76rem] font-bold uppercase tracking-[0.1em] text-accent-foreground shadow-[0_2px_12px_-3px_rgba(252,163,17,0.3)] transition-all hover:bg-accent/90 hover:shadow-[0_4px_16px_-3px_rgba(252,163,17,0.4)]"
 						>
-							{isPending ? "Creating…" : "Create"}
+							{isPending ? "Creating\u2026" : "Create"}
 							<ArrowRight className="size-3.5" />
 						</Button>
 					</SheetFooter>

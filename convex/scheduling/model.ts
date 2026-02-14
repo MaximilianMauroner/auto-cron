@@ -12,6 +12,7 @@ const range = (start: number, end: number) => {
 export const findPlacementSlot = ({
 	availabilityMask,
 	occupancyMask,
+	beforeDowntimeMask,
 	durationSlots,
 	earliestStartSlot,
 	latestEndSlot,
@@ -37,7 +38,13 @@ export const findPlacementSlot = ({
 	for (const startSlot of candidateSlots) {
 		if (
 			isRangeAvailable(availabilityMask, occupancyMask, startSlot, durationSlots) &&
-			hasDowntimeClearance(occupancyMask, startSlot, durationSlots, downtimeSlots)
+			hasDowntimeClearance(
+				beforeDowntimeMask ?? occupancyMask,
+				occupancyMask,
+				startSlot,
+				durationSlots,
+				downtimeSlots,
+			)
 		) {
 			return startSlot;
 		}
@@ -46,17 +53,18 @@ export const findPlacementSlot = ({
 };
 
 const hasDowntimeClearance = (
+	beforeDowntimeMask: boolean[],
 	occupancyMask: boolean[],
 	startSlot: number,
 	durationSlots: number,
 	downtimeSlots: number,
 ) => {
 	if (downtimeSlots <= 0) return true;
-	const endSlot = startSlot + durationSlots;
 	const gapBeforeStart = Math.max(0, startSlot - downtimeSlots);
 	for (let slot = gapBeforeStart; slot < startSlot; slot += 1) {
-		if (occupancyMask[slot]) return false;
+		if (beforeDowntimeMask[slot]) return false;
 	}
+	const endSlot = startSlot + durationSlots;
 	const gapAfterEnd = Math.min(occupancyMask.length, endSlot + downtimeSlots);
 	for (let slot = endSlot; slot < gapAfterEnd; slot += 1) {
 		if (occupancyMask[slot]) return false;

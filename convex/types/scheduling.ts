@@ -165,6 +165,7 @@ export type HabitPeriod = {
 export type PlacementSearchArgs = {
 	availabilityMask: boolean[];
 	occupancyMask: boolean[];
+	beforeDowntimeMask?: boolean[];
 	durationSlots: number;
 	earliestStartSlot: number;
 	latestEndSlot?: number;

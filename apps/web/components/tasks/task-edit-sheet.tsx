@@ -28,7 +28,11 @@ import {
 	formatDurationFromMinutes,
 	parseDurationToMinutes,
 } from "@/lib/duration";
-import { priorityLabels, statusLabels } from "@/lib/scheduling-constants";
+import {
+	manuallyAssignableTaskStatuses,
+	priorityLabels,
+	statusLabels,
+} from "@/lib/scheduling-constants";
 import type { CalendarEventDTO, Priority, TaskStatus } from "@auto-cron/types";
 import { MoreVertical, Pin, PinOff, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -133,7 +137,7 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 					title: title.trim(),
 					description: description.trim() || null,
 					priority,
-					status,
+					...(manuallyAssignableTaskStatuses.includes(status) ? { status } : {}),
 					estimatedMinutes: parsed,
 					deadline: toTimestamp(deadline) ?? null,
 					scheduleAfter: toTimestamp(scheduleAfter) ?? null,
@@ -241,7 +245,11 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 											<SelectContent>
 												{(["backlog", "queued", "scheduled", "in_progress", "done"] as const).map(
 													(s) => (
-														<SelectItem key={s} value={s}>
+														<SelectItem
+															key={s}
+															value={s}
+															disabled={!manuallyAssignableTaskStatuses.includes(s)}
+														>
 															{statusLabels[s]}
 														</SelectItem>
 													),

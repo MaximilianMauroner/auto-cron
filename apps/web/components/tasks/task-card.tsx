@@ -11,7 +11,12 @@ import {
 } from "@/components/ui/select";
 import { useUserPreferences } from "@/components/user-preferences-context";
 import { formatDurationCompact } from "@/lib/duration";
-import { priorityClass, priorityLabels, statusPipelineOrder } from "@/lib/scheduling-constants";
+import {
+	manuallyAssignableTaskStatuses,
+	priorityClass,
+	priorityLabels,
+	statusPipelineOrder,
+} from "@/lib/scheduling-constants";
 import type { TaskDTO, TaskStatus } from "@auto-cron/types";
 import { Clock3, GripVertical } from "lucide-react";
 import { memo } from "react";
@@ -119,7 +124,11 @@ export const TaskCard = memo(function TaskCard({
 					</SelectTrigger>
 					<SelectContent>
 						{statusPipelineOrder.map((status) => (
-							<SelectItem key={status} value={status}>
+							<SelectItem
+								key={status}
+								value={status}
+								disabled={!manuallyAssignableTaskStatuses.includes(status)}
+							>
 								{statusTitles[status]}
 							</SelectItem>
 						))}

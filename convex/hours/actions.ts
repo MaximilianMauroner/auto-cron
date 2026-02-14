@@ -70,12 +70,7 @@ export const syncActiveProduct = action({
 	},
 	returns: v.string(),
 	handler: withActionAuth(async (ctx, args: { productId: string }): Promise<string> => {
-		if (!isValidProductId(args.productId)) {
-			throw new ConvexError({
-				code: "INVALID_PRODUCT",
-				message: "Unknown product ID.",
-			});
-		}
+		const requestedProductId = isValidProductId(args.productId) ? args.productId : undefined;
 
 		// Verify the product against Autumn's actual subscription data
 		const response = await fetch(
@@ -110,16 +105,14 @@ export const syncActiveProduct = action({
 		const resolvedProductId =
 			verifiedProductId && isValidProductId(verifiedProductId) ? verifiedProductId : "free";
 
-		if (args.productId !== resolvedProductId) {
-			throw new ConvexError({
-				code: "PRODUCT_MISMATCH",
-				message: "Requested product does not match your active subscription.",
-			});
-		}
+		// Always trust provider-verified state over client input to avoid mismatch races.
+		// The caller-provided product is treated as a hint only.
+		const productIdToPersist =
+			requestedProductId === resolvedProductId ? requestedProductId : resolvedProductId;
 
 		return ctx.runMutation(internal.hours.mutations.internalUpdateActiveProduct, {
 			userId: ctx.userId,
-			productId: resolvedProductId,
+			productId: productIdToPersist,
 		});
 	}),
 });

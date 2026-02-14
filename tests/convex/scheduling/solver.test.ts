@@ -387,6 +387,27 @@ describe("scheduling solver", () => {
 		expect(secondBlock.start - firstBlock.end).toBeGreaterThanOrEqual(30 * 60 * 1000);
 	});
 
+	test("enforces configured downtime after existing busy intervals", () => {
+		const input = baseInput();
+		input.downtimeMinutes = 15;
+		input.busy.push({
+			start: input.now,
+			end: input.now + HOUR_MS,
+		});
+		input.tasks.push({
+			...taskDefaults(input),
+			id: asTaskId("task-after-busy-gap"),
+			estimatedMinutes: 60,
+		});
+
+		const solved = solveSchedule(input);
+		const start = firstStartForTask(solved, "task-after-busy-gap");
+		expect(start).toBeDefined();
+		expect(ensureDefined(start, "taskAfterBusyGapStart")).toBeGreaterThanOrEqual(
+			input.now + HOUR_MS + 15 * 60 * 1000,
+		);
+	});
+
 	test("tasks without due dates are never reported as late", () => {
 		const input = baseInput();
 		input.busy.push({
@@ -902,7 +923,7 @@ describe("scheduling solver", () => {
 
 		const travelEnd = ensureDefined(travelTaskBlock, "travelBufferedTask").end;
 		const noTravelStart = ensureDefined(noTravelTaskBlock, "noTravelTask").start;
-		expect(noTravelStart - travelEnd).toBe(45 * 60 * 1000);
+		expect(noTravelStart - travelEnd).toBe(30 * 60 * 1000);
 	});
 
 	test("does not emit duplicate travel blocks with the same sourceId", () => {

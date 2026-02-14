@@ -1539,6 +1539,27 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		);
 	}, [hiddenCalendarIds]);
 
+	// Listen for date navigation from the sidebar mini date picker
+	useEffect(() => {
+		const onNavigateToDate = (rawEvent: Event) => {
+			const { date } = (rawEvent as CustomEvent<{ date?: string }>).detail ?? {};
+			if (date) {
+				setDateValue(date);
+			}
+		};
+		window.addEventListener("calendar:navigate-to-date", onNavigateToDate);
+		return () => window.removeEventListener("calendar:navigate-to-date", onNavigateToDate);
+	}, []);
+
+	// Broadcast selected date changes so the sidebar date picker stays in sync
+	useEffect(() => {
+		window.dispatchEvent(
+			new CustomEvent("calendar:date-changed", {
+				detail: { date: selectedDate },
+			}),
+		);
+	}, [selectedDate]);
+
 	useEffect(() => {
 		const onResizeStart = (rawEvent: Event) => {
 			const customEvent = rawEvent as CustomEvent<{
@@ -3736,7 +3757,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 									value={source}
 									variant="outline"
 									size="sm"
-									className="h-7 rounded-md border border-border bg-secondary px-2 font-[family-name:var(--font-cutive)] text-[0.56rem] uppercase tracking-[0.12em] text-muted-foreground data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:border-primary/20 gap-1.5"
+									className="h-7 rounded-md border border-border/40 bg-secondary/30 px-2 font-[family-name:var(--font-cutive)] text-[0.56rem] uppercase tracking-[0.12em] text-muted-foreground/45 data-[state=on]:bg-accent/15 data-[state=on]:text-foreground data-[state=on]:border-accent/40 gap-1.5 transition-all"
 								>
 									<span className={`size-2 rounded-full ${sourceColorDot[source]}`} />
 									{source}

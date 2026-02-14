@@ -1,6 +1,8 @@
 "use client";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
 	DropdownMenu,
 	DropdownMenuContent,
@@ -17,6 +19,7 @@ import {
 	SidebarGroup,
 	SidebarGroupContent,
 	SidebarGroupLabel,
+	SidebarHeader,
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
@@ -24,16 +27,18 @@ import {
 } from "@/components/ui/sidebar";
 import { useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
+import { useCustomer } from "autumn-js/react";
 import { useConvexAuth } from "convex/react";
 import {
 	Bell,
 	Calendar,
 	CheckSquare,
+	ChevronRight,
 	ChevronsUpDown,
-	Clock3,
 	CreditCard,
 	Layers,
 	LogOut,
+	MessageSquare,
 	Moon,
 	Plus,
 	Repeat,
@@ -41,8 +46,10 @@ import {
 	Settings,
 	Sun,
 	UserCircle,
+	Zap,
 } from "lucide-react";
 import { useTheme } from "next-themes";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -53,6 +60,7 @@ const navItems = [
 	{ title: "Tasks", href: "/app/tasks", icon: CheckSquare },
 	{ title: "Habits", href: "/app/habits", icon: Repeat },
 	{ title: "Priorities", href: "/app/priorities", icon: Layers },
+	{ title: "Settings", href: "/app/settings", icon: Settings },
 ];
 
 type GoogleCalendarListItem = {
@@ -94,6 +102,13 @@ const resolveCalendarColor = (value?: string) => {
 	return palette[value] ?? "#5b8def";
 };
 
+const formatDateForEvent = (date: Date): string => {
+	const y = date.getFullYear();
+	const m = String(date.getMonth() + 1).padStart(2, "0");
+	const d = String(date.getDate()).padStart(2, "0");
+	return `${y}-${m}-${d}`;
+};
+
 export function AppSidebar() {
 	const pathname = usePathname();
 	const isCalendarRoute = pathname.startsWith("/app/calendar");
@@ -107,6 +122,19 @@ export function AppSidebar() {
 		setMounted(true);
 	}, []);
 
+	// Autumn billing data
+	const { customer } = useCustomer({ errorOnNotFound: false });
+	const primaryProduct = useMemo(() => {
+		const products = customer?.products ?? [];
+		return products
+			.filter((p: { status: string }) => ["active", "trialing", "past_due"].includes(p.status))
+			.find((p: { is_add_on: boolean }) => !p.is_add_on);
+	}, [customer]);
+	const planName = (primaryProduct as { name?: string } | undefined)?.name ?? "Free";
+	const isFreePlan =
+		!primaryProduct || (primaryProduct as { id?: string } | undefined)?.id === "free";
+
+	// Google calendars (calendar route only)
 	const googleCalendarsQuery = useAuthenticatedQueryWithStatus(
 		api.calendar.queries.listGoogleCalendars,
 		isCalendarRoute ? {} : "skip",
@@ -161,6 +189,34 @@ export function AppSidebar() {
 		);
 	}, []);
 
+	// Mini date picker state (synced with calendar page via custom events)
+	const [sidebarSelectedDate, setSidebarSelectedDate] = useState<Date>(new Date());
+
+	useEffect(() => {
+		const onDateChanged = (rawEvent: Event) => {
+			const { date } = (rawEvent as CustomEvent<{ date?: string }>).detail ?? {};
+			if (date) {
+				const parsed = new Date(`${date}T12:00:00`);
+				if (!Number.isNaN(parsed.getTime())) {
+					setSidebarSelectedDate(parsed);
+				}
+			}
+		};
+		window.addEventListener("calendar:date-changed", onDateChanged);
+		return () => window.removeEventListener("calendar:date-changed", onDateChanged);
+	}, []);
+
+	const handleDateSelect = useCallback((date: Date | undefined) => {
+		if (!date) return;
+		setSidebarSelectedDate(date);
+		window.dispatchEvent(
+			new CustomEvent("calendar:navigate-to-date", {
+				detail: { date: formatDateForEvent(date) },
+			}),
+		);
+	}, []);
+
+	// User info
 	const displayName = [user?.firstName, user?.lastName].filter(Boolean).join(" ") || "User";
 	const initials =
 		[user?.firstName?.[0], user?.lastName?.[0]].filter(Boolean).join("").toUpperCase() || "U";
@@ -176,9 +232,45 @@ export function AppSidebar() {
 		}
 	};
 
+	const openFeedbackDialog = useCallback(() => {
+		window.dispatchEvent(new CustomEvent("open-feedback-dialog"));
+	}, []);
+
+	// Platform detection for keyboard shortcut display
+	const isMac =
+		mounted && typeof navigator !== "undefined" && /Mac|iPod|iPhone|iPad/.test(navigator.userAgent);
+
 	return (
 		<Sidebar collapsible="icon">
+			{/* Header with branding */}
+			<SidebarHeader className="border-b border-sidebar-border/40">
+				<SidebarMenu>
+					<SidebarMenuItem>
+						<SidebarMenuButton size="lg" asChild tooltip="Auto Cron">
+							<Link href="/app/calendar" className="flex items-center gap-2.5">
+								<Image
+									src="/logo.png"
+									alt="Auto Cron"
+									width={24}
+									height={24}
+									className="size-6 shrink-0 rounded-sm"
+								/>
+								<div className="flex flex-1 items-center justify-between">
+									<span className="font-[family-name:var(--font-outfit)] text-sm font-semibold tracking-tight">
+										Auto Cron
+									</span>
+									<kbd className="ml-2 inline-flex items-center gap-0.5 rounded border border-sidebar-border/60 bg-sidebar-accent/50 px-1.5 py-0.5 font-[family-name:var(--font-cutive)] text-[9px] text-muted-foreground">
+										{isMac ? "\u2318" : "Ctrl+"}B
+									</kbd>
+								</div>
+							</Link>
+						</SidebarMenuButton>
+					</SidebarMenuItem>
+				</SidebarMenu>
+			</SidebarHeader>
+
 			<SidebarContent className="flex flex-col overflow-hidden">
+				{/* Navigation */}
 				<SidebarGroup className="gap-0.5 p-1">
 					<SidebarGroupLabel className="font-[family-name:var(--font-cutive)]">
 						Navigation
@@ -187,7 +279,11 @@ export function AppSidebar() {
 						<SidebarMenu>
 							{navItems.map((item) => (
 								<SidebarMenuItem key={item.href}>
-									<SidebarMenuButton asChild isActive={pathname === item.href} tooltip={item.title}>
+									<SidebarMenuButton
+										asChild
+										isActive={pathname === item.href || pathname.startsWith(`${item.href}/`)}
+										tooltip={item.title}
+									>
 										<Link href={item.href} className="relative flex w-full items-center gap-2.5">
 											<item.icon className="size-3.5 shrink-0" />
 											<span className="font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium">
@@ -200,108 +296,129 @@ export function AppSidebar() {
 						</SidebarMenu>
 					</SidebarGroupContent>
 				</SidebarGroup>
-				<SidebarGroup className="gap-0.5 p-1">
-					<SidebarGroupLabel className="font-[family-name:var(--font-cutive)]">
-						Quick Actions
-					</SidebarGroupLabel>
-					<SidebarGroupContent>
-						<SidebarMenu>
-							<SidebarMenuItem>
-								<SidebarMenuButton asChild isActive={false} tooltip="Hours settings">
-									<Link
-										href="/app/settings/hours"
-										className="relative flex w-full items-center gap-2.5"
-									>
-										<Clock3 className="size-3.5 shrink-0" />
-										<span className="font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium">
-											Hours settings
-										</span>
-									</Link>
-								</SidebarMenuButton>
-							</SidebarMenuItem>
-						</SidebarMenu>
-					</SidebarGroupContent>
-				</SidebarGroup>
+
+				{/* Mini date picker (calendar route only) */}
 				{isCalendarRoute ? (
-					<SidebarGroup className="mt-auto gap-2 p-1">
-						<SidebarGroupLabel className="font-[family-name:var(--font-cutive)]">
-							Scheduling
-						</SidebarGroupLabel>
-						<div className="rounded-lg border border-sidebar-border/60 bg-sidebar-accent p-2 group-data-[collapsible=icon]:hidden">
-							<div className="font-[family-name:var(--font-cutive)] px-1 pb-1 text-[0.62rem] uppercase tracking-[0.1em] text-muted-foreground">
-								Google Calendars
-							</div>
-							{email ? (
-								<div className="font-[family-name:var(--font-outfit)] px-1 pb-1 text-[0.72rem] text-muted-foreground/85">
-									{email}
-								</div>
-							) : null}
-							<div className="grid gap-0.5">
-								{isGoogleCalendarsLoading ? (
-									<div className="rounded-md px-1.5 py-1 text-[0.74rem] text-muted-foreground/80">
-										Loading calendars…
-									</div>
-								) : (
-									orderedCalendars.map((calendar) => {
-										const isHidden = hiddenCalendarIds.has(calendar.id);
-										return (
-											<div
-												key={calendar.id}
-												title={calendar.name}
-												className={`flex min-w-0 items-center rounded-md px-1.5 py-1 text-[0.74rem] text-sidebar-foreground/80 hover:bg-sidebar-accent ${isHidden ? "opacity-40" : ""}`}
-											>
-												<button
-													type="button"
-													onClick={() => toggleCalendar(calendar.id)}
-													className="shrink-0 cursor-pointer rounded p-0.5 hover:bg-sidebar-border/50 transition-opacity"
-													title={isHidden ? `Show ${calendar.name}` : `Hide ${calendar.name}`}
-												>
-													{calendar.isRemote ? (
-														<Rss
-															className="size-3.5"
-															style={{ color: isHidden ? undefined : calendar.color }}
-														/>
-													) : (
-														<span
-															className="block size-2.5 rounded-[4px]"
-															style={{
-																backgroundColor: isHidden ? "transparent" : calendar.color,
-																border: isHidden ? `1.5px solid ${calendar.color}` : undefined,
-															}}
-														/>
-													)}
-												</button>
-												<div className="flex min-w-0 flex-1 items-center gap-2 ml-1.5">
-													<span className="font-[family-name:var(--font-outfit)] truncate">
-														{calendar.name}
-													</span>
-												</div>
-												{calendar.isDefault ? (
-													<span className="font-[family-name:var(--font-cutive)] ml-2 shrink-0 text-[0.66rem] text-muted-foreground">
-														Default
-													</span>
-												) : null}
+					<SidebarGroup className="gap-0.5 px-1 pt-0 pb-1 group-data-[collapsible=icon]:hidden">
+						<SidebarGroupContent>
+							<DatePickerCalendar
+								mode="single"
+								selected={sidebarSelectedDate}
+								onSelect={handleDateSelect}
+								className="w-full rounded-md border border-sidebar-border/60 bg-sidebar-accent/30 p-1.5 [--cell-size:--spacing(5)]"
+							/>
+						</SidebarGroupContent>
+					</SidebarGroup>
+				) : null}
+
+				{/* Google Calendars (calendar route only) */}
+				{isCalendarRoute ? (
+					<SidebarGroup className="mt-auto gap-0.5 p-1 group-data-[collapsible=icon]:hidden">
+						<Collapsible defaultOpen className="group/calendars">
+							<SidebarGroupLabel asChild className="font-[family-name:var(--font-cutive)]">
+								<CollapsibleTrigger className="flex w-full items-center">
+									Google Calendars
+									<ChevronRight className="ml-auto size-3.5 transition-transform duration-200 group-data-[state=open]/calendars:rotate-90" />
+								</CollapsibleTrigger>
+							</SidebarGroupLabel>
+							<CollapsibleContent>
+								<div className="mt-1 rounded-lg border border-sidebar-border/60 bg-sidebar-accent p-2">
+									{email ? (
+										<div className="font-[family-name:var(--font-outfit)] px-1 pb-1 text-[0.72rem] text-muted-foreground/85">
+											{email}
+										</div>
+									) : null}
+									<div className="grid gap-0.5">
+										{isGoogleCalendarsLoading ? (
+											<div className="rounded-md px-1.5 py-1 text-[0.74rem] text-muted-foreground/80">
+												Loading calendars…
 											</div>
-										);
-									})
-								)}
-								<button
-									type="button"
-									disabled
-									aria-label="Add calendar account (coming soon)"
-									title="Add calendar account (coming soon)"
-									className="mt-1 inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-left font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground/70 disabled:cursor-not-allowed"
-								>
-									<Plus className="size-3.5" />
-									Add calendar account
-								</button>
-							</div>
-						</div>
+										) : (
+											orderedCalendars.map((calendar) => {
+												const isHidden = hiddenCalendarIds.has(calendar.id);
+												return (
+													<div
+														key={calendar.id}
+														title={calendar.name}
+														className={`flex min-w-0 items-center rounded-md px-1.5 py-1 text-[0.74rem] text-sidebar-foreground/80 hover:bg-sidebar-accent ${isHidden ? "opacity-40" : ""}`}
+													>
+														<button
+															type="button"
+															onClick={() => toggleCalendar(calendar.id)}
+															className="shrink-0 cursor-pointer rounded p-0.5 transition-opacity hover:bg-sidebar-border/50"
+															title={isHidden ? `Show ${calendar.name}` : `Hide ${calendar.name}`}
+														>
+															{calendar.isRemote ? (
+																<Rss
+																	className="size-3.5"
+																	style={{
+																		color: isHidden ? undefined : calendar.color,
+																	}}
+																/>
+															) : (
+																<span
+																	className="block size-2.5 rounded-[4px]"
+																	style={{
+																		backgroundColor: isHidden ? "transparent" : calendar.color,
+																		border: isHidden ? `1.5px solid ${calendar.color}` : undefined,
+																	}}
+																/>
+															)}
+														</button>
+														<div className="ml-1.5 flex min-w-0 flex-1 items-center gap-2">
+															<span className="font-[family-name:var(--font-outfit)] truncate">
+																{calendar.name}
+															</span>
+														</div>
+														{calendar.isDefault ? (
+															<span className="font-[family-name:var(--font-cutive)] ml-2 shrink-0 text-[0.66rem] text-muted-foreground">
+																Default
+															</span>
+														) : null}
+													</div>
+												);
+											})
+										)}
+										<button
+											type="button"
+											disabled
+											aria-label="Add calendar account (coming soon)"
+											title="Add calendar account (coming soon)"
+											className="mt-1 inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-left font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground/70 disabled:cursor-not-allowed"
+										>
+											<Plus className="size-3.5" />
+											Add calendar account
+										</button>
+									</div>
+								</div>
+							</CollapsibleContent>
+						</Collapsible>
 					</SidebarGroup>
 				) : null}
 			</SidebarContent>
+
 			<SidebarFooter>
 				<SidebarMenu>
+					{/* Theme toggle */}
+					{mounted ? (
+						<SidebarMenuItem>
+							<SidebarMenuButton
+								tooltip={resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
+								onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
+							>
+								{resolvedTheme === "dark" ? (
+									<Sun className="size-3.5" />
+								) : (
+									<Moon className="size-3.5" />
+								)}
+								<span className="font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium">
+									{resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
+								</span>
+							</SidebarMenuButton>
+						</SidebarMenuItem>
+					) : null}
+
+					{/* User menu */}
 					<SidebarMenuItem>
 						<DropdownMenu>
 							<DropdownMenuTrigger asChild>
@@ -319,7 +436,7 @@ export function AppSidebar() {
 											{displayName}
 										</span>
 										<span className="font-[family-name:var(--font-cutive)] truncate text-[0.66rem] tracking-[0.02em] text-muted-foreground">
-											{email}
+											{planName} plan
 										</span>
 									</div>
 									<ChevronsUpDown className="ml-auto size-4" />
@@ -331,6 +448,7 @@ export function AppSidebar() {
 								align="end"
 								sideOffset={4}
 							>
+								{/* Header */}
 								<DropdownMenuLabel className="p-0 font-normal">
 									<div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
 										<Avatar className="size-8 rounded-lg">
@@ -348,13 +466,25 @@ export function AppSidebar() {
 									</div>
 								</DropdownMenuLabel>
 								<DropdownMenuSeparator />
+
+								{/* Upgrade CTA for free users */}
+								{isFreePlan ? (
+									<>
+										<DropdownMenuItem asChild>
+											<Link
+												href="/app/pricing"
+												className="font-[family-name:var(--font-outfit)] font-medium text-amber-600 dark:text-amber-400"
+											>
+												<Zap className="text-amber-500" />
+												Upgrade to Plus
+											</Link>
+										</DropdownMenuItem>
+										<DropdownMenuSeparator />
+									</>
+								) : null}
+
+								{/* Account */}
 								<DropdownMenuGroup>
-									<DropdownMenuItem asChild>
-										<Link href="/app/settings">
-											<Settings />
-											Settings
-										</Link>
-									</DropdownMenuItem>
 									<DropdownMenuItem asChild>
 										<Link href="/app/settings/account">
 											<UserCircle />
@@ -375,15 +505,17 @@ export function AppSidebar() {
 									</DropdownMenuItem>
 								</DropdownMenuGroup>
 								<DropdownMenuSeparator />
-								{mounted ? (
-									<DropdownMenuItem
-										onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-									>
-										{resolvedTheme === "dark" ? <Sun /> : <Moon />}
-										{resolvedTheme === "dark" ? "Light mode" : "Dark mode"}
+
+								{/* Support */}
+								<DropdownMenuGroup>
+									<DropdownMenuItem onClick={openFeedbackDialog}>
+										<MessageSquare />
+										Feedback
 									</DropdownMenuItem>
-								) : null}
+								</DropdownMenuGroup>
 								<DropdownMenuSeparator />
+
+								{/* Sign out */}
 								<DropdownMenuItem onClick={handleSignOut} disabled={isSigningOut}>
 									<LogOut />
 									{isSigningOut ? "Signing out..." : "Log out"}
