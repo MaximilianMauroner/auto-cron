@@ -19,16 +19,20 @@ import type { Id } from "../../../../convex/_generated/dataModel";
 import { AsideHabitItem } from "./aside-habit-item";
 import { AsideTaskCard } from "./aside-task-card";
 
-export function PrioritiesTabContent() {
+export function PrioritiesTabContent({
+	tasks,
+	tasksPending,
+}: {
+	tasks: TaskDTO[];
+	tasksPending: boolean;
+}) {
 	const [search, setSearch] = useState("");
 	const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-	const tasksQuery = useAuthenticatedQueryWithStatus(api.tasks.queries.listTasks, {});
-	const tasks = (tasksQuery.data ?? []) as TaskDTO[];
 	const habitsQuery = useAuthenticatedQueryWithStatus(api.habits.queries.listHabits, {});
 	const habits = (habitsQuery.data ?? []) as HabitDTO[];
 	const { mutate: updateTask } = useMutationWithStatus(api.tasks.mutations.updateTask);
 
-	const isLoading = tasksQuery.isPending || habitsQuery.isPending;
+	const isLoading = tasksPending || habitsQuery.isPending;
 
 	const filteredTasks = useMemo(() => {
 		const term = search.toLowerCase().trim();

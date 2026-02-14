@@ -391,38 +391,48 @@ export const updateLocalEventFromGoogle = internalMutation({
 		const event = await ctx.db.get(args.id);
 		if (!event) return;
 		const nextSourceId = event.source === "google" ? args.googleEventId : event.sourceId;
+		const nextCalendarId = args.calendarId ?? event.calendarId;
+		const nextOccurrenceStart = normalizeToMinute(event.originalStartTime ?? event.start);
 
-		console.log("[sync:updateLocal]", {
-			eventId: String(args.id),
-			googleEventId: args.googleEventId,
-			argsCalendarId: args.calendarId,
-			existingCalendarId: event.calendarId,
-			resolvedCalendarId: args.calendarId ?? event.calendarId,
-			existingSource: event.source,
-			existingStart: event.start,
-			existingEnd: event.end,
-			lastSyncedAt: args.lastSyncedAt,
-		});
-
-		await ctx.db.patch(args.id, {
-			googleEventId: args.googleEventId,
-			sourceId: nextSourceId,
-			calendarId: args.calendarId ?? event.calendarId,
-			etag: args.etag,
-			lastSyncedAt: args.lastSyncedAt,
-			occurrenceStart: normalizeToMinute(event.originalStartTime ?? event.start),
-		});
+		if (
+			event.googleEventId !== args.googleEventId ||
+			event.sourceId !== nextSourceId ||
+			event.calendarId !== nextCalendarId ||
+			event.etag !== args.etag ||
+			event.lastSyncedAt !== args.lastSyncedAt ||
+			event.occurrenceStart !== nextOccurrenceStart
+		) {
+			await ctx.db.patch(args.id, {
+				googleEventId: args.googleEventId,
+				sourceId: nextSourceId,
+				calendarId: nextCalendarId,
+				etag: args.etag,
+				lastSyncedAt: args.lastSyncedAt,
+				occurrenceStart: nextOccurrenceStart,
+			});
+		}
 
 		if (event.seriesId) {
 			const series = await ctx.db.get(event.seriesId);
 			if (series) {
-				await ctx.db.patch(series._id, {
-					sourceId: args.googleEventId,
-					calendarId: args.calendarId ?? series.calendarId,
-					googleSeriesId: series.googleSeriesId ?? args.googleEventId,
-					etag: args.etag ?? series.etag,
-					lastSyncedAt: args.lastSyncedAt,
-				});
+				const nextSeriesCalendarId = args.calendarId ?? series.calendarId;
+				const nextGoogleSeriesId = series.googleSeriesId ?? args.googleEventId;
+				const nextSeriesEtag = args.etag ?? series.etag;
+				if (
+					series.sourceId !== args.googleEventId ||
+					series.calendarId !== nextSeriesCalendarId ||
+					series.googleSeriesId !== nextGoogleSeriesId ||
+					series.etag !== nextSeriesEtag ||
+					series.lastSyncedAt !== args.lastSyncedAt
+				) {
+					await ctx.db.patch(series._id, {
+						sourceId: args.googleEventId,
+						calendarId: nextSeriesCalendarId,
+						googleSeriesId: nextGoogleSeriesId,
+						etag: nextSeriesEtag,
+						lastSyncedAt: args.lastSyncedAt,
+					});
+				}
 			}
 		}
 	},

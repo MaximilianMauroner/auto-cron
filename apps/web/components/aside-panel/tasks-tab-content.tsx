@@ -5,7 +5,7 @@ import { TaskEditSheet } from "@/components/tasks/task-edit-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
-import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
+import { useMutationWithStatus } from "@/hooks/use-convex-status";
 import { useDndKanban } from "@/hooks/use-dnd-kanban";
 import { formatDurationCompact } from "@/lib/duration";
 import {
@@ -24,11 +24,15 @@ import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { AsideTaskCard } from "./aside-task-card";
 
-export function TasksTabContent() {
+export function TasksTabContent({
+	tasks,
+	tasksPending,
+}: {
+	tasks: TaskDTO[];
+	tasksPending: boolean;
+}) {
 	const [search, setSearch] = useState("");
 	const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-	const tasksQuery = useAuthenticatedQueryWithStatus(api.tasks.queries.listTasks, {});
-	const tasks = (tasksQuery.data ?? []) as TaskDTO[];
 	const { mutate: updateTask } = useMutationWithStatus(api.tasks.mutations.updateTask);
 
 	const filteredTasks = useMemo(() => {
@@ -117,7 +121,7 @@ export function TasksTabContent() {
 					/>
 				</div>
 
-				{tasksQuery.isPending ? (
+				{tasksPending ? (
 					<div className="font-[family-name:var(--font-cutive)] text-[0.76rem] text-muted-foreground">
 						Loading tasks...
 					</div>

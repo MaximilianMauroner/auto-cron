@@ -372,6 +372,7 @@ const watchChannelStatusValidator = v.union(
 	v.literal("expired"),
 	v.literal("stopped"),
 );
+const GOOGLE_SYNC_DEBOUNCE_WINDOW_MS = 15 * 1000;
 
 export const enqueueGoogleSyncRun = internalMutation({
 	args: {
@@ -382,8 +383,21 @@ export const enqueueGoogleSyncRun = internalMutation({
 	returns: v.object({
 		enqueued: v.boolean(),
 		runId: v.id("googleSyncRuns"),
+		reason: v.union(
+			v.literal("enqueued"),
+			v.literal("already_pending"),
+			v.literal("debounced_running"),
+		),
 	}),
-	handler: async (ctx, args) => {
+	handler: async (
+		ctx,
+		args,
+	): Promise<{
+		enqueued: boolean;
+		runId: Id<"googleSyncRuns">;
+		reason: "enqueued" | "already_pending" | "debounced_running";
+	}> => {
+		const now = Date.now();
 		const latestPending = (
 			await ctx.db
 				.query("googleSyncRuns")
@@ -397,6 +411,32 @@ export const enqueueGoogleSyncRun = internalMutation({
 			return {
 				enqueued: false,
 				runId: latestPending._id,
+				reason: "already_pending",
+			};
+		}
+
+		const latestRunning = (
+			await ctx.db
+				.query("googleSyncRuns")
+				.withIndex("by_userId_status_startedAt", (q) =>
+					q
+						.eq("userId", args.userId)
+						.eq("status", "running")
+						.gte("startedAt", now - GOOGLE_SYNC_DEBOUNCE_WINDOW_MS),
+				)
+				.order("desc")
+				.take(1)
+		)[0];
+		if (
+			latestRunning &&
+			latestRunning.triggeredBy === args.triggeredBy &&
+			now - latestRunning.startedAt < GOOGLE_SYNC_DEBOUNCE_WINDOW_MS &&
+			!args.force
+		) {
+			return {
+				enqueued: false,
+				runId: latestRunning._id,
+				reason: "debounced_running",
 			};
 		}
 
@@ -404,7 +444,7 @@ export const enqueueGoogleSyncRun = internalMutation({
 			userId: args.userId,
 			triggeredBy: args.triggeredBy,
 			status: "pending",
-			startedAt: Date.now(),
+			startedAt: now,
 		});
 
 		if (shouldDispatchBackgroundWork()) {
@@ -418,6 +458,7 @@ export const enqueueGoogleSyncRun = internalMutation({
 		return {
 			enqueued: true,
 			runId,
+			reason: "enqueued",
 		};
 	},
 });
@@ -579,11 +620,34 @@ export const recordWatchNotification = internalMutation({
 		lastNotifiedAt: v.number(),
 		lastMessageNumber: v.optional(v.number()),
 	},
-	returns: v.null(),
-	handler: async (ctx, args) => {
+	returns: v.object({
+		shouldEnqueue: v.boolean(),
+		reason: v.union(v.literal("accepted"), v.literal("duplicate_message")),
+	}),
+	handler: async (
+		ctx,
+		args,
+	): Promise<{
+		shouldEnqueue: boolean;
+		reason: "accepted" | "duplicate_message";
+	}> => {
 		const channel = await ctx.db.get(args.watchChannelId);
-		if (!channel) return null;
+		if (!channel) {
+			return {
+				shouldEnqueue: false,
+				reason: "duplicate_message",
+			};
+		}
 		const currentMessageNumber = channel.lastMessageNumber ?? -1;
+		if (
+			typeof args.lastMessageNumber === "number" &&
+			args.lastMessageNumber <= currentMessageNumber
+		) {
+			return {
+				shouldEnqueue: false,
+				reason: "duplicate_message",
+			};
+		}
 		const nextMessageNumber =
 			typeof args.lastMessageNumber === "number"
 				? Math.max(currentMessageNumber, args.lastMessageNumber)
@@ -593,7 +657,10 @@ export const recordWatchNotification = internalMutation({
 			lastMessageNumber: nextMessageNumber,
 			updatedAt: Date.now(),
 		});
-		return null;
+		return {
+			shouldEnqueue: true,
+			reason: "accepted",
+		};
 	},
 });
 
@@ -824,14 +891,16 @@ const buildOccurrencePatch = ({
 		source,
 		sourceId: isProtectedSource ? primary?.sourceId : event.googleEventId,
 		calendarId: event.calendarId,
-		recurrenceRule: resolveProtectedOrRecurringValue({
-			isProtectedSource,
-			protectedValue: primary?.recurrenceRule,
-			isRecurringInstance,
-			eventValue: event.recurrenceRule,
-		}),
-		recurringEventId: isProtectedSource ? primary?.recurringEventId : event.recurringEventId,
-		originalStartTime: event.originalStartTime,
+		recurrenceRule: isProtectedSource
+			? undefined
+			: resolveProtectedOrRecurringValue({
+					isProtectedSource,
+					protectedValue: primary?.recurrenceRule,
+					isRecurringInstance,
+					eventValue: event.recurrenceRule,
+				}),
+		recurringEventId: isProtectedSource ? undefined : event.recurringEventId,
+		originalStartTime: isProtectedSource ? undefined : event.originalStartTime,
 		seriesId: isProtectedSource ? undefined : seriesId,
 		occurrenceStart,
 		status: event.status,
@@ -875,7 +944,7 @@ const upsertSingleSyncedEvent = async ({
 	seriesCache: Map<string, Doc<"calendarEventSeries">>;
 	primaryCalendarAliases: Set<string>;
 	log?: (tag: string, payload: Record<string, unknown>) => void;
-}) => {
+}): Promise<{ scheduleImpact: boolean }> => {
 	const series = await upsertSeriesForGoogleEvent(ctx, userId, event, now, seriesCache);
 	const occurrenceStart = normalizeToMinute(event.originalStartTime ?? event.start);
 	const matchContext = await collectUpsertMatchContext(
@@ -956,11 +1025,19 @@ const upsertSingleSyncedEvent = async ({
 			userId,
 			...occurrencePatch,
 		});
-		return;
+		return { scheduleImpact: false };
 	}
 
 	const localUpdatedAt = primary.updatedAt ?? primary._creationTime ?? 0;
 	const localIsNewer = localUpdatedAt > event.lastSyncedAt;
+	const isSchedulingSource = primary.source === "task" || primary.source === "habit";
+	const calendarChanged =
+		resolvePrimaryCalendarId(primary.calendarId) !== resolvePrimaryCalendarId(event.calendarId);
+	const startChanged = normalizeToMinute(primary.start) !== normalizeToMinute(event.start);
+	const endChanged = normalizeToMinute(primary.end) !== normalizeToMinute(event.end);
+	const scheduleImpact = Boolean(
+		isSchedulingSource && !localIsNewer && (calendarChanged || startChanged || endChanged),
+	);
 
 	log?.("[sync:upsert] matched", {
 		googleEventId: event.googleEventId,
@@ -974,8 +1051,6 @@ const upsertSingleSyncedEvent = async ({
 	});
 
 	if (primary.source === "task" && primary.sourceId && !localIsNewer) {
-		const startChanged = normalizeToMinute(primary.start) !== normalizeToMinute(event.start);
-		const endChanged = normalizeToMinute(primary.end) !== normalizeToMinute(event.end);
 		if ((startChanged || endChanged) && !primary.sourceId.includes(":travel:")) {
 			log?.("[sync:upsert] pinning task event", {
 				primaryId: String(primary._id),
@@ -989,13 +1064,32 @@ const upsertSingleSyncedEvent = async ({
 	}
 
 	if (localIsNewer) {
-		await ctx.db.patch(primary._id, {
-			googleEventId: resolvedGoogleEventId,
-			etag: event.etag,
-			lastSyncedAt: event.lastSyncedAt,
-			seriesId: isProtectedSource ? undefined : series._id,
-			occurrenceStart,
-		});
+		const nextSeriesId = isProtectedSource ? undefined : series._id;
+		const shouldClearRecurrenceFields = Boolean(
+			isProtectedSource &&
+				(primary.recurrenceRule !== undefined ||
+					primary.recurringEventId !== undefined ||
+					primary.originalStartTime !== undefined),
+		);
+		if (
+			primary.googleEventId !== resolvedGoogleEventId ||
+			primary.etag !== event.etag ||
+			primary.lastSyncedAt !== event.lastSyncedAt ||
+			primary.seriesId !== nextSeriesId ||
+			primary.occurrenceStart !== occurrenceStart ||
+			shouldClearRecurrenceFields
+		) {
+			await ctx.db.patch(primary._id, {
+				googleEventId: resolvedGoogleEventId,
+				etag: event.etag,
+				lastSyncedAt: event.lastSyncedAt,
+				seriesId: nextSeriesId,
+				occurrenceStart,
+				recurrenceRule: isProtectedSource ? undefined : primary.recurrenceRule,
+				recurringEventId: isProtectedSource ? undefined : primary.recurringEventId,
+				originalStartTime: isProtectedSource ? undefined : primary.originalStartTime,
+			});
+		}
 	} else {
 		await ctx.db.patch(primary._id, occurrencePatch);
 	}
@@ -1004,6 +1098,8 @@ const upsertSingleSyncedEvent = async ({
 		log?.("[sync:upsert] deleting duplicate", { duplicateId: String(duplicate._id) });
 		await ctx.db.delete(duplicate._id);
 	}
+
+	return { scheduleImpact };
 };
 
 const performUpsertSyncedEventsForUser = async (
@@ -1040,6 +1136,7 @@ const performUpsertSyncedEventsForUser = async (
 		...(settings?.googleConnectedCalendars ?? []),
 		...(args.connectedCalendars ?? []),
 	]);
+	let needsReschedule = false;
 
 	if (args.resetCalendars?.length) {
 		const resetCalendarIds = new Set(args.resetCalendars);
@@ -1065,20 +1162,19 @@ const performUpsertSyncedEventsForUser = async (
 	}
 
 	for (const event of args.events) {
-		await upsertSingleSyncedEvent({
+		const upsertResult = await upsertSingleSyncedEvent({
 			ctx,
 			userId,
 			event,
 			now,
 			seriesCache,
 			primaryCalendarAliases,
-			log: (tag, payload) => {
-				console.log(tag, payload);
-			},
 		});
+		if (upsertResult.scheduleImpact) {
+			needsReschedule = true;
+		}
 	}
 
-	let needsReschedule = false;
 	for (const deletedEvent of args.deletedEvents ?? []) {
 		const existingMatches = await findLegacyMatches(
 			ctx,
@@ -1115,13 +1211,6 @@ const performUpsertSyncedEventsForUser = async (
 				await ctx.db.delete(existingEvent._id);
 			}
 		}
-	}
-
-	if (needsReschedule) {
-		await enqueueSchedulingRunFromMutation(ctx, {
-			userId,
-			triggeredBy: "calendar_change",
-		});
 	}
 
 	if (settings) {
@@ -1168,7 +1257,10 @@ const performUpsertSyncedEventsForUser = async (
 		});
 	}
 
-	return { upserted: args.events.length };
+	return {
+		upserted: args.events.length,
+		needsReschedule,
+	};
 };
 
 export const upsertGoogleTokens = mutation({
@@ -1576,11 +1668,13 @@ export const upsertSyncedEventsForUser = internalMutation({
 	}),
 	handler: async (ctx, args) => {
 		const result = await performUpsertSyncedEventsForUser(ctx, args.userId, args);
-		await enqueueSchedulingRunFromMutation(ctx, {
-			userId: args.userId,
-			triggeredBy: "calendar_change",
-		});
-		return result;
+		if (result.needsReschedule) {
+			await enqueueSchedulingRunFromMutation(ctx, {
+				userId: args.userId,
+				triggeredBy: "calendar_change",
+			});
+		}
+		return { upserted: result.upserted };
 	},
 });
 

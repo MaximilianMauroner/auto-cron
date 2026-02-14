@@ -144,6 +144,24 @@ const normalizeOptionalNonNegativeMinutes = (value: number | null | undefined) =
 	return Math.round(value);
 };
 
+const schedulingRelevantTaskFields = new Set<keyof TaskUpdatePatch>([
+	"priority",
+	"status",
+	"estimatedMinutes",
+	"deadline",
+	"scheduleAfter",
+	"splitAllowed",
+	"minChunkMinutes",
+	"maxChunkMinutes",
+	"restMinutes",
+	"travelMinutes",
+	"location",
+	"hoursSetId",
+	"schedulingMode",
+	"preferredCalendarId",
+	"categoryId",
+]);
+
 const clearPinnedTaskCalendarEvents = async (
 	ctx: MutationCtx,
 	userId: string,
@@ -212,6 +230,8 @@ export const updateTask = mutation({
 		if (!task || task.userId !== ctx.userId) {
 			throw notFoundError();
 		}
+		const statusChangedToBacklog =
+			args.patch.status === "backlog" && args.patch.status !== task.status;
 
 		const nextPatch: Record<string, unknown> = {};
 		for (const [key, value] of Object.entries(args.patch)) {
@@ -243,18 +263,38 @@ export const updateTask = mutation({
 						"Tasks can only be moved manually to Backlog, Up Next, or Done. Scheduled and In Progress are automatic.",
 				});
 			}
-			if (args.patch.status === "done") {
+			if (args.patch.status === "done" && task.status !== "done") {
 				nextPatch.completedAt = Date.now();
 			}
 		}
-		if (args.patch.status === "backlog") {
+
+		let hasTaskChanges = false;
+		let hasSchedulingRelevantChanges = false;
+		for (const [key, value] of Object.entries(nextPatch)) {
+			const taskKey = key as keyof TaskUpdatePatch;
+			const currentValue = task[taskKey as keyof typeof task];
+			if (currentValue !== value) {
+				hasTaskChanges = true;
+				if (schedulingRelevantTaskFields.has(taskKey)) {
+					hasSchedulingRelevantChanges = true;
+				}
+			}
+		}
+
+		if (statusChangedToBacklog) {
 			await clearPinnedTaskCalendarEvents(ctx, ctx.userId, args.id);
 		}
-		await ctx.db.patch(args.id, nextPatch as Partial<typeof task>);
-		await enqueueSchedulingRunFromMutation(ctx, {
-			userId: ctx.userId,
-			triggeredBy: "task_change",
-		});
+
+		if (hasTaskChanges) {
+			await ctx.db.patch(args.id, nextPatch as Partial<typeof task>);
+		}
+
+		if (hasSchedulingRelevantChanges || statusChangedToBacklog) {
+			await enqueueSchedulingRunFromMutation(ctx, {
+				userId: ctx.userId,
+				triggeredBy: "task_change",
+			});
+		}
 		return args.id;
 	}),
 });

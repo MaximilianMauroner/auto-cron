@@ -659,12 +659,6 @@ export const handleGoogleCalendarWebhook: ReturnType<typeof internalAction> = in
 			};
 		}
 
-		await ctx.runMutation(internal.calendar.mutations.recordWatchNotification, {
-			watchChannelId: channel._id,
-			lastNotifiedAt: Date.now(),
-			lastMessageNumber: args.messageNumber,
-		});
-
 		if (channel.expirationAt <= Date.now()) {
 			await ctx.runMutation(internal.calendar.mutations.deactivateWatchChannel, {
 				watchChannelId: channel._id,
@@ -692,6 +686,22 @@ export const handleGoogleCalendarWebhook: ReturnType<typeof internalAction> = in
 			};
 		}
 
+		const notification = await ctx.runMutation(
+			internal.calendar.mutations.recordWatchNotification,
+			{
+				watchChannelId: channel._id,
+				lastNotifiedAt: Date.now(),
+				lastMessageNumber: args.messageNumber,
+			},
+		);
+		if (!notification.shouldEnqueue) {
+			return {
+				accepted: true,
+				enqueued: false,
+				reason: notification.reason,
+			};
+		}
+
 		const queued = await ctx.runMutation(internal.calendar.mutations.enqueueGoogleSyncRun, {
 			userId: channel.userId,
 			triggeredBy: "webhook",
@@ -699,7 +709,7 @@ export const handleGoogleCalendarWebhook: ReturnType<typeof internalAction> = in
 		return {
 			accepted: true,
 			enqueued: queued.enqueued,
-			reason: queued.enqueued ? "enqueued" : "already_pending",
+			reason: queued.reason,
 		};
 	},
 });
@@ -839,19 +849,6 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 				? remoteByGoogleEventId.get(event.googleEventId)
 				: undefined;
 			const action = resolveSyncPushAction(event, remote);
-
-			console.log("[sync:pushToGoogle]", {
-				eventId: String(event.id),
-				title: event.title,
-				start: event.start,
-				end: event.end,
-				googleEventId: event.googleEventId,
-				calendarId: event.calendarId,
-				hasRemote: Boolean(remote),
-				remoteStart: remote?.start,
-				remoteEnd: remote?.end,
-				action,
-			});
 
 			if (action === "create") {
 				const createdEvent = await provider.createEvent({

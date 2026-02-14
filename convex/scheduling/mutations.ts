@@ -254,19 +254,42 @@ export const applySchedulingBlocks = internalMutation({
 				const current = unpinnedExisting[index];
 				if (!block || !current) continue;
 				const resolvedBlockColor = resolveBlockColor(block, resolvedTravelColor);
-				await ctx.db.patch(current._id, {
-					title: block.title,
-					start: block.start,
-					end: block.end,
-					allDay: false,
-					updatedAt: now,
-					source: block.source,
-					sourceId: block.sourceId,
-					calendarId: block.calendarId ?? current.calendarId,
-					busyStatus: "busy",
-					color: resolvedBlockColor,
-					location: block.location,
-				});
+				const nextCalendarId = block.calendarId ?? current.calendarId;
+				const nextLocation = block.location;
+				const needsPatch =
+					current.title !== block.title ||
+					current.start !== block.start ||
+					current.end !== block.end ||
+					current.allDay !== false ||
+					current.source !== block.source ||
+					current.sourceId !== block.sourceId ||
+					current.calendarId !== nextCalendarId ||
+					current.busyStatus !== "busy" ||
+					current.color !== resolvedBlockColor ||
+					current.location !== nextLocation ||
+					current.recurrenceRule !== undefined ||
+					current.recurringEventId !== undefined ||
+					current.seriesId !== undefined ||
+					current.originalStartTime !== undefined;
+				if (needsPatch) {
+					await ctx.db.patch(current._id, {
+						title: block.title,
+						start: block.start,
+						end: block.end,
+						allDay: false,
+						updatedAt: now,
+						source: block.source,
+						sourceId: block.sourceId,
+						calendarId: nextCalendarId,
+						busyStatus: "busy",
+						color: resolvedBlockColor,
+						location: nextLocation,
+						recurrenceRule: undefined,
+						recurringEventId: undefined,
+						seriesId: undefined,
+						originalStartTime: undefined,
+					});
+				}
 			}
 
 			for (const block of blocks.slice(pairCount)) {
@@ -284,10 +307,19 @@ export const applySchedulingBlocks = internalMutation({
 					busyStatus: "busy",
 					color: resolvedBlockColor,
 					location: block.location,
+					recurrenceRule: undefined,
+					recurringEventId: undefined,
+					seriesId: undefined,
+					originalStartTime: undefined,
 				});
 			}
 
 			for (const pinnedEvent of pinnedExisting) {
+				const shouldClearRecurring =
+					pinnedEvent.recurrenceRule !== undefined ||
+					pinnedEvent.recurringEventId !== undefined ||
+					pinnedEvent.seriesId !== undefined ||
+					pinnedEvent.originalStartTime !== undefined;
 				if (
 					pinnedEvent.source === "task" &&
 					pinnedEvent.sourceId?.includes(":travel:") &&
@@ -296,6 +328,18 @@ export const applySchedulingBlocks = internalMutation({
 					await ctx.db.patch(pinnedEvent._id, {
 						color: resolvedTravelColor,
 						updatedAt: now,
+						recurrenceRule: undefined,
+						recurringEventId: undefined,
+						seriesId: undefined,
+						originalStartTime: undefined,
+					});
+				} else if (shouldClearRecurring) {
+					await ctx.db.patch(pinnedEvent._id, {
+						updatedAt: now,
+						recurrenceRule: undefined,
+						recurringEventId: undefined,
+						seriesId: undefined,
+						originalStartTime: undefined,
 					});
 				}
 			}
@@ -358,11 +402,18 @@ export const applySchedulingBlocks = internalMutation({
 			}
 			const scheduledStart = Math.min(...placements.starts);
 			const scheduledEnd = Math.max(...placements.ends);
-			await ctx.db.patch(task._id, {
-				scheduledStart,
-				scheduledEnd,
-				status: resolveScheduledTaskStatus(task.status, scheduledStart, now),
-			});
+			const nextStatus = resolveScheduledTaskStatus(task.status, scheduledStart, now);
+			if (
+				task.scheduledStart !== scheduledStart ||
+				task.scheduledEnd !== scheduledEnd ||
+				task.status !== nextStatus
+			) {
+				await ctx.db.patch(task._id, {
+					scheduledStart,
+					scheduledEnd,
+					status: nextStatus,
+				});
+			}
 		}
 
 		return {
