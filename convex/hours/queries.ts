@@ -272,7 +272,7 @@ export const getTaskSchedulingDefaults = query({
 			schedulingStepMinutes: normalizeSchedulingStepMinutes(settings?.schedulingStepMinutes),
 			taskQuickCreateDefaults: sanitizeTaskQuickCreateDefaults(settings),
 			habitQuickCreateDefaults: sanitizeHabitQuickCreateDefaults(settings),
-			schedulingHorizonWeeks: Math.max(1, Math.round((settings?.schedulingHorizonDays ?? 70) / 7)),
+			schedulingHorizonWeeks: Math.max(1, Math.floor((settings?.schedulingHorizonDays ?? 70) / 7)),
 			activeProductId: settings?.activeProductId,
 			weekStartsOn: normalizeWeekStartsOn(settings?.weekStartsOn) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
 			dateFormat: normalizeDateFormat(settings?.dateFormat) as

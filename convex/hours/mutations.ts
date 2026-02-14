@@ -551,7 +551,9 @@ const ensureSettingsForUser = async (ctx: MutationCtx, userId: string) => {
 
 	await ctx.db.replace(settings._id, {
 		userId: settings.userId,
-		activeProductId: settings.activeProductId,
+		activeProductId: isValidProductId(settings.activeProductId ?? "")
+			? settings.activeProductId
+			: "free",
 		timezone: normalizeTimeZone(settings.timezone),
 		timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(settings),
 		defaultTaskSchedulingMode: sanitizeTaskSchedulingMode(
@@ -1793,20 +1795,33 @@ export const internalMigrateSchedulingModelForUser = internalMutation({
 	},
 });
 
+const HORIZON_CLAMP_PAGE_SIZE = 100;
+
 export const clampSchedulingHorizonsToPlans = internalMutation({
 	args: {},
 	returns: v.number(),
 	handler: async (ctx): Promise<number> => {
-		const allSettings = await ctx.db.query("userSettings").collect();
 		let clamped = 0;
-		for (const settings of allSettings) {
-			const maxDays = getMaxHorizonDays(settings.activeProductId);
-			if (settings.schedulingHorizonDays > maxDays) {
-				await ctx.db.patch(settings._id, {
-					schedulingHorizonDays: maxDays,
-				});
-				clamped++;
+		let cursor: string | null = null;
+		let done = false;
+
+		while (!done) {
+			const result = await ctx.db
+				.query("userSettings")
+				.paginate({ cursor: cursor ?? undefined, numItems: HORIZON_CLAMP_PAGE_SIZE });
+
+			for (const settings of result.page) {
+				const maxDays = getMaxHorizonDays(settings.activeProductId);
+				if (settings.schedulingHorizonDays > maxDays) {
+					await ctx.db.patch(settings._id, {
+						schedulingHorizonDays: maxDays,
+					});
+					clamped++;
+				}
 			}
+
+			done = result.isDone;
+			cursor = result.continueCursor;
 		}
 		return clamped;
 	},

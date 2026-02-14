@@ -80,7 +80,7 @@ export default defineSchema({
 			),
 		),
 		activeProductId: v.optional(v.string()),
-		schedulingHorizonDays: v.number(), // default: 75
+		schedulingHorizonDays: v.number(), // default: 70
 		schedulingDowntimeMinutes: v.optional(v.number()),
 		schedulingStepMinutes: v.optional(v.union(v.literal(15), v.literal(30), v.literal(60))),
 		weekStartsOn: v.optional(

@@ -167,8 +167,8 @@ export default function GeneralSettingsPage() {
 				}
 				void syncActiveProduct({ productId: "free" });
 			})();
-		} else if (dbActiveProductId && autumnProductId !== dbActiveProductId) {
-			// Plan mismatch — sync DB to match Autumn
+		} else if (autumnProductId && autumnProductId !== dbActiveProductId) {
+			// Plan mismatch (or DB value missing) — sync DB to match Autumn
 			hasSynced.current = true;
 			void syncActiveProduct({ productId: autumnProductId });
 		}
@@ -497,7 +497,7 @@ export default function GeneralSettingsPage() {
 										}
 									}}
 									className="shrink-0 cursor-pointer rounded-md p-1.5 text-muted-foreground/40 transition-colors hover:bg-muted/60 hover:text-foreground"
-									aria-label={isEditing ? `Save ${row.label}` : `Edit ${row.label}`}
+									aria-label={isEditing ? `Done editing ${row.label}` : `Edit ${row.label}`}
 								>
 									{isEditing ? <Check className="size-4" /> : <Pencil className="size-3.5" />}
 								</button>
