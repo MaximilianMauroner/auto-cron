@@ -68,10 +68,7 @@ export function EventDetailView() {
 
 	if (!eventDetail) return null;
 
-	const isTaskBound =
-		eventDetail.source === "task" &&
-		!eventDetail.sourceId?.includes(":travel:") &&
-		eventDetail.sourceId;
+	const isTaskBound = eventDetail.source === "task" && eventDetail.sourceId;
 	const calendarColor = resolveGoogleColor(eventDetail.color);
 	const calendarLabel =
 		eventDetail.source !== "google"

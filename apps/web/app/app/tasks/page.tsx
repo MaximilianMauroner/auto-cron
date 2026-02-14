@@ -1441,6 +1441,7 @@ function TaskDialog({
 											<DurationInput
 												value={value.restMinutes}
 												onChange={(restMinutes) => onChange({ ...value, restMinutes })}
+												allowZero
 											/>
 										</div>
 										<div className="space-y-1.5">
@@ -1450,10 +1451,10 @@ function TaskDialog({
 											<DurationInput
 												value={value.travelMinutes}
 												onChange={(travelMinutes) => onChange({ ...value, travelMinutes })}
-												className={cn(!value.location.trim() && "pointer-events-none opacity-60")}
+												allowZero
 											/>
 											<p className="font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground">
-												Used only when location is set.
+												Adds before/after travel blocks around each scheduled task block.
 											</p>
 										</div>
 									</div>

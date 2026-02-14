@@ -9,7 +9,7 @@ import {
 	ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { cn } from "@/lib/utils";
-import { Eye, Pencil, Repeat, Trash2 } from "lucide-react";
+import { Eye, Pencil, Pin, Repeat, Trash2 } from "lucide-react";
 import { memo } from "react";
 
 type ScheduleXEventLike = {
@@ -22,6 +22,7 @@ type ScheduleXEventLike = {
 	isRecurring?: boolean;
 	source?: string;
 	busyStatus?: "free" | "busy" | "tentative";
+	pinned?: boolean;
 };
 export type TimeGridEventProps = {
 	calendarEvent: ScheduleXEventLike;
@@ -194,6 +195,9 @@ function TimeGridEventComponent({ calendarEvent, timeZone, hour12 }: TimeGridEve
 							{sanitizeDenseTitle(calendarEvent.title)}
 						</span>
 						{calendarEvent.isRecurring ? <Repeat className="size-2.5 shrink-0 opacity-40" /> : null}
+						{calendarEvent.pinned === true ? (
+							<Pin className="size-2.5 shrink-0 opacity-60" />
+						) : null}
 					</div>
 					{!compact ? (
 						<div

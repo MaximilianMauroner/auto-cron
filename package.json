@@ -3,7 +3,9 @@
 	"private": true,
 	"workspaces": ["apps/*", "packages/*"],
 	"scripts": {
-		"dev": "turbo dev",
+		"dev": "bun run dev:web & bun run dev:convex & wait",
+		"dev:web": "turbo dev --filter=@auto-cron/web",
+		"dev:convex": "bunx convex dev",
 		"build": "bun run env:check && turbo build",
 		"env:check": "bun run scripts/validate-env.ts",
 		"lint": "biome check .",

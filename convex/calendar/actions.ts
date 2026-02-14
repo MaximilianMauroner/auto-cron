@@ -1081,6 +1081,24 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 				? remoteByGoogleEventId.get(event.googleEventId)
 				: undefined;
 
+			console.log("[sync:pushToGoogle]", {
+				eventId: String(event.id),
+				title: event.title,
+				start: event.start,
+				end: event.end,
+				googleEventId: event.googleEventId,
+				calendarId: event.calendarId,
+				hasRemote: Boolean(remote),
+				remoteStart: remote?.start,
+				remoteEnd: remote?.end,
+				action:
+					!event.googleEventId || !remote
+						? "create"
+						: isSyncedEventEqual(event, remote)
+							? "unchanged"
+							: "update",
+			});
+
 			if (!event.googleEventId || !remote) {
 				const createdEvent = await provider.createEvent({
 					refreshToken: settings.googleRefreshToken,
@@ -1091,6 +1109,7 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 						start: event.start,
 						end: event.end,
 						allDay: event.allDay,
+						appSourceKey: event.sourceId,
 						recurrenceRule: event.recurrenceRule,
 						calendarId: event.calendarId || "primary",
 						busyStatus: event.busyStatus,
@@ -1257,6 +1276,7 @@ export const pushEventToGoogle = action({
 					start: event.start,
 					end: event.end,
 					allDay: event.allDay,
+					appSourceKey: event.sourceId,
 					recurrenceRule: event.recurrenceRule,
 					calendarId: event.calendarId,
 					busyStatus: event.busyStatus,

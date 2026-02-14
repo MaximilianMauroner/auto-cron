@@ -263,6 +263,95 @@ describe("tasks/habits billing checks", () => {
 		expect(events.some((event) => event.title === "Ungated calendar event")).toBe(true);
 	});
 
+	test("moving task to backlog clears pinned task events for scheduling cleanup", async () => {
+		const testConvex = createTestConvex();
+		const userId = "user_backlog_clears_pinned_events";
+		const user = testConvex.withIdentity({ subject: userId });
+		const base = Date.UTC(2026, 0, 15, 9, 0, 0, 0);
+
+		const taskId = await user.action(api.tasks.actions.createTask, {
+			requestId: "seed-task-backlog-pinned",
+			input: {
+				title: "Task with pinned events",
+				estimatedMinutes: 60,
+				status: "queued",
+			},
+		});
+
+		const taskSourceId = String(taskId);
+		const travelSourceId = `${taskSourceId}:travel:${base}`;
+		await testConvex.run(async (ctx) => {
+			const now = Date.now();
+			await ctx.db.insert("calendarEvents", {
+				userId,
+				title: "Pinned task block",
+				start: base,
+				end: base + 60 * 60 * 1000,
+				allDay: false,
+				updatedAt: now,
+				source: "task",
+				sourceId: taskSourceId,
+				pinned: true,
+				busyStatus: "busy",
+			});
+			await ctx.db.insert("calendarEvents", {
+				userId,
+				title: "Pinned task travel block",
+				start: base - 30 * 60 * 1000,
+				end: base,
+				allDay: false,
+				updatedAt: now,
+				source: "task",
+				sourceId: travelSourceId,
+				pinned: true,
+				busyStatus: "busy",
+			});
+		});
+
+		await user.mutation(api.tasks.mutations.updateTask, {
+			id: taskId,
+			patch: { status: "backlog" },
+		});
+
+		const eventsAfterBacklog = await user.query(api.calendar.queries.listEvents, {
+			start: base - 2 * 60 * 60 * 1000,
+			end: base + 2 * 60 * 60 * 1000,
+		});
+		const matchingAfterBacklog = eventsAfterBacklog.filter(
+			(event) =>
+				event.source === "task" &&
+				typeof event.sourceId === "string" &&
+				(event.sourceId === taskSourceId || event.sourceId.startsWith(`${taskSourceId}:travel:`)),
+		);
+		expect(matchingAfterBacklog.length).toBe(2);
+		expect(matchingAfterBacklog.every((event) => event.pinned !== true)).toBe(true);
+
+		const run = await testConvex.mutation(internal.scheduling.mutations.enqueueSchedulingRun, {
+			userId,
+			triggeredBy: "task_change",
+			force: true,
+		});
+		await testConvex.mutation(internal.scheduling.mutations.applySchedulingBlocks, {
+			runId: run.runId,
+			userId,
+			horizonStart: base - 3 * 60 * 60 * 1000,
+			horizonEnd: base + 3 * 60 * 60 * 1000,
+			blocks: [],
+		});
+
+		const eventsAfterApply = await user.query(api.calendar.queries.listEvents, {
+			start: base - 2 * 60 * 60 * 1000,
+			end: base + 2 * 60 * 60 * 1000,
+		});
+		const matchingAfterApply = eventsAfterApply.filter(
+			(event) =>
+				event.source === "task" &&
+				typeof event.sourceId === "string" &&
+				(event.sourceId === taskSourceId || event.sourceId.startsWith(`${taskSourceId}:travel:`)),
+		);
+		expect(matchingAfterApply).toHaveLength(0);
+	});
+
 	test("optional task and habit fields can be cleared on update", async () => {
 		const testConvex = createTestConvex();
 		const user = testConvex.withIdentity({ subject: "user_clear_optional_fields" });

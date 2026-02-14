@@ -1005,6 +1005,221 @@ describe("scheduling run queueing", () => {
 			expect(latest?.status).toBe("pending");
 		});
 
+		test("upsertSyncedEventsForUser matches primary alias without duplicating task events", async () => {
+			const testConvex = createTestConvex();
+			const userId = "user-sync-primary-alias-dedupe";
+			const user = testConvex.withIdentity({ subject: userId });
+			const now = Date.now();
+
+			const taskId = await seedScheduledTaskBlock(testConvex, user, userId, {
+				taskRequestId: "primary-alias-task",
+				taskTitle: "Test 123",
+				start: now + 60 * 60 * 1000,
+				end: now + 2 * 60 * 60 * 1000,
+			});
+
+			const taskEvent = await testConvex.run(async (ctx) => {
+				return ctx.db
+					.query("calendarEvents")
+					.withIndex("by_userId_source_sourceId", (q) =>
+						q.eq("userId", userId).eq("source", "task").eq("sourceId", String(taskId)),
+					)
+					.first();
+			});
+			const eventId = ensureDefined(taskEvent?._id, "task event id");
+
+			await testConvex.mutation(internal.calendar.internal.updateLocalEventFromGoogle, {
+				id: eventId,
+				googleEventId: "primary-alias-google-event-1",
+				calendarId: "primary",
+				lastSyncedAt: now,
+			});
+
+			await testConvex.mutation(internal.calendar.mutations.upsertSyncedEventsForUser, {
+				userId,
+				events: [
+					{
+						googleEventId: "primary-alias-google-event-1",
+						title: "Test 123",
+						start: now + 3 * 60 * 60 * 1000,
+						end: now + 4 * 60 * 60 * 1000,
+						allDay: false,
+						calendarId: "maxievigcoc@gmail.com",
+						busyStatus: "busy",
+						lastSyncedAt: now + 1000,
+					},
+				],
+				deletedEvents: [],
+				connectedCalendars: [
+					{
+						calendarId: "maxievigcoc@gmail.com",
+						name: "Primary",
+						primary: true,
+					},
+				],
+			});
+
+			const syncedRows = await testConvex.run(async (ctx) => {
+				const events = await ctx.db
+					.query("calendarEvents")
+					.withIndex("by_userId", (q) => q.eq("userId", userId))
+					.collect();
+				return events.filter(
+					(event) =>
+						event.googleEventId === "primary-alias-google-event-1" &&
+						event.sourceId === String(taskId),
+				);
+			});
+
+			expect(syncedRows).toHaveLength(1);
+			expect(syncedRows[0]?.source).toBe("task");
+			expect(syncedRows[0]?.title).toBe("Test 123");
+			expect(syncedRows[0]?.calendarId).toBe("maxievigcoc@gmail.com");
+		});
+
+		test("upsertSyncedEventsForUser reconciles duplicate google copies onto protected task events", async () => {
+			const testConvex = createTestConvex();
+			const userId = "user-sync-protected-fingerprint-dedupe";
+			const user = testConvex.withIdentity({ subject: userId });
+			const now = Date.now();
+
+			const taskId = await seedScheduledTaskBlock(testConvex, user, userId, {
+				taskRequestId: "protected-fingerprint-task",
+				taskTitle: "Travel: Test",
+				start: now + 60 * 60 * 1000,
+				end: now + 90 * 60 * 1000,
+			});
+
+			const taskEvent = await testConvex.run(async (ctx) => {
+				return ctx.db
+					.query("calendarEvents")
+					.withIndex("by_userId_source_sourceId", (q) =>
+						q.eq("userId", userId).eq("source", "task").eq("sourceId", String(taskId)),
+					)
+					.first();
+			});
+			const eventId = ensureDefined(taskEvent?._id, "protected task event id");
+			const eventStart = ensureDefined(taskEvent?.start, "protected task event start");
+			const eventEnd = ensureDefined(taskEvent?.end, "protected task event end");
+			const eventCalendarId = taskEvent?.calendarId ?? "primary";
+
+			await testConvex.mutation(internal.calendar.internal.updateLocalEventFromGoogle, {
+				id: eventId,
+				googleEventId: "task-google-original",
+				calendarId: eventCalendarId,
+				lastSyncedAt: now,
+			});
+
+			await testConvex.mutation(internal.calendar.mutations.upsertSyncedEventsForUser, {
+				userId,
+				events: [
+					{
+						googleEventId: "task-google-duplicate",
+						title: "Travel: Test",
+						start: eventStart,
+						end: eventEnd,
+						allDay: false,
+						calendarId: eventCalendarId,
+						busyStatus: "busy",
+						lastSyncedAt: now + 1000,
+					},
+				],
+				deletedEvents: [],
+			});
+
+			const allEvents = await testConvex.run(async (ctx) => {
+				return ctx.db
+					.query("calendarEvents")
+					.withIndex("by_userId", (q) => q.eq("userId", userId))
+					.collect();
+			});
+
+			const matchingWindow = allEvents.filter(
+				(event) =>
+					event.start === eventStart &&
+					event.end === eventEnd &&
+					event.title === "Travel: Test" &&
+					(event.calendarId ?? "primary") === eventCalendarId,
+			);
+			expect(matchingWindow).toHaveLength(1);
+			expect(matchingWindow[0]?.source).toBe("task");
+			expect(matchingWindow[0]?.sourceId).toBe(String(taskId));
+			expect(matchingWindow[0]?.googleEventId).toBe("task-google-original");
+		});
+
+		test("upsertSyncedEventsForUser matches protected task events by appSourceKey", async () => {
+			const testConvex = createTestConvex();
+			const userId = "user-sync-protected-source-key-match";
+			const user = testConvex.withIdentity({ subject: userId });
+			const now = Date.now();
+
+			const taskId = await seedScheduledTaskBlock(testConvex, user, userId, {
+				taskRequestId: "protected-source-key-task",
+				taskTitle: "Test",
+				start: now + 2 * 60 * 60 * 1000,
+				end: now + 3 * 60 * 60 * 1000,
+			});
+
+			const taskEvent = await testConvex.run(async (ctx) => {
+				return ctx.db
+					.query("calendarEvents")
+					.withIndex("by_userId_source_sourceId", (q) =>
+						q.eq("userId", userId).eq("source", "task").eq("sourceId", String(taskId)),
+					)
+					.first();
+			});
+			const eventId = ensureDefined(taskEvent?._id, "source key task event id");
+			const eventStart = ensureDefined(taskEvent?.start, "source key task event start");
+			const eventEnd = ensureDefined(taskEvent?.end, "source key task event end");
+			const eventCalendarId = taskEvent?.calendarId ?? "primary";
+
+			await testConvex.mutation(internal.calendar.internal.updateLocalEventFromGoogle, {
+				id: eventId,
+				googleEventId: "task-google-original-by-source-key",
+				calendarId: eventCalendarId,
+				lastSyncedAt: now,
+			});
+
+			await testConvex.mutation(internal.calendar.mutations.upsertSyncedEventsForUser, {
+				userId,
+				events: [
+					{
+						googleEventId: "task-google-duplicate-by-source-key",
+						title: "Travel: Test",
+						start: eventStart,
+						end: eventEnd,
+						allDay: false,
+						calendarId: eventCalendarId,
+						busyStatus: "busy",
+						appSourceKey: String(taskId),
+						lastSyncedAt: now + 1000,
+					},
+				],
+				deletedEvents: [],
+			});
+
+			const allEvents = await testConvex.run(async (ctx) => {
+				return ctx.db
+					.query("calendarEvents")
+					.withIndex("by_userId", (q) => q.eq("userId", userId))
+					.collect();
+			});
+
+			const taskEvents = allEvents.filter(
+				(event) => event.source === "task" && event.sourceId === String(taskId),
+			);
+			expect(taskEvents).toHaveLength(1);
+			expect(taskEvents[0]?.googleEventId).toBe("task-google-original-by-source-key");
+			expect(taskEvents[0]?.title).toBe("Test");
+
+			const duplicateGoogleSourceRows = allEvents.filter(
+				(event) =>
+					event.source === "google" &&
+					event.googleEventId === "task-google-duplicate-by-source-key",
+			);
+			expect(duplicateGoogleSourceRows).toHaveLength(0);
+		});
+
 		test("scheduling input counts only non-free calendar events as busy", async () => {
 			const testConvex = createTestConvex();
 			const userId = "user-busy-status-filter";
@@ -1137,6 +1352,93 @@ describe("scheduling run queueing", () => {
 			const scheduledTask = tasks.find((task) => task._id === (taskId as Id<"tasks">));
 			expect(scheduledTask?.scheduledStart).toBeTypeOf("number");
 			expect(scheduledTask?.scheduledEnd).toBeTypeOf("number");
+		});
+
+		test("applySchedulingBlocks adds travel blocks around pinned task events", async () => {
+			const testConvex = createTestConvex();
+			const userId = "user-pinned-task-travel-blocks";
+			const user = testConvex.withIdentity({ subject: userId });
+			const base = Date.UTC(2026, 1, 17, 9, 0, 0, 0);
+
+			const taskId = await user.action(api.tasks.actions.createTask, {
+				requestId: "pinned-travel-task",
+				input: {
+					title: "Pinned travel task",
+					estimatedMinutes: 60,
+					status: "queued",
+					travelMinutes: 15,
+					location: "Office",
+				},
+			});
+			await settleAllActiveRuns(testConvex, user);
+
+			const pinnedStart = base + 90 * 60 * 1000;
+			const pinnedEnd = pinnedStart + 30 * 60 * 1000;
+			await testConvex.run(async (ctx) => {
+				await ctx.db.insert("calendarEvents", {
+					userId,
+					title: "Pinned travel task",
+					start: pinnedStart,
+					end: pinnedEnd,
+					allDay: false,
+					updatedAt: Date.now(),
+					source: "task",
+					sourceId: String(taskId),
+					pinned: true,
+					busyStatus: "busy",
+				});
+			});
+
+			const run = await testConvex.mutation(internal.scheduling.mutations.enqueueSchedulingRun, {
+				userId,
+				triggeredBy: "manual",
+				force: true,
+			});
+
+			const scheduledStart = base;
+			const scheduledEnd = base + 30 * 60 * 1000;
+			await testConvex.mutation(internal.scheduling.mutations.applySchedulingBlocks, {
+				runId: run.runId,
+				userId,
+				horizonStart: base - HOUR_MS,
+				horizonEnd: base + 4 * HOUR_MS,
+				blocks: [
+					{
+						source: "task",
+						sourceId: String(taskId),
+						title: "Pinned travel task",
+						start: scheduledStart,
+						end: scheduledEnd,
+						priority: "medium",
+					},
+					{
+						source: "task",
+						sourceId: `task:${String(taskId)}:travel:before:${scheduledStart}:${scheduledEnd}`,
+						title: "Travel: Pinned travel task",
+						start: scheduledStart - 15 * 60 * 1000,
+						end: scheduledStart,
+						priority: "medium",
+					},
+					{
+						source: "task",
+						sourceId: `task:${String(taskId)}:travel:after:${scheduledStart}:${scheduledEnd}`,
+						title: "Travel: Pinned travel task",
+						start: scheduledEnd,
+						end: scheduledEnd + 15 * 60 * 1000,
+						priority: "medium",
+					},
+				],
+			});
+
+			const events = await user.query(api.calendar.queries.listEvents, {
+				start: base - HOUR_MS,
+				end: base + 4 * HOUR_MS,
+			});
+
+			const pinnedBeforeSourceId = `task:${String(taskId)}:travel:before:${pinnedStart}:${pinnedEnd}`;
+			const pinnedAfterSourceId = `task:${String(taskId)}:travel:after:${pinnedStart}:${pinnedEnd}`;
+			expect(events.some((event) => event.sourceId === pinnedBeforeSourceId)).toBe(true);
+			expect(events.some((event) => event.sourceId === pinnedAfterSourceId)).toBe(true);
 		});
 
 		test("runForUser hard infeasible leaves existing schedule unchanged", async () => {

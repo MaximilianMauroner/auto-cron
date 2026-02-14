@@ -2144,15 +2144,15 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		async (eventId: string, scope: RecurrenceEditScope) => {
 			const id = toCalendarEventId(eventId);
 			cancelCalendarPointerInteractions();
-			await deleteEventMutation({ id, scope });
-			void pushEventToGoogle({ eventId: id, operation: "delete", scope }).catch(
+			await pushEventToGoogle({ eventId: id, operation: "delete", scope }).catch(
 				(deleteSyncError) => {
 					console.warn(
-						"Failed to delete event in Google calendar after local delete.",
+						"Failed to delete event in Google calendar before local delete.",
 						deleteSyncError,
 					);
 				},
 			);
+			await deleteEventMutation({ id, scope });
 		},
 		[cancelCalendarPointerInteractions, deleteEventMutation, pushEventToGoogle],
 	);

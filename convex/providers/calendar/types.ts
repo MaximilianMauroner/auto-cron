@@ -5,6 +5,7 @@ export type CalendarEventCreateInput = {
 	start: number;
 	end: number;
 	allDay?: boolean;
+	appSourceKey?: string;
 	recurrenceRule?: string;
 	calendarId?: string;
 	busyStatus?: "free" | "busy" | "tentative";
@@ -36,6 +37,7 @@ export type GoogleEventUpsert = {
 	allDay: boolean;
 	googleEventId: string;
 	calendarId: string;
+	appSourceKey?: string;
 	recurrenceRule?: string;
 	recurringEventId?: string;
 	originalStartTime?: number;
@@ -59,6 +61,7 @@ export type CalendarProviderEvent = {
 	sourceId?: string;
 	googleEventId?: string;
 	calendarId?: string;
+	appSourceKey?: string;
 	recurrenceRule?: string;
 	recurringEventId?: string;
 	originalStartTime?: number;

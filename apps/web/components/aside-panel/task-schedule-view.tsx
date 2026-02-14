@@ -12,6 +12,7 @@ import { useUserPreferences } from "@/components/user-preferences-context";
 import { useMutationWithStatus } from "@/hooks/use-convex-status";
 import { formatDurationCompact } from "@/lib/duration";
 import type { CalendarEventDTO } from "@auto-cron/types";
+import { useAction } from "convex/react";
 import { Clock3, MoreVertical, Pin, PinOff, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 import { api } from "../../../../convex/_generated/api";
@@ -34,6 +35,7 @@ function EventRow({
 }) {
 	const { mutate: setEventPinned } = useMutationWithStatus(api.calendar.mutations.setEventPinned);
 	const { mutate: deleteEvent } = useMutationWithStatus(api.calendar.mutations.deleteEvent);
+	const pushEventToGoogle = useAction(api.calendar.actions.pushEventToGoogle);
 
 	const startDate = new Date(event.start);
 	const endDate = new Date(event.end);
@@ -63,7 +65,18 @@ function EventRow({
 	};
 
 	const handleDeleteEvent = () => {
-		void deleteEvent({ id: event._id as Id<"calendarEvents"> });
+		void (async () => {
+			const id = event._id as Id<"calendarEvents">;
+			await pushEventToGoogle({ eventId: id, operation: "delete", scope: "single" }).catch(
+				(deleteSyncError) => {
+					console.warn(
+						"Failed to delete event in Google calendar before local delete.",
+						deleteSyncError,
+					);
+				},
+			);
+			await deleteEvent({ id });
+		})();
 	};
 
 	const handleNavigate = () => {

@@ -33,12 +33,13 @@ See [docs/setup.md](docs/setup.md) for local development quickstart and deployme
 ## Commands
 
 - `bun install` - install dependencies
-- `bun run dev` - run all workspace dev tasks via Turbo
+- `bun run dev` - run web dev and Convex dev together
+- `bun run dev:web` - run web dev only
+- `bun run dev:convex` - run Convex dev only
 - `bun run build` - build all workspaces
 - `bun run lint` - run Biome checks
 - `bun run format` - run Biome with auto-fix
 - `bun run typecheck` - run workspace type checks
-- `npx convex dev` - run Convex dev backend in a separate terminal
 
 ## Scheduler snapshot
 

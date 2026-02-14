@@ -1808,7 +1808,7 @@ export const clampSchedulingHorizonsToPlans = internalMutation({
 		while (!done) {
 			const result = await ctx.db
 				.query("userSettings")
-				.paginate({ cursor: cursor ?? undefined, numItems: HORIZON_CLAMP_PAGE_SIZE });
+				.paginate({ cursor: cursor ?? null, numItems: HORIZON_CLAMP_PAGE_SIZE });
 
 			for (const settings of result.page) {
 				const maxDays = getMaxHorizonDays(settings.activeProductId);

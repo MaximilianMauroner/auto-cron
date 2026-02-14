@@ -38,6 +38,7 @@ export type SchedulingTaskInput = {
 	effectiveSchedulingMode: SchedulingMode;
 	preferredCalendarId?: string;
 	color?: string;
+	travelColor?: string;
 	pinnedEventMinutes?: number;
 };
 

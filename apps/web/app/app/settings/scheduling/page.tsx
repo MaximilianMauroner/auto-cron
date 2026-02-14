@@ -520,6 +520,7 @@ export default function SchedulingSettingsPage() {
 								<DurationInput
 									value={taskForm.restMinutes}
 									onChange={(restMinutes) => setTaskForm((c) => ({ ...c, restMinutes }))}
+									allowZero
 								/>
 							</div>
 							<div className="space-y-1.5">
@@ -527,6 +528,7 @@ export default function SchedulingSettingsPage() {
 								<DurationInput
 									value={taskForm.travelMinutes}
 									onChange={(travelMinutes) => setTaskForm((c) => ({ ...c, travelMinutes }))}
+									allowZero
 								/>
 							</div>
 						</div>

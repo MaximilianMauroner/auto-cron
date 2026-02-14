@@ -205,6 +205,38 @@ const normalizeOptionalNonNegativeMinutes = (value: number | null | undefined) =
 	return Math.round(value);
 };
 
+const clearPinnedTaskCalendarEvents = async (
+	ctx: MutationCtx,
+	userId: string,
+	taskId: Id<"tasks">,
+) => {
+	const taskSourceId = String(taskId);
+	const taskTravelSourcePrefix = `${taskSourceId}:travel:`;
+	const events = await ctx.db
+		.query("calendarEvents")
+		.withIndex("by_userId", (q) => q.eq("userId", userId))
+		.collect();
+	const matchingPinnedEvents = events.filter(
+		(event) =>
+			event.source === "task" &&
+			event.pinned === true &&
+			typeof event.sourceId === "string" &&
+			(event.sourceId === taskSourceId || event.sourceId.startsWith(taskTravelSourcePrefix)),
+	);
+	if (matchingPinnedEvents.length === 0) {
+		return;
+	}
+	const now = Date.now();
+	await Promise.all(
+		matchingPinnedEvents.map((event) =>
+			ctx.db.patch(event._id, {
+				pinned: false,
+				updatedAt: now,
+			}),
+		),
+	);
+};
+
 export const updateTask = mutation({
 	args: {
 		id: v.id("tasks"),
@@ -243,6 +275,9 @@ export const updateTask = mutation({
 			if (args.patch.status === "done") {
 				nextPatch.completedAt = Date.now();
 			}
+		}
+		if (args.patch.status === "backlog") {
+			await clearPinnedTaskCalendarEvents(ctx, ctx.userId, args.id);
 		}
 		await ctx.db.patch(args.id, nextPatch as Partial<typeof task>);
 		await enqueueSchedulingRunFromMutation(ctx, {
@@ -299,6 +334,11 @@ export const reorderTasks = mutation({
 				}),
 			),
 		);
+		for (const item of args.items) {
+			if (item.status === "backlog") {
+				await clearPinnedTaskCalendarEvents(ctx, ctx.userId, item.id);
+			}
+		}
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId: ctx.userId,
 			triggeredBy: "task_change",

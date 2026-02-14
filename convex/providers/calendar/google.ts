@@ -27,6 +27,10 @@ type GoogleEvent = {
 	summary?: string;
 	description?: string;
 	location?: string;
+	extendedProperties?: {
+		private?: Record<string, string>;
+		shared?: Record<string, string>;
+	};
 	visibility?: "default" | "public" | "private" | "confidential";
 	start?: GoogleEventDateTime;
 	end?: GoogleEventDateTime;
@@ -71,6 +75,7 @@ type GoogleWatchStartResponse = {
 };
 
 const GOOGLE_CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
+const APP_SOURCE_KEY_FIELD = "autoCronSourceId";
 const GOOGLE_COLOR_ID_TO_HEX: Record<string, string> = {
 	"1": "#a4bdfc",
 	"2": "#7ae7bf",
@@ -298,6 +303,7 @@ const toGoogleEventUpsert = (
 		allDay: Boolean(event.start?.date && !event.start?.dateTime),
 		googleEventId: event.id,
 		calendarId,
+		appSourceKey: event.extendedProperties?.private?.[APP_SOURCE_KEY_FIELD],
 		recurrenceRule: event.recurrence?.[0],
 		recurringEventId: event.recurringEventId,
 		originalStartTime: maybeDateTimeToMillis(event.originalStartTime),
@@ -329,6 +335,9 @@ const createGoogleEventPayload = (input: CalendarEventCreateInput): Record<strin
 		summary: input.title,
 		description: input.description,
 		location: input.location,
+		extendedProperties: input.appSourceKey
+			? { private: { [APP_SOURCE_KEY_FIELD]: input.appSourceKey } }
+			: undefined,
 		visibility: input.visibility,
 		start: isAllDay
 			? { date: new Date(input.start).toISOString().slice(0, 10) }
@@ -342,7 +351,10 @@ const createGoogleEventPayload = (input: CalendarEventCreateInput): Record<strin
 	};
 };
 
-const patchGoogleEventPayload = (patch: CalendarEventUpdateInput): Record<string, unknown> => {
+const patchGoogleEventPayload = (
+	patch: CalendarEventUpdateInput,
+	appSourceKey?: string,
+): Record<string, unknown> => {
 	const payload: Record<string, unknown> = {};
 	if (patch.title !== undefined) payload.summary = patch.title;
 	if (patch.description !== undefined) payload.description = patch.description;
@@ -372,6 +384,13 @@ const patchGoogleEventPayload = (patch: CalendarEventUpdateInput): Record<string
 	}
 	if (patch.color !== undefined) {
 		payload.colorId = toGoogleColorId(patch.color);
+	}
+	if (appSourceKey) {
+		payload.extendedProperties = {
+			private: {
+				[APP_SOURCE_KEY_FIELD]: appSourceKey,
+			},
+		};
 	}
 	return payload;
 };
@@ -619,7 +638,10 @@ export const googleCalendarProvider: CalendarProvider = {
 			...patch,
 			calendarId: undefined,
 		};
-		const patchPayload = patchGoogleEventPayload(patchWithoutCalendar);
+		const patchPayload = patchGoogleEventPayload(
+			patchWithoutCalendar,
+			event.appSourceKey ?? event.sourceId,
+		);
 
 		let updated: GoogleEvent | null = null;
 		if (targetCalendarId !== sourceCalendarId) {
@@ -664,6 +686,11 @@ export const googleCalendarProvider: CalendarProvider = {
 				summary: event.title,
 				description: event.description,
 				location: event.location,
+				extendedProperties: event.appSourceKey
+					? { private: { [APP_SOURCE_KEY_FIELD]: event.appSourceKey } }
+					: event.sourceId
+						? { private: { [APP_SOURCE_KEY_FIELD]: event.sourceId } }
+						: undefined,
 				visibility: event.visibility,
 				start: event.allDay
 					? { date: new Date(event.start).toISOString().slice(0, 10) }

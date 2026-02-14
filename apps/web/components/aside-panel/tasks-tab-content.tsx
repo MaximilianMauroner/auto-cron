@@ -1,13 +1,31 @@
 "use client";
 
 import { TaskEditSheet } from "@/components/tasks/task-edit-sheet";
+import { Badge } from "@/components/ui/badge";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
-import type { TaskDTO } from "@auto-cron/types";
-import { Search } from "lucide-react";
+import type { TaskDTO, TaskStatus } from "@auto-cron/types";
+import { ChevronDown, Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import { AsideTaskCard } from "./aside-task-card";
+
+const statusOrder: TaskStatus[] = ["in_progress", "queued", "scheduled", "backlog", "done"];
+const statusLabels: Record<TaskStatus, string> = {
+	backlog: "Backlog",
+	queued: "Up Next",
+	scheduled: "Scheduled",
+	in_progress: "In Progress",
+	done: "Done",
+};
+const statusClass: Record<TaskStatus, string> = {
+	backlog: "bg-zinc-500/15 text-zinc-700 border-zinc-500/25",
+	queued: "bg-sky-500/15 text-sky-700 border-sky-500/25",
+	scheduled: "bg-violet-500/15 text-violet-700 border-violet-500/25",
+	in_progress: "bg-amber-500/15 text-amber-700 border-amber-500/25",
+	done: "bg-emerald-500/15 text-emerald-700 border-emerald-500/25",
+};
 
 export function TasksTabContent() {
 	const [search, setSearch] = useState("");
@@ -23,14 +41,14 @@ export function TasksTabContent() {
 		);
 	}, [tasks, search]);
 
-	const upNextTasks = useMemo(
-		() => filteredTasks.filter((t) => t.status === "queued"),
-		[filteredTasks],
-	);
-	const otherTasks = useMemo(
-		() => filteredTasks.filter((t) => t.status !== "queued" && t.status !== "done"),
-		[filteredTasks],
-	);
+	const groupedByStatus = useMemo(() => {
+		return statusOrder.map((status) => ({
+			status,
+			tasks: filteredTasks.filter((t) => t.status === status),
+		}));
+	}, [filteredTasks]);
+
+	const hasAnyTasks = groupedByStatus.some((g) => g.tasks.length > 0);
 
 	return (
 		<>
@@ -49,44 +67,41 @@ export function TasksTabContent() {
 					<div className="font-[family-name:var(--font-cutive)] text-[0.76rem] text-muted-foreground">
 						Loading tasks...
 					</div>
-				) : tasks.length === 0 ? (
+				) : !hasAnyTasks ? (
 					<div className="font-[family-name:var(--font-cutive)] rounded-xl border border-dashed border-border/60 p-4 text-center text-[0.76rem] text-muted-foreground">
-						No tasks yet. Create your first task on the Tasks page.
+						{search
+							? `No tasks match \u201c${search}\u201d`
+							: "No tasks yet. Create your first task on the Tasks page."}
 					</div>
 				) : (
-					<>
-						{upNextTasks.length > 0 ? (
-							<div className="space-y-2">
-								<div className="font-[family-name:var(--font-cutive)] text-[0.68rem] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-									Up Next
-								</div>
-								<div className="space-y-1.5 rounded-lg border border-dashed border-border/60 p-2">
-									{upNextTasks.map((task) => (
-										<AsideTaskCard key={task._id} task={task} onEditTask={setEditingTaskId} />
-									))}
-								</div>
-							</div>
-						) : null}
-
-						{otherTasks.length > 0 ? (
-							<div className="space-y-2">
-								<div className="font-[family-name:var(--font-cutive)] text-[0.68rem] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-									All Tasks
-								</div>
-								<div className="space-y-1.5">
-									{otherTasks.map((task) => (
-										<AsideTaskCard key={task._id} task={task} onEditTask={setEditingTaskId} />
-									))}
-								</div>
-							</div>
-						) : null}
-
-						{filteredTasks.length === 0 && search ? (
-							<div className="text-center text-[0.76rem] text-muted-foreground">
-								No tasks match &ldquo;{search}&rdquo;
-							</div>
-						) : null}
-					</>
+					<div className="space-y-1">
+						{groupedByStatus.map((group) =>
+							group.tasks.length > 0 ? (
+								<Collapsible key={group.status} defaultOpen={group.status !== "done"}>
+									<CollapsibleTrigger className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-[0.76rem] font-medium hover:bg-accent/50">
+										<div className="flex items-center gap-2">
+											<span className="font-[family-name:var(--font-outfit)]">
+												{statusLabels[group.status]}
+											</span>
+											<Badge
+												className={`${statusClass[group.status]} font-[family-name:var(--font-outfit)] tabular-nums text-[0.6rem] px-1.5 py-0`}
+											>
+												{group.tasks.length}
+											</Badge>
+										</div>
+										<ChevronDown className="size-3.5 text-muted-foreground transition-transform [[data-state=closed]>&]:rotate-[-90deg]" />
+									</CollapsibleTrigger>
+									<CollapsibleContent>
+										<div className="space-y-1 pl-1 pt-1">
+											{group.tasks.map((task) => (
+												<AsideTaskCard key={task._id} task={task} onEditTask={setEditingTaskId} />
+											))}
+										</div>
+									</CollapsibleContent>
+								</Collapsible>
+							) : null,
+						)}
+					</div>
 				)}
 			</div>
 			<TaskEditSheet
