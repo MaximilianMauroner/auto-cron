@@ -253,7 +253,8 @@ export const getTaskSchedulingDefaults = query({
 		schedulingStepMinutes: schedulingStepMinutesValidator,
 		taskQuickCreateDefaults: taskQuickCreateDefaultsValidator,
 		habitQuickCreateDefaults: habitQuickCreateDefaultsValidator,
-		schedulingHorizonDays: v.number(),
+		schedulingHorizonWeeks: v.number(),
+		activeProductId: v.optional(v.string()),
 		weekStartsOn: weekStartsOnValidator,
 		dateFormat: dateFormatValidator,
 		timeFormatPreference: v.union(v.literal("12h"), v.literal("24h")),
@@ -271,7 +272,8 @@ export const getTaskSchedulingDefaults = query({
 			schedulingStepMinutes: normalizeSchedulingStepMinutes(settings?.schedulingStepMinutes),
 			taskQuickCreateDefaults: sanitizeTaskQuickCreateDefaults(settings),
 			habitQuickCreateDefaults: sanitizeHabitQuickCreateDefaults(settings),
-			schedulingHorizonDays: settings?.schedulingHorizonDays ?? 75,
+			schedulingHorizonWeeks: Math.max(1, Math.round((settings?.schedulingHorizonDays ?? 70) / 7)),
+			activeProductId: settings?.activeProductId,
 			weekStartsOn: normalizeWeekStartsOn(settings?.weekStartsOn) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
 			dateFormat: normalizeDateFormat(settings?.dateFormat) as
 				| "MM/DD/YYYY"

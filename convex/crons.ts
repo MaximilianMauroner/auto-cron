@@ -19,4 +19,9 @@ builtinCrons.interval(
 		limit: 1000,
 	},
 );
+builtinCrons.daily(
+	"clamp-scheduling-horizons",
+	{ hourUTC: 3, minuteUTC: 0 },
+	internal.hours.mutations.clampSchedulingHorizonsToPlans,
+);
 export default builtinCrons;

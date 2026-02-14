@@ -79,6 +79,13 @@ export const { authKitEvent } = authKit.events({
 		await ctx.runMutation(internal.hours.mutations.internalBootstrapDefaultPlannerDataForUser, {
 			userId: event.data.id,
 		});
+
+		const fullName = [event.data.firstName, event.data.lastName].filter(Boolean).join(" ");
+		await ctx.scheduler.runAfter(0, internal.customers.createAutumnCustomer, {
+			customerId: event.data.id,
+			name: fullName || undefined,
+			email: event.data.email ?? undefined,
+		});
 	},
 	"user.deleted": async (ctx, event) => {
 		const settings = await ctx.db

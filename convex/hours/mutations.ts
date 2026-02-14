@@ -4,6 +4,7 @@ import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
 import { GOOGLE_CALENDAR_COLORS, ensureDefaultCategories } from "../categories/shared";
+import { getMaxHorizonDays, getMaxHorizonWeeks, isValidProductId } from "../planLimits";
 import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
 import {
 	type HourWindow,
@@ -532,11 +533,12 @@ const ensureSettingsForUser = async (ctx: MutationCtx, userId: string) => {
 	if (!settings) {
 		await ctx.db.insert("userSettings", {
 			userId,
+			activeProductId: "free",
 			timezone: normalizeTimeZone(undefined),
 			timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
 			defaultTaskSchedulingMode: "fastest",
 			...normalizeTaskQuickCreateDefaults(null),
-			schedulingHorizonDays: 75,
+			schedulingHorizonDays: 70,
 			schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
 			schedulingStepMinutes: defaultSchedulingStepMinutes,
 			googleRefreshToken: undefined,
@@ -549,16 +551,22 @@ const ensureSettingsForUser = async (ctx: MutationCtx, userId: string) => {
 
 	await ctx.db.replace(settings._id, {
 		userId: settings.userId,
+		activeProductId: settings.activeProductId,
 		timezone: normalizeTimeZone(settings.timezone),
 		timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(settings),
 		defaultTaskSchedulingMode: sanitizeTaskSchedulingMode(
 			(settings as { defaultTaskSchedulingMode?: string }).defaultTaskSchedulingMode,
 		),
 		...normalizeTaskQuickCreateDefaults(settings as TaskQuickCreateSettingsShape),
-		schedulingHorizonDays: settings.schedulingHorizonDays ?? 75,
+		schedulingHorizonDays: settings.schedulingHorizonDays ?? 70,
 		schedulingDowntimeMinutes: normalizedSchedulingDowntimeMinutesFromSettings(settings),
 		schedulingStepMinutes: normalizedSchedulingStepMinutesFromSettings(settings),
 		schedulingModelVersion: settings.schedulingModelVersion,
+		weekStartsOn: normalizeWeekStartsOn(settings.weekStartsOn) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+		dateFormat: normalizeDateFormat(settings.dateFormat) as
+			| "MM/DD/YYYY"
+			| "DD/MM/YYYY"
+			| "YYYY-MM-DD",
 		hoursBootstrapped: settings.hoursBootstrapped,
 		googleRefreshToken: settings.googleRefreshToken,
 		googleSyncToken: settings.googleSyncToken,
@@ -671,7 +679,7 @@ export const setDefaultTaskSchedulingMode = mutation({
 					timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
 					defaultTaskSchedulingMode: args.mode,
 					...normalizeTaskQuickCreateDefaults(null),
-					schedulingHorizonDays: 75,
+					schedulingHorizonDays: 70,
 					schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
 					schedulingStepMinutes: defaultSchedulingStepMinutes,
 					googleRefreshToken: undefined,
@@ -716,7 +724,7 @@ export const setSchedulingDowntimeMinutes = mutation({
 				timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
 				defaultTaskSchedulingMode: "fastest",
 				...normalizeTaskQuickCreateDefaults(null),
-				schedulingHorizonDays: 75,
+				schedulingHorizonDays: 70,
 				schedulingDowntimeMinutes: normalizedMinutes,
 				schedulingStepMinutes: defaultSchedulingStepMinutes,
 				googleRefreshToken: undefined,
@@ -756,7 +764,7 @@ export const setSchedulingStepMinutes = mutation({
 				timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
 				defaultTaskSchedulingMode: "fastest",
 				...normalizeTaskQuickCreateDefaults(null),
-				schedulingHorizonDays: 75,
+				schedulingHorizonDays: 70,
 				schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
 				schedulingStepMinutes: normalizedMinutes,
 				googleRefreshToken: undefined,
@@ -773,26 +781,28 @@ export const setSchedulingStepMinutes = mutation({
 	}),
 });
 
-export const setSchedulingHorizonDays = mutation({
+export const setSchedulingHorizonWeeks = mutation({
 	args: {
-		days: v.number(),
+		weeks: v.number(),
 	},
 	returns: v.number(),
-	handler: withMutationAuth(async (ctx, args: { days: number }): Promise<number> => {
+	handler: withMutationAuth(async (ctx, args: { weeks: number }): Promise<number> => {
 		await ensureSettingsForUser(ctx, ctx.userId);
 		const settings = await ctx.db
 			.query("userSettings")
 			.withIndex("by_userId", (q) => q.eq("userId", ctx.userId))
 			.unique();
-		const normalizedDays = Math.max(7, Math.min(365, Math.round(args.days)));
+		const maxWeeks = getMaxHorizonWeeks(settings?.activeProductId);
+		const normalizedWeeks = Math.max(1, Math.min(maxWeeks, Math.round(args.weeks)));
 		if (!settings) {
 			await ctx.db.insert("userSettings", {
 				userId: ctx.userId,
+				activeProductId: "free",
 				timezone: normalizeTimeZone(undefined),
 				timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
 				defaultTaskSchedulingMode: "fastest",
 				...normalizeTaskQuickCreateDefaults(null),
-				schedulingHorizonDays: normalizedDays,
+				schedulingHorizonDays: normalizedWeeks * 7,
 				schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
 				schedulingStepMinutes: defaultSchedulingStepMinutes,
 				weekStartsOn: 1,
@@ -804,10 +814,44 @@ export const setSchedulingHorizonDays = mutation({
 			});
 		} else {
 			await ctx.db.patch(settings._id, {
-				schedulingHorizonDays: normalizedDays,
+				schedulingHorizonDays: normalizedWeeks * 7,
 			});
 		}
-		return normalizedDays;
+		return normalizedWeeks;
+	}),
+});
+
+export const updateActiveProduct = mutation({
+	args: {
+		productId: v.string(),
+	},
+	returns: v.string(),
+	handler: withMutationAuth(async (ctx, args: { productId: string }): Promise<string> => {
+		if (!isValidProductId(args.productId)) {
+			throw new ConvexError({
+				code: "INVALID_PRODUCT",
+				message: "Unknown product ID.",
+			});
+		}
+		await ensureSettingsForUser(ctx, ctx.userId);
+		const settings = await ctx.db
+			.query("userSettings")
+			.withIndex("by_userId", (q) => q.eq("userId", ctx.userId))
+			.unique();
+		if (settings) {
+			const maxWeeks = getMaxHorizonWeeks(args.productId);
+			const currentWeeks = Math.max(1, Math.round(settings.schedulingHorizonDays / 7));
+			const clampedWeeks = Math.min(currentWeeks, maxWeeks);
+			await ctx.db.patch(settings._id, {
+				activeProductId: args.productId,
+				schedulingHorizonDays: clampedWeeks * 7,
+			});
+		}
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: ctx.userId,
+			triggeredBy: "hours_change",
+		});
+		return args.productId;
 	}),
 });
 
@@ -831,7 +875,7 @@ export const setWeekStartsOn = mutation({
 					timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
 					defaultTaskSchedulingMode: "fastest",
 					...normalizeTaskQuickCreateDefaults(null),
-					schedulingHorizonDays: 75,
+					schedulingHorizonDays: 70,
 					schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
 					schedulingStepMinutes: defaultSchedulingStepMinutes,
 					weekStartsOn: normalizedDay,
@@ -877,7 +921,7 @@ export const setDateFormat = mutation({
 					timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
 					defaultTaskSchedulingMode: "fastest",
 					...normalizeTaskQuickCreateDefaults(null),
-					schedulingHorizonDays: 75,
+					schedulingHorizonDays: 70,
 					schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
 					schedulingStepMinutes: defaultSchedulingStepMinutes,
 					weekStartsOn: 1,
@@ -921,7 +965,7 @@ export const setTimeFormatPreference = mutation({
 					timeFormatPreference: args.timeFormatPreference,
 					defaultTaskSchedulingMode: "fastest",
 					...normalizeTaskQuickCreateDefaults(null),
-					schedulingHorizonDays: 75,
+					schedulingHorizonDays: 70,
 					schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
 					schedulingStepMinutes: defaultSchedulingStepMinutes,
 					weekStartsOn: 1,
@@ -973,7 +1017,7 @@ export const setCalendarDisplayPreferences = mutation({
 					timeFormatPreference: args.timeFormatPreference,
 					defaultTaskSchedulingMode: "fastest",
 					...normalizeTaskQuickCreateDefaults(null),
-					schedulingHorizonDays: 75,
+					schedulingHorizonDays: 70,
 					schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
 					schedulingStepMinutes: defaultSchedulingStepMinutes,
 					googleRefreshToken: undefined,
@@ -1094,7 +1138,7 @@ export const setTaskQuickCreateDefaults = mutation({
 					timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
 					defaultTaskSchedulingMode: "fastest",
 					...normalizedDefaults,
-					schedulingHorizonDays: 75,
+					schedulingHorizonDays: 70,
 					schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
 					schedulingStepMinutes: defaultSchedulingStepMinutes,
 					googleRefreshToken: undefined,
@@ -1190,7 +1234,7 @@ export const setHabitQuickCreateDefaults = mutation({
 					defaultTaskSchedulingMode: "fastest",
 					...normalizeTaskQuickCreateDefaults(null),
 					...normalizedDefaults,
-					schedulingHorizonDays: 75,
+					schedulingHorizonDays: 70,
 					schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
 					schedulingStepMinutes: defaultSchedulingStepMinutes,
 					googleRefreshToken: undefined,
@@ -1746,5 +1790,24 @@ export const internalMigrateSchedulingModelForUser = internalMutation({
 			updatedTasks,
 			updatedHabits,
 		};
+	},
+});
+
+export const clampSchedulingHorizonsToPlans = internalMutation({
+	args: {},
+	returns: v.number(),
+	handler: async (ctx): Promise<number> => {
+		const allSettings = await ctx.db.query("userSettings").collect();
+		let clamped = 0;
+		for (const settings of allSettings) {
+			const maxDays = getMaxHorizonDays(settings.activeProductId);
+			if (settings.schedulingHorizonDays > maxDays) {
+				await ctx.db.patch(settings._id, {
+					schedulingHorizonDays: maxDays,
+				});
+				clamped++;
+			}
+		}
+		return clamped;
 	},
 });

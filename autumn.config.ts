@@ -19,32 +19,54 @@ export const analytics = feature({
 	name: "Analytics Dashboard",
 	type: "boolean",
 });
+export const priority_support = feature({
+	id: "priority_support",
+	name: "Priority Support",
+	type: "boolean",
+});
 
 // --- Products ---
+
+export const free = product({
+	id: "free",
+	name: "Free",
+	is_default: true,
+	items: [
+		featureItem({
+			feature_id: tasks.id,
+			included_usage: 28,
+			interval: "month",
+		}),
+		featureItem({
+			feature_id: habits.id,
+			included_usage: 0,
+		}),
+	],
+});
 
 export const basic = product({
 	id: "basic",
 	name: "Basic",
 	items: [
 		priceItem({
-			price: 5,
+			price: 4.99,
 			interval: "month",
 		}),
 		featureItem({
 			feature_id: tasks.id,
-			included_usage: 50,
+			included_usage: 100,
 			interval: "month",
 		}),
 		featureItem({
 			feature_id: habits.id,
-			included_usage: 5,
+			included_usage: 10,
 		}),
 	],
 });
 
-export const pro = product({
-	id: "pro",
-	name: "Pro",
+export const plus = product({
+	id: "plus",
+	name: "Plus",
 	items: [
 		priceItem({
 			price: 7.99,
@@ -52,19 +74,22 @@ export const pro = product({
 		}),
 		featureItem({
 			feature_id: tasks.id,
-			included_usage: 200,
+			included_usage: "inf",
 			interval: "month",
 		}),
 		featureItem({
 			feature_id: habits.id,
-			included_usage: 20,
+			included_usage: "inf",
+		}),
+		featureItem({
+			feature_id: analytics.id,
 		}),
 	],
 });
 
-export const premium = product({
-	id: "premium",
-	name: "Premium",
+export const pro = product({
+	id: "pro",
+	name: "Pro",
 	items: [
 		priceItem({
 			price: 15.99,
@@ -81,6 +106,9 @@ export const premium = product({
 		}),
 		featureItem({
 			feature_id: analytics.id,
+		}),
+		featureItem({
+			feature_id: priority_support.id,
 		}),
 	],
 });

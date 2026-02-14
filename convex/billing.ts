@@ -37,9 +37,9 @@ const getBillingMode = () => env().AUTUMN_BILLING_MODE?.trim().toLowerCase() ?? 
 
 const featureLimitMessage = (featureId: BillableFeatureId) => {
 	if (featureId === "habits") {
-		return "You've reached your total habits limit for your current plan.";
+		return "Habits are available on the Basic plan and above. Upgrade to get started.";
 	}
-	return "You've reached your tasks limit for the current billing cycle.";
+	return "You've reached your task limit for the current billing cycle. Upgrade for more.";
 };
 
 const normalizeOptionalString = (value: unknown): string | undefined => {

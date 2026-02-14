@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalQuery, query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
 import { normalizeSchedulingDowntimeMinutes } from "../hours/shared";
+import { getMaxHorizonDays } from "../planLimits";
 import { recurrenceFromLegacyFrequency } from "./rrule";
 import { isRunNewer } from "./run_order";
 
@@ -231,8 +232,9 @@ export const getSchedulingInputForUser = internalQuery({
 			(settings as { taskQuickCreateTravelMinutes?: number } | undefined)
 				?.taskQuickCreateTravelMinutes,
 		);
-		const horizonDays = settings?.schedulingHorizonDays ?? 7 * 8;
-		const horizonWeeks = Math.max(4, Math.min(12, Math.floor(horizonDays / 7)));
+		const maxHorizonDays = getMaxHorizonDays(settings?.activeProductId);
+		const horizonDays = Math.min(settings?.schedulingHorizonDays ?? maxHorizonDays, maxHorizonDays);
+		const horizonWeeks = Math.max(1, Math.min(12, Math.floor(horizonDays / 7)));
 		const defaultTaskMode = sanitizeTaskMode(
 			(settings as { defaultTaskSchedulingMode?: string } | undefined)?.defaultTaskSchedulingMode,
 		);

@@ -7,8 +7,10 @@ import { getPricingTableContent } from "@/lib/autumn/pricing-table-content";
 import { cn } from "@/lib/utils";
 import type { Product, ProductItem } from "autumn-js";
 import { type ProductDetails, useCustomer, usePricingTable } from "autumn-js/react";
-import { Loader2 } from "lucide-react";
+import { useMutation } from "convex/react";
+import { Check, Loader2 } from "lucide-react";
 import { createContext, useContext, useState } from "react";
+import { api } from "../../../../convex/_generated/api";
 
 export default function PricingTable({
 	productDetails,
@@ -16,6 +18,7 @@ export default function PricingTable({
 	productDetails?: ProductDetails[];
 }) {
 	const { customer, checkout } = useCustomer({ errorOnNotFound: false });
+	const updateActiveProduct = useMutation(api.hours.mutations.updateActiveProduct);
 
 	const [isAnnual, setIsAnnual] = useState(false);
 	const { products, isLoading, error } = usePricingTable({ productDetails });
@@ -23,13 +26,13 @@ export default function PricingTable({
 	if (isLoading) {
 		return (
 			<div className="w-full h-full flex justify-center items-center min-h-[300px]">
-				<Loader2 className="w-6 h-6 text-zinc-400 animate-spin" />
+				<Loader2 className="w-5 h-5 text-muted-foreground animate-spin" />
 			</div>
 		);
 	}
 
 	if (error) {
-		return <div> Something went wrong...</div>;
+		return <div>Something went wrong...</div>;
 	}
 
 	const intervals = Array.from(
@@ -54,7 +57,7 @@ export default function PricingTable({
 	};
 
 	return (
-		<div className={cn("root")}>
+		<div>
 			{products && (
 				<PricingTableContainer
 					products={products}
@@ -77,6 +80,11 @@ export default function PricingTable({
 											productId: product.id,
 											dialog: CheckoutDialog,
 										});
+										try {
+											await updateActiveProduct({ productId: product.id });
+										} catch {
+											// Best-effort sync; the backend still enforces limits
+										}
 									} else if (product.display?.button_url) {
 										window.open(product.display?.button_url, "_blank");
 									}
@@ -137,23 +145,17 @@ export const PricingTableContainer = ({
 		return <></>;
 	}
 
-	const hasRecommended = products?.some((p) => p.display?.recommend_text);
 	return (
 		<PricingTableContext.Provider
 			value={{ isAnnualToggle, setIsAnnualToggle, products, showFeatures }}
 		>
-			<div className={cn("flex items-center flex-col", hasRecommended && "!py-10")}>
+			<div className="flex items-center flex-col">
 				{multiInterval && (
-					<div className={cn(products.some((p) => p.display?.recommend_text) && "mb-8")}>
+					<div className="mb-8">
 						<AnnualSwitch isAnnualToggle={isAnnualToggle} setIsAnnualToggle={setIsAnnualToggle} />
 					</div>
 				)}
-				<div
-					className={cn(
-						"grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[repeat(auto-fit,minmax(200px,1fr))] w-full gap-2",
-						className,
-					)}
-				>
+				<div className={cn("grid grid-cols-1 sm:grid-cols-2 w-full gap-4", className)}>
 					{children}
 				</div>
 			</div>
@@ -183,6 +185,7 @@ export const PricingCard = ({ productId, className, buttonProps }: PricingCardPr
 	const { buttonText } = getPricingTableContent(product);
 
 	const isRecommended = !!productDisplay?.recommend_text;
+	const isActive = product.scenario === "active";
 	const mainPriceDisplay = product.properties?.is_free
 		? {
 				primary_text: "Free",
@@ -194,52 +197,68 @@ export const PricingCard = ({ productId, className, buttonProps }: PricingCardPr
 	return (
 		<div
 			className={cn(
-				" w-full h-full py-6 text-foreground border rounded-lg shadow-sm max-w-xl",
-				isRecommended &&
-					"lg:-translate-y-6 lg:shadow-lg dark:shadow-zinc-800/80 lg:h-[calc(100%+48px)] bg-secondary/40",
+				"relative flex flex-col rounded-lg border bg-card text-card-foreground transition-shadow",
+				isActive
+					? "ring-2 ring-primary shadow-md"
+					: isRecommended
+						? "ring-2 ring-accent shadow-md shadow-accent/10"
+						: "shadow-sm hover:shadow-md",
 				className,
 			)}
 		>
-			{productDisplay?.recommend_text && (
-				<RecommendedBadge recommended={productDisplay?.recommend_text} />
+			{isActive && (
+				<div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+					<span className="inline-block rounded-full bg-primary text-primary-foreground px-3 py-0.5 text-xs font-semibold whitespace-nowrap">
+						Current Plan
+					</span>
+				</div>
 			)}
-			<div className={cn("flex flex-col h-full flex-grow", isRecommended && "lg:translate-y-6")}>
-				<div className="h-full">
-					<div className="flex flex-col">
-						<div className="pb-4">
-							<h2 className="text-2xl font-semibold px-6 truncate">
-								{productDisplay?.name || name}
-							</h2>
-							{productDisplay?.description && (
-								<div className="text-sm text-muted-foreground px-6 h-8">
-									<p className="line-clamp-2">{productDisplay?.description}</p>
-								</div>
-							)}
-						</div>
-						<div className="mb-2">
-							<h3 className="font-semibold h-16 flex px-6 items-center border-y mb-4 bg-secondary/40">
-								<div className="line-clamp-2">
-									{mainPriceDisplay?.primary_text}{" "}
-									{mainPriceDisplay?.secondary_text && (
-										<span className="font-normal text-muted-foreground mt-1">
-											{mainPriceDisplay?.secondary_text}
-										</span>
-									)}
-								</div>
-							</h3>
-						</div>
-					</div>
-					{showFeatures && featureItems.length > 0 && (
-						<div className="flex-grow px-6 mb-6">
-							<PricingFeatureList
-								items={featureItems}
-								everythingFrom={product.display?.everything_from}
-							/>
-						</div>
+			{!isActive && productDisplay?.recommend_text && (
+				<div className="absolute -top-3 left-1/2 -translate-x-1/2 z-10">
+					<span className="inline-block rounded-full bg-accent px-3 py-0.5 text-xs font-semibold text-accent-foreground whitespace-nowrap">
+						{productDisplay.recommend_text}
+					</span>
+				</div>
+			)}
+
+			<div className="flex flex-col flex-1 p-6 pt-5">
+				{/* Plan name */}
+				<h2 className="text-lg font-semibold">{productDisplay?.name || name}</h2>
+
+				{/* Description */}
+				{productDisplay?.description && (
+					<p className="mt-1 text-sm text-muted-foreground leading-snug">
+						{productDisplay.description}
+					</p>
+				)}
+
+				{/* Price */}
+				<div className="mt-4 mb-5 flex items-baseline gap-1.5">
+					<span className="text-2xl font-bold tracking-tight">
+						{mainPriceDisplay?.primary_text}
+					</span>
+					{mainPriceDisplay?.secondary_text && (
+						<span className="text-sm text-muted-foreground">{mainPriceDisplay.secondary_text}</span>
 					)}
 				</div>
-				<div className={cn(" px-6 ", isRecommended && "lg:-translate-y-12")}>
-					<PricingCardButton recommended={!!productDisplay?.recommend_text} {...buttonProps}>
+
+				{/* Divider */}
+				<div className="h-px bg-border mb-5" />
+
+				{/* Features */}
+				{showFeatures && featureItems.length > 0 && (
+					<div className="flex-1 mb-6">
+						<PricingFeatureList
+							items={featureItems}
+							everythingFrom={product.display?.everything_from}
+							recommended={isRecommended}
+						/>
+					</div>
+				)}
+
+				{/* Button */}
+				<div className="mt-auto">
+					<PricingCardButton recommended={isRecommended} {...buttonProps}>
 						{productDisplay?.button_text || buttonText}
 					</PricingCardButton>
 				</div>
@@ -253,31 +272,39 @@ export const PricingFeatureList = ({
 	items,
 	everythingFrom,
 	className,
+	recommended,
 }: {
 	items: ProductItem[];
 	everythingFrom?: string;
 	className?: string;
+	recommended?: boolean;
 }) => {
 	return (
 		<div className={cn("flex-grow", className)}>
-			{everythingFrom && <p className="text-sm mb-4">Everything from {everythingFrom}, plus:</p>}
-			<div className="space-y-3">
+			{everythingFrom && (
+				<p className="text-sm text-muted-foreground mb-3">
+					Everything from {everythingFrom}, plus:
+				</p>
+			)}
+			<ul className="space-y-2.5">
 				{items.map((item, index) => (
-					<div key={index} className="flex items-start gap-2 text-sm">
-						{/* {showIcon && (
-              <Check className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
-            )} */}
+					<li key={index} className="flex items-start gap-2.5 text-sm">
+						<Check
+							className={cn(
+								"h-4 w-4 flex-shrink-0 mt-0.5",
+								recommended ? "text-accent" : "text-muted-foreground",
+							)}
+							strokeWidth={2.5}
+						/>
 						<div className="flex flex-col">
-							<span>{item.display?.primary_text}</span>
+							<span className="leading-snug">{item.display?.primary_text}</span>
 							{item.display?.secondary_text && (
-								<span className="text-sm text-muted-foreground">
-									{item.display?.secondary_text}
-								</span>
+								<span className="text-xs text-muted-foreground">{item.display.secondary_text}</span>
 							)}
 						</div>
-					</div>
+					</li>
 				))}
-			</div>
+			</ul>
 		</div>
 	);
 };
@@ -306,29 +333,17 @@ export const PricingCardButton = React.forwardRef<HTMLButtonElement, PricingCard
 		return (
 			<Button
 				className={cn(
-					"w-full py-3 px-4 group overflow-hidden relative transition-all duration-300 hover:brightness-90 border rounded-lg",
+					"w-full py-2.5 px-4 rounded-md font-medium transition-all duration-200",
+					recommended && "bg-accent text-accent-foreground hover:bg-accent/90",
 					className,
 				)}
 				{...props}
-				variant={recommended ? "default" : "secondary"}
+				variant={recommended ? "default" : "outline"}
 				ref={ref}
 				disabled={loading || props.disabled}
 				onClick={handleClick}
 			>
-				{loading ? (
-					<Loader2 className="h-4 w-4 animate-spin" />
-				) : (
-					<>
-						<div className="flex items-center justify-between w-full transition-transform duration-300 group-hover:translate-y-[-130%]">
-							<span>{children}</span>
-							<span className="text-sm">→</span>
-						</div>
-						<div className="flex items-center justify-between w-full absolute px-4 translate-y-[130%] transition-transform duration-300 group-hover:translate-y-0 mt-2 group-hover:mt-0">
-							<span>{children}</span>
-							<span className="text-sm">→</span>
-						</div>
-					</>
-				)}
+				{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : children}
 			</Button>
 		);
 	},
@@ -348,14 +363,6 @@ export const AnnualSwitch = ({
 			<span className="text-sm text-muted-foreground">Monthly</span>
 			<Switch id="annual-billing" checked={isAnnualToggle} onCheckedChange={setIsAnnualToggle} />
 			<span className="text-sm text-muted-foreground">Annual</span>
-		</div>
-	);
-};
-
-export const RecommendedBadge = ({ recommended }: { recommended: string }) => {
-	return (
-		<div className="bg-secondary absolute border text-muted-foreground text-sm font-medium lg:rounded-full px-3 lg:py-0.5 lg:top-4 lg:right-4 top-[-1px] right-[-1px] rounded-bl-lg">
-			{recommended}
 		</div>
 	);
 };

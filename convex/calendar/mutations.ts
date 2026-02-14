@@ -846,7 +846,7 @@ const performUpsertSyncedEventsForUser = async (
 			timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(settings),
 			defaultTaskSchedulingMode,
 			...taskQuickCreateDefaults,
-			schedulingHorizonDays: settings.schedulingHorizonDays ?? 75,
+			schedulingHorizonDays: settings.schedulingHorizonDays ?? 70,
 			schedulingDowntimeMinutes: normalizeSchedulingDowntimeMinutes(
 				settings.schedulingDowntimeMinutes,
 			),
@@ -900,7 +900,7 @@ export const upsertGoogleTokens = mutation({
 				timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(existing),
 				defaultTaskSchedulingMode,
 				...normalizeTaskQuickCreateDefaultsForSettings(existing),
-				schedulingHorizonDays: existing.schedulingHorizonDays ?? 75,
+				schedulingHorizonDays: existing.schedulingHorizonDays ?? 70,
 				schedulingDowntimeMinutes: normalizeSchedulingDowntimeMinutes(
 					existing.schedulingDowntimeMinutes,
 				),
@@ -928,7 +928,7 @@ export const upsertGoogleTokens = mutation({
 			timeFormatPreference: normalizedTimeFormatPreferenceFromSettings({}),
 			defaultTaskSchedulingMode: "fastest",
 			...normalizeTaskQuickCreateDefaultsForSettings({}),
-			schedulingHorizonDays: 75,
+			schedulingHorizonDays: 70,
 			schedulingDowntimeMinutes: normalizeSchedulingDowntimeMinutes(undefined),
 			schedulingStepMinutes: defaultSchedulingStepMinutes,
 			googleRefreshToken: args.refreshToken,
