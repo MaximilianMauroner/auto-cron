@@ -1,6 +1,10 @@
 import { ConvexError, v } from "convex/values";
 import type { Id } from "../_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "../_generated/server";
+import type { MutationCtx } from "../_generated/server";
+import type { GoogleCalendarColor } from "../types/categories";
+import type { DbCtx } from "./sharedTypes";
+
+export type { GoogleCalendarColor } from "../types/categories";
 
 export const GOOGLE_CALENDAR_COLORS = [
 	"#f59e0b", // amber/gold - 1
@@ -12,8 +16,6 @@ export const GOOGLE_CALENDAR_COLORS = [
 	"#ec4899", // pink - 7
 	"#14b8a6", // teal - 8
 ] as const;
-
-export type GoogleCalendarColor = (typeof GOOGLE_CALENDAR_COLORS)[number];
 
 export const categoryDtoValidator = v.object({
 	_id: v.id("taskCategories"),
@@ -28,8 +30,6 @@ export const categoryDtoValidator = v.object({
 	createdAt: v.number(),
 	updatedAt: v.number(),
 });
-
-type DbCtx = Pick<MutationCtx, "db"> | Pick<QueryCtx, "db">;
 
 export async function ensureDefaultCategories(
 	ctx: Pick<MutationCtx, "db">,

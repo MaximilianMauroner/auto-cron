@@ -289,6 +289,7 @@ export default defineSchema({
 	})
 		.index("by_userId", ["userId"])
 		.index("by_userId_start", ["userId", "start"])
+		.index("by_userId_start_source", ["userId", "start", "source"])
 		.index("by_userId_timeRange", ["userId", "start", "end"])
 		.index("by_googleEventId", ["googleEventId"])
 		.index("by_userId_googleEventId", ["userId", "googleEventId"])

@@ -2,7 +2,25 @@ import { ConvexError, v } from "convex/values";
 import { internalMutation } from "../_generated/server";
 import { GOOGLE_CALENDAR_COLORS } from "../categories/shared";
 import { enqueueSchedulingRunFromMutation } from "./enqueue";
-import { isRunNewer } from "./run_order";
+import {
+	DEFAULT_TRAVEL_COLOR_INDEX,
+	MINUTES_TO_MS,
+	type SchedulingBlock,
+	TRAVEL_CATEGORY_NAME,
+	appendRemovedGoogleEvent,
+	blockGroupKey,
+	createTravelBlock,
+	isRunSuperseded,
+	isTravelBufferCandidate,
+	isTravelSourceId,
+	listLatestRunCandidates,
+	recordTaskPlacement,
+	resolveBlockColor,
+	resolveScheduledTaskStatus,
+	resolveTravelMinutes,
+	resolveTravelWindow,
+	upsertGroupedBlock,
+} from "./mutationHelpers";
 
 const triggerValidator = v.union(
 	v.literal("manual"),
@@ -28,28 +46,6 @@ const habitPriorityValidator = v.union(
 );
 
 const recoveryPolicyValidator = v.union(v.literal("skip"), v.literal("recover"));
-
-type SchedulingBlock = {
-	source: "task" | "habit";
-	sourceId: string;
-	title: string;
-	start: number;
-	end: number;
-	priority: "low" | "medium" | "high" | "critical" | "blocker";
-	calendarId?: string;
-	color?: string;
-	location?: string;
-};
-
-const blockGroupKey = (block: Pick<SchedulingBlock, "source" | "sourceId">) =>
-	`${block.source}:${block.sourceId}`;
-
-const buildTravelSourceId = (
-	taskId: string,
-	placementStart: number,
-	placementEnd: number,
-	segment: "before" | "after",
-) => `task:${taskId}:travel:${segment}:${placementStart}:${placementEnd}`;
 
 export const enqueueSchedulingRun = internalMutation({
 	args: {
@@ -120,46 +116,13 @@ export const applySchedulingBlocks = internalMutation({
 				message: "Scheduling run not found.",
 			});
 		}
-		const [latestPending, latestRunning] = await Promise.all([
-			ctx.db
-				.query("schedulingRuns")
-				.withIndex("by_userId_status_startedAt", (q) =>
-					q.eq("userId", args.userId).eq("status", "pending"),
-				)
-				.order("desc")
-				.take(1),
-			ctx.db
-				.query("schedulingRuns")
-				.withIndex("by_userId_status_startedAt", (q) =>
-					q.eq("userId", args.userId).eq("status", "running"),
-				)
-				.order("desc")
-				.take(1),
-		]);
-		const latestCandidates = [latestPending[0], latestRunning[0]].filter(
-			(run) => run !== undefined,
-		);
-		let superseded = latestCandidates.some(
-			(run) => run._id !== args.runId && run.startedAt > currentRun.startedAt,
-		);
-
-		if (!superseded) {
-			const needTieCheck = latestCandidates.some((run) => run.startedAt === currentRun.startedAt);
-			if (needTieCheck) {
-				const tiedRuns = await ctx.db
-					.query("schedulingRuns")
-					.withIndex("by_userId_startedAt", (q) =>
-						q.eq("userId", args.userId).eq("startedAt", currentRun.startedAt),
-					)
-					.collect();
-				superseded = tiedRuns.some(
-					(run) =>
-						(run.status === "pending" || run.status === "running") &&
-						run._id !== args.runId &&
-						isRunNewer(run, currentRun),
-				);
-			}
-		}
+		const latestCandidates = await listLatestRunCandidates(ctx, args.userId);
+		const superseded = await isRunSuperseded({
+			ctx,
+			userId: args.userId,
+			currentRun,
+			latestCandidates,
+		});
 		if (superseded) {
 			throw new ConvexError({
 				code: "SUPERSEDED_BY_NEWER_RUN",
@@ -217,9 +180,12 @@ export const applySchedulingBlocks = internalMutation({
 
 		const travelCategory = await ctx.db
 			.query("taskCategories")
-			.withIndex("by_userId_name", (q) => q.eq("userId", args.userId).eq("name", "Travel"))
+			.withIndex("by_userId_name", (q) =>
+				q.eq("userId", args.userId).eq("name", TRAVEL_CATEGORY_NAME),
+			)
 			.unique();
-		const resolvedTravelColor = travelCategory?.color ?? GOOGLE_CALENDAR_COLORS[7];
+		const resolvedTravelColor =
+			travelCategory?.color ?? GOOGLE_CALENDAR_COLORS[DEFAULT_TRAVEL_COLOR_INDEX];
 		const tasks = await ctx.db
 			.query("tasks")
 			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
@@ -227,90 +193,43 @@ export const applySchedulingBlocks = internalMutation({
 		const tasksBySourceId = new Map(tasks.map((task) => [String(task._id), task] as const));
 
 		for (const event of existingScheduledEvents) {
-			if (
-				event.source !== "task" ||
-				event.pinned !== true ||
-				!event.sourceId ||
-				event.sourceId.includes(":travel:")
-			) {
-				continue;
-			}
+			if (!isTravelBufferCandidate(event)) continue;
 			const task = tasksBySourceId.get(event.sourceId);
-			if (!task) {
-				continue;
-			}
-			const hasLocation = Boolean(task.location?.trim());
-			if (!hasLocation) {
-				continue;
-			}
-			const travelMinutes = Math.max(0, Math.round(task.travelMinutes ?? 0));
-			if (travelMinutes <= 0) {
-				continue;
-			}
-			const travelDurationMs = travelMinutes * 60 * 1000;
-			const beforeStart = Math.max(args.horizonStart, event.start - travelDurationMs);
-			const afterEnd = Math.min(args.horizonEnd, event.end + travelDurationMs);
+			if (!task) continue;
+			if (!task.location?.trim()) continue;
+			const travelMinutes = resolveTravelMinutes(task.travelMinutes);
+			if (travelMinutes <= 0) continue;
+			const travelDurationMs = travelMinutes * MINUTES_TO_MS;
+			const { beforeStart, afterEnd } = resolveTravelWindow(
+				args.horizonStart,
+				args.horizonEnd,
+				event.start,
+				event.end,
+				travelDurationMs,
+			);
 
 			if (beforeStart < event.start) {
-				const sourceId = buildTravelSourceId(event.sourceId, event.start, event.end, "before");
-				const key = blockGroupKey({ source: "task", sourceId });
-				const group = groupedBlocks.get(key) ?? [];
-				if (!group.some((block) => block.start === beforeStart && block.end === event.start)) {
-					group.push({
-						source: "task",
-						sourceId,
-						title: `Travel: ${task.title}`,
-						start: beforeStart,
-						end: event.start,
-						priority:
-							task.priority === "low" ||
-							task.priority === "medium" ||
-							task.priority === "high" ||
-							task.priority === "critical" ||
-							task.priority === "blocker"
-								? task.priority
-								: "medium",
-						calendarId: event.calendarId ?? task.preferredCalendarId,
-						color: resolvedTravelColor,
-						location: task.location,
-					});
-					group.sort((a, b) => {
-						if (a.start !== b.start) return a.start - b.start;
-						return a.end - b.end;
-					});
-					groupedBlocks.set(key, group);
-				}
+				const { key, block } = createTravelBlock({
+					task,
+					event,
+					segment: "before",
+					start: beforeStart,
+					end: event.start,
+					travelColor: resolvedTravelColor,
+				});
+				upsertGroupedBlock(groupedBlocks, key, block);
 			}
 
 			if (event.end < afterEnd) {
-				const sourceId = buildTravelSourceId(event.sourceId, event.start, event.end, "after");
-				const key = blockGroupKey({ source: "task", sourceId });
-				const group = groupedBlocks.get(key) ?? [];
-				if (!group.some((block) => block.start === event.end && block.end === afterEnd)) {
-					group.push({
-						source: "task",
-						sourceId,
-						title: `Travel: ${task.title}`,
-						start: event.end,
-						end: afterEnd,
-						priority:
-							task.priority === "low" ||
-							task.priority === "medium" ||
-							task.priority === "high" ||
-							task.priority === "critical" ||
-							task.priority === "blocker"
-								? task.priority
-								: "medium",
-						calendarId: event.calendarId ?? task.preferredCalendarId,
-						color: resolvedTravelColor,
-						location: task.location,
-					});
-					group.sort((a, b) => {
-						if (a.start !== b.start) return a.start - b.start;
-						return a.end - b.end;
-					});
-					groupedBlocks.set(key, group);
-				}
+				const { key, block } = createTravelBlock({
+					task,
+					event,
+					segment: "after",
+					start: event.end,
+					end: afterEnd,
+					travelColor: resolvedTravelColor,
+				});
+				upsertGroupedBlock(groupedBlocks, key, block);
 			}
 		}
 
@@ -320,12 +239,7 @@ export const applySchedulingBlocks = internalMutation({
 		const removedGoogleEvents: Array<{ googleEventId: string; calendarId: string }> = [];
 		const now = Date.now();
 		for (const orphanEvent of orphanScheduledEvents) {
-			if (orphanEvent.googleEventId) {
-				removedGoogleEvents.push({
-					googleEventId: orphanEvent.googleEventId,
-					calendarId: orphanEvent.calendarId ?? "primary",
-				});
-			}
+			appendRemovedGoogleEvent(removedGoogleEvents, orphanEvent);
 			await ctx.db.delete(orphanEvent._id);
 		}
 		for (const [key, blocks] of groupedBlocks) {
@@ -335,41 +249,11 @@ export const applySchedulingBlocks = internalMutation({
 			const unpinnedExisting = existingGroup.filter((e) => !e.pinned);
 			const pairCount = Math.min(unpinnedExisting.length, blocks.length);
 
-			console.log("[scheduling:apply]", {
-				groupKey: key,
-				existingCount: existingGroup.length,
-				pinnedCount: pinnedExisting.length,
-				unpinnedCount: unpinnedExisting.length,
-				blocksCount: blocks.length,
-				pairCount,
-				existing: existingGroup.map((e) => ({
-					id: String(e._id),
-					start: e.start,
-					end: e.end,
-					pinned: e.pinned,
-					googleEventId: e.googleEventId,
-					calendarId: e.calendarId,
-					source: e.source,
-				})),
-			});
-
 			for (let index = 0; index < pairCount; index += 1) {
 				const block = blocks[index];
 				const current = unpinnedExisting[index];
 				if (!block || !current) continue;
-				const isTravelBlock = block.source === "task" && block.sourceId.includes(":travel:");
-				const resolvedBlockColor = isTravelBlock ? resolvedTravelColor : block.color;
-				console.log("[scheduling:apply] patch", {
-					eventId: String(current._id),
-					oldStart: current.start,
-					oldEnd: current.end,
-					newStart: block.start,
-					newEnd: block.end,
-					blockCalendarId: block.calendarId,
-					currentCalendarId: current.calendarId,
-					resolvedCalendarId: block.calendarId ?? current.calendarId,
-					googleEventId: current.googleEventId,
-				});
+				const resolvedBlockColor = resolveBlockColor(block, resolvedTravelColor);
 				await ctx.db.patch(current._id, {
 					title: block.title,
 					start: block.start,
@@ -386,8 +270,7 @@ export const applySchedulingBlocks = internalMutation({
 			}
 
 			for (const block of blocks.slice(pairCount)) {
-				const isTravelBlock = block.source === "task" && block.sourceId.includes(":travel:");
-				const resolvedBlockColor = isTravelBlock ? resolvedTravelColor : block.color;
+				const resolvedBlockColor = resolveBlockColor(block, resolvedTravelColor);
 				await ctx.db.insert("calendarEvents", {
 					userId: args.userId,
 					title: block.title,
@@ -418,24 +301,16 @@ export const applySchedulingBlocks = internalMutation({
 			}
 
 			for (const staleEvent of unpinnedExisting.slice(pairCount)) {
-				if (staleEvent.googleEventId) {
-					removedGoogleEvents.push({
-						googleEventId: staleEvent.googleEventId,
-						calendarId: staleEvent.calendarId ?? "primary",
-					});
-				}
+				appendRemovedGoogleEvent(removedGoogleEvents, staleEvent);
 				await ctx.db.delete(staleEvent._id);
 			}
 
 			for (const block of blocks) {
 				if (block.source === "task") {
-					const isTravelBlock = block.sourceId.includes(":travel:");
+					const isTravelBlock = isTravelSourceId(block.sourceId);
 					if (!isTravelBlock) {
 						tasksScheduled += 1;
-						const existingTask = tasksById.get(block.sourceId) ?? { starts: [], ends: [] };
-						existingTask.starts.push(block.start);
-						existingTask.ends.push(block.end);
-						tasksById.set(block.sourceId, existingTask);
+						recordTaskPlacement(tasksById, block.sourceId, block.start, block.end);
 					}
 				} else {
 					habitsScheduled += 1;
@@ -447,12 +322,7 @@ export const applySchedulingBlocks = internalMutation({
 			if (groupedBlocks.has(key)) continue;
 			for (const staleEvent of staleGroup) {
 				if (staleEvent.pinned) continue; // preserve pinned events
-				if (staleEvent.googleEventId) {
-					removedGoogleEvents.push({
-						googleEventId: staleEvent.googleEventId,
-						calendarId: staleEvent.calendarId ?? "primary",
-					});
-				}
+				appendRemovedGoogleEvent(removedGoogleEvents, staleEvent);
 				await ctx.db.delete(staleEvent._id);
 			}
 		}
@@ -463,12 +333,9 @@ export const applySchedulingBlocks = internalMutation({
 				event.source === "task" &&
 				event.pinned === true &&
 				event.sourceId &&
-				!event.sourceId.includes(":travel:")
+				!isTravelSourceId(event.sourceId)
 			) {
-				const existingTask = tasksById.get(event.sourceId) ?? { starts: [], ends: [] };
-				existingTask.starts.push(event.start);
-				existingTask.ends.push(event.end);
-				tasksById.set(event.sourceId, existingTask);
+				recordTaskPlacement(tasksById, event.sourceId, event.start, event.end);
 			}
 		}
 
@@ -488,7 +355,7 @@ export const applySchedulingBlocks = internalMutation({
 			await ctx.db.patch(task._id, {
 				scheduledStart,
 				scheduledEnd,
-				status: task.status === "queued" ? "scheduled" : task.status,
+				status: resolveScheduledTaskStatus(task.status),
 			});
 		}
 

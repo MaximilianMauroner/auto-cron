@@ -1,6 +1,13 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc, Id } from "../_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "../_generated/server";
+import type {
+	DbCtx,
+	HourWindow,
+	HourWindowValidationErrorCode,
+	SchedulingStepMinutes,
+} from "../types/hours";
+
+export type { HourWindow, SchedulingStepMinutes } from "../types/hours";
 
 export const taskSchedulingModeValidator = v.union(
 	v.literal("fastest"),
@@ -59,7 +66,6 @@ export const defaultHabitQuickCreateSettings = {
 export const defaultSchedulingDowntimeMinutes = 0;
 const maxSchedulingDowntimeMinutes = 24 * 60;
 export const schedulingStepMinutesOptions = [15, 30, 60] as const;
-export type SchedulingStepMinutes = (typeof schedulingStepMinutesOptions)[number];
 export const schedulingStepMinutesValidator = v.union(v.literal(15), v.literal(30), v.literal(60));
 export const defaultSchedulingStepMinutes = 15;
 
@@ -159,17 +165,6 @@ export const hoursSetValidator = v.object({
 	updatedAt: v.number(),
 });
 
-export type HourWindow = {
-	day: 0 | 1 | 2 | 3 | 4 | 5 | 6;
-	startMinute: number;
-	endMinute: number;
-};
-
-type HourWindowValidationErrorCode =
-	| "INVALID_HOURS_WINDOW_RANGE"
-	| "INVALID_HOURS_WINDOW_GRANULARITY"
-	| "OVERLAPPING_HOURS_WINDOWS";
-
 const hoursValidationError = (code: HourWindowValidationErrorCode, message: string) => {
 	throw new ConvexError({
 		code,
@@ -224,8 +219,6 @@ export const assertValidWindows = (windows: HourWindow[]) => {
 		windowsByDay.set(window.day, dayWindows);
 	}
 };
-
-type DbCtx = Pick<MutationCtx, "db"> | Pick<QueryCtx, "db">;
 
 export const getDefaultHoursSet = async (
 	ctx: DbCtx,

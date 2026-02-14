@@ -15,6 +15,18 @@ import {
 import type { RecurrenceEditScope } from "../providers/calendar/types";
 import { shouldDispatchBackgroundWork } from "../runtime";
 import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
+import type {
+	BusyStatus,
+	CreateEventArgs,
+	DeleteEventArgs,
+	MoveResizeEventArgs,
+	SyncEventInput,
+	UpdateEventArgs,
+	UpdateEventPatch,
+	UpsertGoogleTokensArgs,
+	UpsertMatchContext,
+	Visibility,
+} from "./mutationTypes";
 
 const MINUTE_MS = 60 * 1000;
 const normalizeToMinute = (timestamp: number) => Math.floor(timestamp / MINUTE_MS) * MINUTE_MS;
@@ -142,9 +154,20 @@ const recurrenceScopeValidator = v.union(
 	v.literal("series"),
 );
 
+/**
+ * Computes event recency for deterministic upsert/dedupe ordering.
+ */
 const recencyScore = (event: Doc<"calendarEvents">) =>
 	Math.max(event.lastSyncedAt ?? 0, event.updatedAt ?? 0, event._creationTime ?? 0);
 
+/**
+ * Normalizes optional calendar ids into a concrete local key.
+ */
+const resolvePrimaryCalendarId = (calendarId: string | undefined) => calendarId ?? "primary";
+
+/**
+ * Builds all known aliases for the user's primary calendar.
+ */
 const buildPrimaryCalendarAliases = (
 	connectedCalendars?: Array<{
 		calendarId: string;
@@ -160,6 +183,9 @@ const buildPrimaryCalendarAliases = (
 	return aliases;
 };
 
+/**
+ * Resolves matching calendar ids while respecting primary-alias equivalence.
+ */
 const resolveMatchCalendarIds = (calendarId: string, primaryCalendarAliases: Set<string>) => {
 	if (!calendarId) return ["primary"];
 	if (primaryCalendarAliases.has(calendarId)) {
@@ -219,16 +245,27 @@ const findProtectedFingerprintMatches = async (
 	const matchCalendarIds = new Set(
 		resolveMatchCalendarIds(event.calendarId, primaryCalendarAliases),
 	);
-	const candidates = await ctx.db
-		.query("calendarEvents")
-		.withIndex("by_userId_start", (q) => q.eq("userId", userId).eq("start", event.start))
-		.collect();
+	const [taskCandidates, habitCandidates] = await Promise.all([
+		ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_start_source", (q) =>
+				q.eq("userId", userId).eq("start", event.start).eq("source", "task"),
+			)
+			.collect(),
+		ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_start_source", (q) =>
+				q.eq("userId", userId).eq("start", event.start).eq("source", "habit"),
+			)
+			.collect(),
+	]);
+	const candidates = [...taskCandidates, ...habitCandidates];
 	return candidates.filter((candidate) => {
 		if (!isProtectedSourceEvent(candidate)) return false;
 		if (candidate.end !== event.end) return false;
 		if (candidate.title !== event.title) return false;
 		if (Boolean(candidate.allDay) !== event.allDay) return false;
-		const candidateCalendarId = candidate.calendarId ?? "primary";
+		const candidateCalendarId = resolvePrimaryCalendarId(candidate.calendarId);
 		return matchCalendarIds.has(candidateCalendarId);
 	});
 };
@@ -321,82 +358,6 @@ const syncArgsValidator = {
 	nextSyncToken: v.optional(v.string()),
 	syncTokens: v.optional(v.array(syncTokenValidator)),
 	connectedCalendars: v.optional(v.array(connectedCalendarValidator)),
-};
-
-type SyncEventInput = {
-	googleEventId: string;
-	title: string;
-	description?: string;
-	start: number;
-	end: number;
-	allDay: boolean;
-	calendarId: string;
-	recurrenceRule?: string;
-	recurringEventId?: string;
-	originalStartTime?: number;
-	status?: "confirmed" | "tentative" | "cancelled";
-	etag?: string;
-	busyStatus: "free" | "busy" | "tentative";
-	visibility?: "default" | "public" | "private" | "confidential";
-	location?: string;
-	color?: string;
-	lastSyncedAt: number;
-};
-
-type BusyStatus = "free" | "busy" | "tentative";
-type Visibility = "default" | "public" | "private" | "confidential";
-
-type UpsertGoogleTokensArgs = {
-	refreshToken: string;
-	syncToken?: string;
-};
-
-type CreateEventArgs = {
-	input: {
-		title: string;
-		description?: string;
-		start: number;
-		end: number;
-		allDay?: boolean;
-		recurrenceRule?: string;
-		calendarId?: string;
-		busyStatus?: BusyStatus;
-		visibility?: Visibility;
-		location?: string;
-		color?: string;
-	};
-};
-
-type UpdateEventPatch = {
-	title?: string;
-	description?: string;
-	start?: number;
-	end?: number;
-	allDay?: boolean;
-	recurrenceRule?: string;
-	calendarId?: string;
-	busyStatus?: BusyStatus;
-	visibility?: Visibility;
-	location?: string;
-	color?: string;
-};
-
-type UpdateEventArgs = {
-	id: Id<"calendarEvents">;
-	patch: UpdateEventPatch;
-	scope?: RecurrenceEditScope;
-};
-
-type DeleteEventArgs = {
-	id: Id<"calendarEvents">;
-	scope?: RecurrenceEditScope;
-};
-
-type MoveResizeEventArgs = {
-	id: Id<"calendarEvents">;
-	start: number;
-	end: number;
-	scope?: RecurrenceEditScope;
 };
 
 const googleSyncRunTriggerValidator = v.union(
@@ -703,31 +664,354 @@ const upsertSeriesForGoogleEvent = async (
 	return series;
 };
 
+const collectUpsertMatchContext = async (
+	ctx: MutationCtx,
+	userId: string,
+	event: SyncEventInput,
+	seriesId: Id<"calendarEventSeries">,
+	occurrenceStart: number,
+	primaryCalendarAliases: Set<string>,
+): Promise<UpsertMatchContext> => {
+	const seriesMatches = await ctx.db
+		.query("calendarEvents")
+		.withIndex("by_userId_seriesId_occurrenceStart", (q) =>
+			q.eq("userId", userId).eq("seriesId", seriesId).eq("occurrenceStart", occurrenceStart),
+		)
+		.collect();
+	const legacyMatches = await findLegacyMatches(
+		ctx,
+		userId,
+		event.calendarId,
+		event.googleEventId,
+		primaryCalendarAliases,
+	);
+	const protectedFingerprintMatches = await findProtectedFingerprintMatches(
+		ctx,
+		userId,
+		event,
+		primaryCalendarAliases,
+	);
+	const protectedSourceIdMatches = await findProtectedSourceIdMatches(
+		ctx,
+		userId,
+		event.appSourceKey,
+	);
+
+	const uniqueMatchesById = new Map<string, Doc<"calendarEvents">>();
+	for (const match of [
+		...seriesMatches,
+		...legacyMatches,
+		...protectedFingerprintMatches,
+		...protectedSourceIdMatches,
+	]) {
+		uniqueMatchesById.set(String(match._id), match);
+	}
+
+	const orderedMatches = Array.from(uniqueMatchesById.values()).sort(sortUpsertMatches);
+	const primary = orderedMatches[0];
+	const primaryId = primary ? String(primary._id) : null;
+
+	return {
+		seriesMatches,
+		legacyMatches,
+		protectedFingerprintMatches,
+		protectedSourceIdMatches,
+		orderedMatches,
+		primary,
+		matchedPrimaryBySeries:
+			primaryId !== null && seriesMatches.some((match) => String(match._id) === primaryId),
+		matchedPrimaryByLegacy:
+			primaryId !== null && legacyMatches.some((match) => String(match._id) === primaryId),
+		matchedPrimaryByProtectedFingerprint:
+			primaryId !== null &&
+			protectedFingerprintMatches.some((match) => String(match._id) === primaryId),
+		matchedPrimaryByProtectedSourceId:
+			primaryId !== null &&
+			protectedSourceIdMatches.some((match) => String(match._id) === primaryId),
+	};
+};
+
+const resolveGoogleEventIdForUpsert = (
+	primary: Doc<"calendarEvents"> | undefined,
+	event: SyncEventInput,
+	matchedPrimaryBySeries: boolean,
+	matchedPrimaryByLegacy: boolean,
+	matchedPrimaryByProtectedFingerprint: boolean,
+	matchedPrimaryByProtectedSourceId: boolean,
+) => {
+	const isProtectedSource = Boolean(
+		primary && (primary.source === "task" || primary.source === "habit") && primary.sourceId,
+	);
+	const preserveProtectedGoogleEventId = Boolean(
+		isProtectedSource &&
+			primary?.googleEventId &&
+			primary.googleEventId !== event.googleEventId &&
+			!matchedPrimaryBySeries &&
+			!matchedPrimaryByLegacy &&
+			(matchedPrimaryByProtectedFingerprint || matchedPrimaryByProtectedSourceId),
+	);
+
+	return {
+		isProtectedSource,
+		preserveProtectedGoogleEventId,
+		resolvedGoogleEventId: preserveProtectedGoogleEventId
+			? primary?.googleEventId
+			: event.googleEventId,
+	};
+};
+
+/**
+ * Resolves occurrence fields using protected-source precedence and recurring-instance sparsity.
+ */
+const resolveProtectedOrRecurringValue = <T>({
+	isProtectedSource,
+	protectedValue,
+	isRecurringInstance,
+	eventValue,
+}: {
+	isProtectedSource: boolean;
+	protectedValue: T | undefined;
+	isRecurringInstance: boolean;
+	eventValue: T | undefined;
+}): T | undefined => {
+	if (isProtectedSource) return protectedValue;
+	if (isRecurringInstance) return undefined;
+	return eventValue;
+};
+
+const buildOccurrencePatch = ({
+	event,
+	primary,
+	seriesId,
+	occurrenceStart,
+	now,
+	isProtectedSource,
+}: {
+	event: SyncEventInput;
+	primary: Doc<"calendarEvents"> | undefined;
+	seriesId: Id<"calendarEventSeries">;
+	occurrenceStart: number;
+	now: number;
+	isProtectedSource: boolean;
+}) => {
+	const isRecurringInstance = Boolean(event.recurringEventId);
+	const source: "task" | "habit" | "google" =
+		isProtectedSource && primary && (primary.source === "task" || primary.source === "habit")
+			? primary.source
+			: "google";
+	return {
+		title: resolveProtectedOrRecurringValue({
+			isProtectedSource,
+			protectedValue: primary?.title,
+			isRecurringInstance,
+			eventValue: event.title,
+		}),
+		description: resolveProtectedOrRecurringValue({
+			isProtectedSource,
+			protectedValue: primary?.description,
+			isRecurringInstance,
+			eventValue: event.description,
+		}),
+		start: event.start,
+		end: event.end,
+		allDay: resolveProtectedOrRecurringValue({
+			isProtectedSource,
+			protectedValue: primary?.allDay,
+			isRecurringInstance,
+			eventValue: event.allDay,
+		}),
+		updatedAt: now,
+		source,
+		sourceId: isProtectedSource ? primary?.sourceId : event.googleEventId,
+		calendarId: event.calendarId,
+		recurrenceRule: resolveProtectedOrRecurringValue({
+			isProtectedSource,
+			protectedValue: primary?.recurrenceRule,
+			isRecurringInstance,
+			eventValue: event.recurrenceRule,
+		}),
+		recurringEventId: isProtectedSource ? primary?.recurringEventId : event.recurringEventId,
+		originalStartTime: event.originalStartTime,
+		seriesId: isProtectedSource ? undefined : seriesId,
+		occurrenceStart,
+		status: event.status,
+		etag: event.etag,
+		lastSyncedAt: event.lastSyncedAt,
+		busyStatus: event.busyStatus,
+		visibility: resolveProtectedOrRecurringValue({
+			isProtectedSource,
+			protectedValue: primary?.visibility,
+			isRecurringInstance,
+			eventValue: event.visibility,
+		}),
+		location: resolveProtectedOrRecurringValue({
+			isProtectedSource,
+			protectedValue: primary?.location,
+			isRecurringInstance,
+			eventValue: event.location,
+		}),
+		color: resolveProtectedOrRecurringValue({
+			isProtectedSource,
+			protectedValue: primary?.color,
+			isRecurringInstance,
+			eventValue: event.color,
+		}),
+	};
+};
+
+const upsertSingleSyncedEvent = async ({
+	ctx,
+	userId,
+	event,
+	now,
+	seriesCache,
+	primaryCalendarAliases,
+	log,
+}: {
+	ctx: MutationCtx;
+	userId: string;
+	event: SyncEventInput;
+	now: number;
+	seriesCache: Map<string, Doc<"calendarEventSeries">>;
+	primaryCalendarAliases: Set<string>;
+	log?: (tag: string, payload: Record<string, unknown>) => void;
+}) => {
+	const series = await upsertSeriesForGoogleEvent(ctx, userId, event, now, seriesCache);
+	const occurrenceStart = normalizeToMinute(event.originalStartTime ?? event.start);
+	const matchContext = await collectUpsertMatchContext(
+		ctx,
+		userId,
+		event,
+		series._id,
+		occurrenceStart,
+		primaryCalendarAliases,
+	);
+	const {
+		seriesMatches,
+		legacyMatches,
+		protectedFingerprintMatches,
+		protectedSourceIdMatches,
+		orderedMatches,
+		primary,
+		matchedPrimaryBySeries,
+		matchedPrimaryByLegacy,
+		matchedPrimaryByProtectedFingerprint,
+		matchedPrimaryByProtectedSourceId,
+	} = matchContext;
+
+	log?.("[sync:upsert]", {
+		googleEventId: event.googleEventId,
+		eventCalendarId: event.calendarId,
+		eventStart: event.start,
+		eventEnd: event.end,
+		eventTitle: event.title,
+		eventLastSyncedAt: event.lastSyncedAt,
+		seriesMatchCount: seriesMatches.length,
+		legacyMatchCount: legacyMatches.length,
+		protectedMatchCount: protectedFingerprintMatches.length,
+		protectedSourceIdMatchCount: protectedSourceIdMatches.length,
+		totalUniqueMatches: orderedMatches.length,
+		primaryId: primary ? String(primary._id) : null,
+		primarySource: primary?.source,
+		primarySourceId: primary?.sourceId,
+		primaryCalendarId: primary?.calendarId,
+		primaryGoogleEventId: primary?.googleEventId,
+		primaryStart: primary?.start,
+		primaryEnd: primary?.end,
+		primaryUpdatedAt: primary?.updatedAt,
+		primaryPinned: primary?.pinned,
+	});
+
+	const { isProtectedSource, preserveProtectedGoogleEventId, resolvedGoogleEventId } =
+		resolveGoogleEventIdForUpsert(
+			primary,
+			event,
+			matchedPrimaryBySeries,
+			matchedPrimaryByLegacy,
+			matchedPrimaryByProtectedFingerprint,
+			matchedPrimaryByProtectedSourceId,
+		);
+	const occurrencePatch = {
+		...buildOccurrencePatch({
+			event,
+			primary,
+			seriesId: series._id,
+			occurrenceStart,
+			now,
+			isProtectedSource,
+		}),
+		googleEventId: resolvedGoogleEventId,
+	};
+
+	if (!primary) {
+		log?.("[sync:upsert] NO MATCH — inserting new event", {
+			googleEventId: event.googleEventId,
+			calendarId: event.calendarId,
+			title: event.title,
+			start: event.start,
+			end: event.end,
+			source: isProtectedSource ? "task/habit" : "google",
+		});
+		await ctx.db.insert("calendarEvents", {
+			userId,
+			...occurrencePatch,
+		});
+		return;
+	}
+
+	const localUpdatedAt = primary.updatedAt ?? primary._creationTime ?? 0;
+	const localIsNewer = localUpdatedAt > event.lastSyncedAt;
+
+	log?.("[sync:upsert] matched", {
+		googleEventId: event.googleEventId,
+		primaryId: String(primary._id),
+		isProtectedSource: Boolean(isProtectedSource),
+		preserveProtectedGoogleEventId,
+		localUpdatedAt,
+		eventLastSyncedAt: event.lastSyncedAt,
+		localIsNewer,
+		action: localIsNewer ? "sync-metadata-only" : "apply-full-patch",
+	});
+
+	if (primary.source === "task" && primary.sourceId && !localIsNewer) {
+		const startChanged = primary.start !== event.start;
+		const endChanged = primary.end !== event.end;
+		if ((startChanged || endChanged) && !primary.sourceId.includes(":travel:")) {
+			log?.("[sync:upsert] pinning task event", {
+				primaryId: String(primary._id),
+				primaryStart: primary.start,
+				primaryEnd: primary.end,
+				googleStart: event.start,
+				googleEnd: event.end,
+			});
+			await ctx.db.patch(primary._id, { pinned: true });
+		}
+	}
+
+	if (localIsNewer) {
+		await ctx.db.patch(primary._id, {
+			googleEventId: resolvedGoogleEventId,
+			etag: event.etag,
+			lastSyncedAt: event.lastSyncedAt,
+			seriesId: isProtectedSource ? undefined : series._id,
+			occurrenceStart,
+		});
+	} else {
+		await ctx.db.patch(primary._id, occurrencePatch);
+	}
+
+	for (const duplicate of orderedMatches.slice(1)) {
+		log?.("[sync:upsert] deleting duplicate", { duplicateId: String(duplicate._id) });
+		await ctx.db.delete(duplicate._id);
+	}
+};
+
 const performUpsertSyncedEventsForUser = async (
 	ctx: MutationCtx,
 	userId: string,
 	args: {
 		resetCalendars?: string[];
-		events: Array<{
-			googleEventId: string;
-			title: string;
-			description?: string;
-			start: number;
-			end: number;
-			allDay: boolean;
-			calendarId: string;
-			recurrenceRule?: string;
-			recurringEventId?: string;
-			originalStartTime?: number;
-			status?: "confirmed" | "tentative" | "cancelled";
-			etag?: string;
-			busyStatus: "free" | "busy" | "tentative";
-			visibility?: "default" | "public" | "private" | "confidential";
-			location?: string;
-			color?: string;
-			appSourceKey?: string;
-			lastSyncedAt: number;
-		}>;
+		events: SyncEventInput[];
 		deletedEvents?: Array<{
 			googleEventId: string;
 			calendarId: string;
@@ -765,7 +1049,7 @@ const performUpsertSyncedEventsForUser = async (
 			.collect();
 		for (const event of existingEvents) {
 			if (event.source !== "google") continue;
-			if (!resetCalendarIds.has(event.calendarId ?? "primary")) continue;
+			if (!resetCalendarIds.has(resolvePrimaryCalendarId(event.calendarId))) continue;
 			await ctx.db.delete(event._id);
 		}
 
@@ -775,212 +1059,23 @@ const performUpsertSyncedEventsForUser = async (
 			.collect();
 		for (const series of existingSeries) {
 			if (series.source !== "google") continue;
-			if (!resetCalendarIds.has(series.calendarId ?? "primary")) continue;
+			if (!resetCalendarIds.has(resolvePrimaryCalendarId(series.calendarId))) continue;
 			await ctx.db.delete(series._id);
 		}
 	}
 
 	for (const event of args.events) {
-		const series = await upsertSeriesForGoogleEvent(ctx, userId, event, now, seriesCache);
-		const occurrenceStart = normalizeToMinute(event.originalStartTime ?? event.start);
-		const isRecurringInstance = Boolean(event.recurringEventId);
-
-		const seriesMatches = await ctx.db
-			.query("calendarEvents")
-			.withIndex("by_userId_seriesId_occurrenceStart", (q) =>
-				q
-					.eq("userId", userId)
-					.eq("seriesId", series._id as Id<"calendarEventSeries">)
-					.eq("occurrenceStart", occurrenceStart),
-			)
-			.collect();
-		const legacyMatches = await findLegacyMatches(
-			ctx,
-			userId,
-			event.calendarId,
-			event.googleEventId,
-			primaryCalendarAliases,
-		);
-		const protectedFingerprintMatches = await findProtectedFingerprintMatches(
+		await upsertSingleSyncedEvent({
 			ctx,
 			userId,
 			event,
+			now,
+			seriesCache,
 			primaryCalendarAliases,
-		);
-		const protectedSourceIdMatches = await findProtectedSourceIdMatches(
-			ctx,
-			userId,
-			event.appSourceKey,
-		);
-		const allMatches = [
-			...seriesMatches,
-			...legacyMatches,
-			...protectedFingerprintMatches,
-			...protectedSourceIdMatches,
-		];
-		const uniqueMatchesById = new Map<string, Doc<"calendarEvents">>();
-		for (const match of allMatches) {
-			uniqueMatchesById.set(String(match._id), match);
-		}
-		const orderedMatches = Array.from(uniqueMatchesById.values()).sort(sortUpsertMatches);
-		const primary = orderedMatches[0];
-		const primaryId = primary ? String(primary._id) : null;
-		const matchedPrimaryBySeries =
-			primaryId !== null && seriesMatches.some((match) => String(match._id) === primaryId);
-		const matchedPrimaryByLegacy =
-			primaryId !== null && legacyMatches.some((match) => String(match._id) === primaryId);
-		const matchedPrimaryByProtectedFingerprint =
-			primaryId !== null &&
-			protectedFingerprintMatches.some((match) => String(match._id) === primaryId);
-		const matchedPrimaryByProtectedSourceId =
-			primaryId !== null &&
-			protectedSourceIdMatches.some((match) => String(match._id) === primaryId);
-
-		console.log("[sync:upsert]", {
-			googleEventId: event.googleEventId,
-			eventCalendarId: event.calendarId,
-			eventStart: event.start,
-			eventEnd: event.end,
-			eventTitle: event.title,
-			eventLastSyncedAt: event.lastSyncedAt,
-			seriesMatchCount: seriesMatches.length,
-			legacyMatchCount: legacyMatches.length,
-			protectedMatchCount: protectedFingerprintMatches.length,
-			protectedSourceIdMatchCount: protectedSourceIdMatches.length,
-			totalUniqueMatches: uniqueMatchesById.size,
-			primaryId: primary ? String(primary._id) : null,
-			primarySource: primary?.source,
-			primarySourceId: primary?.sourceId,
-			primaryCalendarId: primary?.calendarId,
-			primaryGoogleEventId: primary?.googleEventId,
-			primaryStart: primary?.start,
-			primaryEnd: primary?.end,
-			primaryUpdatedAt: primary?.updatedAt,
-			primaryPinned: primary?.pinned,
+			log: (tag, payload) => {
+				console.log(tag, payload);
+			},
 		});
-
-		const isProtectedSource =
-			primary && (primary.source === "task" || primary.source === "habit") && primary.sourceId;
-		const preserveProtectedGoogleEventId = Boolean(
-			isProtectedSource &&
-				primary?.googleEventId &&
-				primary.googleEventId !== event.googleEventId &&
-				!matchedPrimaryBySeries &&
-				!matchedPrimaryByLegacy &&
-				(matchedPrimaryByProtectedFingerprint || matchedPrimaryByProtectedSourceId),
-		);
-		const resolvedGoogleEventId = preserveProtectedGoogleEventId
-			? primary?.googleEventId
-			: event.googleEventId;
-
-		const occurrencePatch = {
-			// For task/habit events, preserve identity fields (title, description, color)
-			// so the task/habit remains the source of truth for these values.
-			title: isProtectedSource ? primary.title : isRecurringInstance ? undefined : event.title,
-			description: isProtectedSource
-				? primary.description
-				: isRecurringInstance
-					? undefined
-					: event.description,
-			start: event.start,
-			end: event.end,
-			allDay: isProtectedSource ? primary.allDay : isRecurringInstance ? undefined : event.allDay,
-			updatedAt: now,
-			// Preserve original source for task/habit events so scheduler continues to manage them.
-			source: isProtectedSource ? (primary.source as "task" | "habit") : ("google" as const),
-			sourceId: isProtectedSource ? primary.sourceId : event.googleEventId,
-			calendarId: event.calendarId,
-			googleEventId: resolvedGoogleEventId,
-			recurrenceRule: isProtectedSource
-				? primary.recurrenceRule
-				: isRecurringInstance
-					? undefined
-					: event.recurrenceRule,
-			recurringEventId: isProtectedSource ? primary.recurringEventId : event.recurringEventId,
-			originalStartTime: event.originalStartTime,
-			seriesId: isProtectedSource ? undefined : series._id,
-			occurrenceStart,
-			status: event.status,
-			etag: event.etag,
-			lastSyncedAt: event.lastSyncedAt,
-			// Persist busy status on occurrences so scheduling can evaluate blocking events directly.
-			busyStatus: event.busyStatus,
-			visibility: isProtectedSource
-				? primary.visibility
-				: isRecurringInstance
-					? undefined
-					: event.visibility,
-			location: isProtectedSource
-				? primary.location
-				: isRecurringInstance
-					? undefined
-					: event.location,
-			color: isProtectedSource ? primary.color : isRecurringInstance ? undefined : event.color,
-		};
-
-		if (primary) {
-			// Last-write-wins: if local was modified more recently than Google's update,
-			// preserve local content and only update sync metadata.
-			const localUpdatedAt = primary.updatedAt ?? primary._creationTime ?? 0;
-			const localIsNewer = localUpdatedAt > event.lastSyncedAt;
-
-			console.log("[sync:upsert] matched", {
-				googleEventId: event.googleEventId,
-				primaryId: String(primary._id),
-				isProtectedSource: Boolean(isProtectedSource),
-				preserveProtectedGoogleEventId,
-				localUpdatedAt,
-				eventLastSyncedAt: event.lastSyncedAt,
-				localIsNewer,
-				action: localIsNewer ? "sync-metadata-only" : "apply-full-patch",
-			});
-
-			// Detect move/resize for task events → pin to Google's new time.
-			// Only when Google's change is more recent (user dragged in Google),
-			// not when the scheduler just moved the event locally.
-			if (primary.source === "task" && primary.sourceId && !localIsNewer) {
-				const startChanged = primary.start !== event.start;
-				const endChanged = primary.end !== event.end;
-				if ((startChanged || endChanged) && !primary.sourceId.includes(":travel:")) {
-					console.log("[sync:upsert] pinning task event", {
-						primaryId: String(primary._id),
-						primaryStart: primary.start,
-						primaryEnd: primary.end,
-						googleStart: event.start,
-						googleEnd: event.end,
-					});
-					await ctx.db.patch(primary._id, { pinned: true });
-				}
-			}
-			if (localIsNewer) {
-				await ctx.db.patch(primary._id, {
-					googleEventId: resolvedGoogleEventId,
-					etag: event.etag,
-					lastSyncedAt: event.lastSyncedAt,
-					seriesId: isProtectedSource ? undefined : series._id,
-					occurrenceStart,
-				});
-			} else {
-				await ctx.db.patch(primary._id, occurrencePatch);
-			}
-			for (const duplicate of orderedMatches.slice(1)) {
-				console.log("[sync:upsert] deleting duplicate", { duplicateId: String(duplicate._id) });
-				await ctx.db.delete(duplicate._id);
-			}
-		} else {
-			console.log("[sync:upsert] NO MATCH — inserting new event", {
-				googleEventId: event.googleEventId,
-				calendarId: event.calendarId,
-				title: event.title,
-				start: event.start,
-				end: event.end,
-				source: isProtectedSource ? "task/habit" : "google",
-			});
-			await ctx.db.insert("calendarEvents", {
-				userId,
-				...occurrencePatch,
-			});
-		}
 	}
 
 	let needsReschedule = false;
@@ -1190,7 +1285,7 @@ export const createEvent = mutation({
 		const { userId } = ctx;
 		const now = Date.now();
 		const allDay = args.input.allDay ?? false;
-		const calendarId = args.input.calendarId ?? "primary";
+		const calendarId = resolvePrimaryCalendarId(args.input.calendarId);
 		const busyStatus = args.input.busyStatus ?? "busy";
 		const visibility = args.input.visibility ?? "default";
 
@@ -1510,152 +1605,14 @@ export const upsertSyncedEventsBatch = internalMutation({
 		const primaryCalendarAliases = buildPrimaryCalendarAliases(settings?.googleConnectedCalendars);
 
 		for (const event of args.events) {
-			const series = await upsertSeriesForGoogleEvent(ctx, args.userId, event, now, seriesCache);
-			const occurrenceStart = normalizeToMinute(event.originalStartTime ?? event.start);
-			const isRecurringInstance = Boolean(event.recurringEventId);
-
-			const seriesMatches = await ctx.db
-				.query("calendarEvents")
-				.withIndex("by_userId_seriesId_occurrenceStart", (q) =>
-					q
-						.eq("userId", args.userId)
-						.eq("seriesId", series._id as Id<"calendarEventSeries">)
-						.eq("occurrenceStart", occurrenceStart),
-				)
-				.collect();
-			const legacyMatches = await findLegacyMatches(
+			await upsertSingleSyncedEvent({
 				ctx,
-				args.userId,
-				event.calendarId,
-				event.googleEventId,
-				primaryCalendarAliases,
-			);
-			const protectedFingerprintMatches = await findProtectedFingerprintMatches(
-				ctx,
-				args.userId,
+				userId: args.userId,
 				event,
+				now,
+				seriesCache,
 				primaryCalendarAliases,
-			);
-			const protectedSourceIdMatches = await findProtectedSourceIdMatches(
-				ctx,
-				args.userId,
-				event.appSourceKey,
-			);
-			const allMatches = [
-				...seriesMatches,
-				...legacyMatches,
-				...protectedFingerprintMatches,
-				...protectedSourceIdMatches,
-			];
-			const uniqueMatchesById = new Map<string, Doc<"calendarEvents">>();
-			for (const match of allMatches) {
-				uniqueMatchesById.set(String(match._id), match);
-			}
-			const orderedMatches = Array.from(uniqueMatchesById.values()).sort(sortUpsertMatches);
-			const primary = orderedMatches[0];
-			const primaryId = primary ? String(primary._id) : null;
-			const matchedPrimaryBySeries =
-				primaryId !== null && seriesMatches.some((match) => String(match._id) === primaryId);
-			const matchedPrimaryByLegacy =
-				primaryId !== null && legacyMatches.some((match) => String(match._id) === primaryId);
-			const matchedPrimaryByProtectedFingerprint =
-				primaryId !== null &&
-				protectedFingerprintMatches.some((match) => String(match._id) === primaryId);
-			const matchedPrimaryByProtectedSourceId =
-				primaryId !== null &&
-				protectedSourceIdMatches.some((match) => String(match._id) === primaryId);
-
-			const isProtectedSource =
-				primary && (primary.source === "task" || primary.source === "habit") && primary.sourceId;
-			const preserveProtectedGoogleEventId = Boolean(
-				isProtectedSource &&
-					primary?.googleEventId &&
-					primary.googleEventId !== event.googleEventId &&
-					!matchedPrimaryBySeries &&
-					!matchedPrimaryByLegacy &&
-					(matchedPrimaryByProtectedFingerprint || matchedPrimaryByProtectedSourceId),
-			);
-			const resolvedGoogleEventId = preserveProtectedGoogleEventId
-				? primary?.googleEventId
-				: event.googleEventId;
-
-			const occurrencePatch = {
-				title: isProtectedSource ? primary.title : isRecurringInstance ? undefined : event.title,
-				description: isProtectedSource
-					? primary.description
-					: isRecurringInstance
-						? undefined
-						: event.description,
-				start: event.start,
-				end: event.end,
-				allDay: isProtectedSource ? primary.allDay : isRecurringInstance ? undefined : event.allDay,
-				updatedAt: now,
-				source: isProtectedSource ? (primary.source as "task" | "habit") : ("google" as const),
-				sourceId: isProtectedSource ? primary.sourceId : event.googleEventId,
-				calendarId: event.calendarId,
-				googleEventId: resolvedGoogleEventId,
-				recurrenceRule: isProtectedSource
-					? primary.recurrenceRule
-					: isRecurringInstance
-						? undefined
-						: event.recurrenceRule,
-				recurringEventId: isProtectedSource ? primary.recurringEventId : event.recurringEventId,
-				originalStartTime: event.originalStartTime,
-				seriesId: isProtectedSource ? undefined : series._id,
-				occurrenceStart,
-				status: event.status,
-				etag: event.etag,
-				lastSyncedAt: event.lastSyncedAt,
-				busyStatus: event.busyStatus,
-				visibility: isProtectedSource
-					? primary.visibility
-					: isRecurringInstance
-						? undefined
-						: event.visibility,
-				location: isProtectedSource
-					? primary.location
-					: isRecurringInstance
-						? undefined
-						: event.location,
-				color: isProtectedSource ? primary.color : isRecurringInstance ? undefined : event.color,
-			};
-
-			if (primary) {
-				// Last-write-wins: if local was modified more recently than Google's update,
-				// preserve local content and only update sync metadata.
-				const localUpdatedAt = primary.updatedAt ?? primary._creationTime ?? 0;
-				const localIsNewer = localUpdatedAt > event.lastSyncedAt;
-
-				// Detect move/resize for task events → pin to Google's new time.
-				// Only when Google's change is more recent (user dragged in Google),
-				// not when the scheduler just moved the event locally.
-				if (primary.source === "task" && primary.sourceId && !localIsNewer) {
-					const startChanged = primary.start !== event.start;
-					const endChanged = primary.end !== event.end;
-					if ((startChanged || endChanged) && !primary.sourceId.includes(":travel:")) {
-						await ctx.db.patch(primary._id, { pinned: true });
-					}
-				}
-				if (localIsNewer) {
-					await ctx.db.patch(primary._id, {
-						googleEventId: resolvedGoogleEventId,
-						etag: event.etag,
-						lastSyncedAt: event.lastSyncedAt,
-						seriesId: isProtectedSource ? undefined : series._id,
-						occurrenceStart,
-					});
-				} else {
-					await ctx.db.patch(primary._id, occurrencePatch);
-				}
-				for (const duplicate of orderedMatches.slice(1)) {
-					await ctx.db.delete(duplicate._id);
-				}
-			} else {
-				await ctx.db.insert("calendarEvents", {
-					userId: args.userId,
-					...occurrencePatch,
-				});
-			}
+			});
 		}
 
 		return { upserted: args.events.length };

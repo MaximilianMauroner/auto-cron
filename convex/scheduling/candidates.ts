@@ -1,13 +1,9 @@
+import type { HabitOccurrenceCandidate, TaskChunkPlan } from "../types/scheduling";
 import { SLOT_MINUTES, SLOT_MS } from "./constants";
 import { type ParsedRRule, buildHabitPeriods } from "./rrule";
 import { slotForTimestamp, timestampForSlot, zonedPartsForTimestamp } from "./time";
 import type { SchedulingHabitInput, SchedulingTaskInput } from "./types";
-
-export type TaskChunkPlan = {
-	requiredSlots: number;
-	minChunkSlots: number;
-	maxChunkSlots: number;
-};
+export type { HabitOccurrenceCandidate, TaskChunkPlan } from "../types/scheduling";
 
 export const toSlots = (minutes: number) => Math.max(1, Math.ceil(minutes / SLOT_MINUTES));
 
@@ -75,13 +71,6 @@ const parseIdealMinute = (idealTime: string | undefined) => {
 	const minutes = Number.parseInt(match[2] ?? "0", 10);
 	if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return 9 * 60;
 	return Math.max(0, Math.min(1439, hours * 60 + minutes));
-};
-
-export type HabitOccurrenceCandidate = {
-	startSlot: number;
-	score: number;
-	periodStart: number;
-	periodEnd: number;
 };
 
 export const buildHabitOccurrenceCandidates = (

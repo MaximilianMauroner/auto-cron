@@ -22,7 +22,11 @@ import {
 	detectLocalTimeFormatPreference,
 	detectLocalTimeZone,
 } from "@/components/user-preferences-context";
-import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
+import {
+	useActionWithStatus,
+	useAuthenticatedQueryWithStatus,
+	useMutationWithStatus,
+} from "@/hooks/use-convex-status";
 import { cn } from "@/lib/utils";
 import { useCustomer } from "autumn-js/react";
 import { ArrowUpRight, Check, ChevronsUpDown, Globe, Hash, Pencil } from "lucide-react";
@@ -149,9 +153,7 @@ export default function GeneralSettingsPage() {
 
 	// Sync DB activeProductId with Autumn's actual subscription.
 	// If the customer has no plan at all, auto-attach the free plan.
-	const { mutate: syncActiveProduct } = useMutationWithStatus(
-		api.hours.mutations.updateActiveProduct,
-	);
+	const { execute: syncActiveProduct } = useActionWithStatus(api.hours.actions.syncActiveProduct);
 	const hasSynced = useRef(false);
 	useEffect(() => {
 		if (hasSynced.current || !customer) return;

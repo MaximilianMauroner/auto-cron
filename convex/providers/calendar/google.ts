@@ -1,7 +1,27 @@
 "use node";
 import { env } from "../../env";
+import {
+	GOOGLE_CALENDAR_LIST_PAGE_SIZE,
+	GOOGLE_EVENTS_PAGE_SIZE,
+	clampWatchTtlSeconds,
+	createGoogleEventPayload,
+	ingestSyncResponseItems,
+	mapCalendarListEntry,
+	parseWatchExpiration,
+	patchGoogleEventPayload,
+	resolveSyncRangeIso,
+	toGoogleEventUpsert,
+	toGoogleUpdateFallbackEvent,
+} from "./googleHelpers";
 import type {
-	CalendarEventCreateInput,
+	GoogleCalendarListEntry,
+	GoogleCalendarListResponse,
+	GoogleEvent,
+	GoogleEventsResponse,
+	GoogleTokenResponse,
+	GoogleWatchStartResponse,
+} from "./googleTypes";
+import type {
 	CalendarEventUpdateInput,
 	CalendarProvider,
 	CalendarProviderSyncResult,
@@ -10,390 +30,7 @@ import type {
 	ProviderCalendar,
 } from "./types";
 
-type GoogleTokenResponse = {
-	access_token: string;
-	expires_in: number;
-	token_type: string;
-};
-
-type GoogleEventDateTime = {
-	dateTime?: string;
-	date?: string;
-	timeZone?: string;
-};
-
-type GoogleEvent = {
-	id: string;
-	summary?: string;
-	description?: string;
-	location?: string;
-	extendedProperties?: {
-		private?: Record<string, string>;
-		shared?: Record<string, string>;
-	};
-	visibility?: "default" | "public" | "private" | "confidential";
-	start?: GoogleEventDateTime;
-	end?: GoogleEventDateTime;
-	status?: "confirmed" | "tentative" | "cancelled";
-	deleted?: boolean;
-	etag?: string;
-	recurrence?: string[];
-	recurringEventId?: string;
-	originalStartTime?: GoogleEventDateTime;
-	colorId?: string;
-	htmlLink?: string;
-	transparency?: "opaque" | "transparent";
-};
-
-type GoogleEventsResponse = {
-	items?: GoogleEvent[];
-	nextPageToken?: string;
-	nextSyncToken?: string;
-};
-
-type GoogleCalendarListEntry = {
-	id: string;
-	summary?: string;
-	primary?: boolean;
-	hidden?: boolean;
-	deleted?: boolean;
-	colorId?: string;
-	backgroundColor?: string;
-	accessRole?: "owner" | "writer" | "reader" | "freeBusyReader";
-};
-
-type GoogleCalendarListResponse = {
-	items?: GoogleCalendarListEntry[];
-	nextPageToken?: string;
-};
-
-type GoogleWatchStartResponse = {
-	id?: string;
-	resourceId?: string;
-	resourceUri?: string;
-	expiration?: string;
-};
-
 const GOOGLE_CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
-const APP_SOURCE_KEY_FIELD = "autoCronSourceId";
-const GOOGLE_COLOR_ID_TO_HEX: Record<string, string> = {
-	"1": "#a4bdfc",
-	"2": "#7ae7bf",
-	"3": "#dbadff",
-	"4": "#ff887c",
-	"5": "#fbd75b",
-	"6": "#ffb878",
-	"7": "#46d6db",
-	"8": "#e1e1e1",
-	"9": "#5484ed",
-	"10": "#16a765",
-	"11": "#dc2127",
-	"12": "#f691b2",
-	"13": "#c2c2c2",
-	"14": "#4986e7",
-	"15": "#9fc6e7",
-	"16": "#47b6ff",
-	"17": "#51b749",
-	"18": "#fbd75b",
-	"19": "#ffb878",
-	"20": "#ff887c",
-	"21": "#dc2127",
-	"22": "#dbadff",
-	"23": "#c2c2c2",
-	"24": "#9fc6e7",
-};
-const GOOGLE_HEX_TO_COLOR_ID = Object.fromEntries(
-	Object.entries(GOOGLE_COLOR_ID_TO_HEX).map(([id, hex]) => [hex.toLowerCase(), id]),
-);
-const HEX_COLOR_REGEX = /^#(?:[0-9a-fA-F]{3}){1,2}$/;
-
-const hexToRgb = (hex: string): [number, number, number] => {
-	const h = hex.length === 4 ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}` : hex;
-	return [
-		Number.parseInt(h.slice(1, 3), 16),
-		Number.parseInt(h.slice(3, 5), 16),
-		Number.parseInt(h.slice(5, 7), 16),
-	];
-};
-
-const colorDistanceSq = (a: [number, number, number], b: [number, number, number]): number =>
-	(a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
-
-const REMOTE_CALENDAR_ID_REGEX =
-	/(group\.(?:v\.)?calendar\.google\.com|import\.calendar\.google\.com|holiday)/i;
-
-const isExternalCalendar = (calendar: GoogleCalendarListEntry) => {
-	if (calendar.primary) return false;
-	if (calendar.accessRole === "reader" || calendar.accessRole === "freeBusyReader") return true;
-	return REMOTE_CALENDAR_ID_REGEX.test(calendar.id);
-};
-
-const normalizeColorTokenToHex = (token?: string) => {
-	if (!token) return undefined;
-	const normalized = token.trim().toLowerCase();
-	if (HEX_COLOR_REGEX.test(normalized)) return normalized;
-	return GOOGLE_COLOR_ID_TO_HEX[normalized];
-};
-
-const toGoogleColorId = (color?: string) => {
-	if (!color) return undefined;
-	const normalized = color.trim().toLowerCase();
-	if (GOOGLE_COLOR_ID_TO_HEX[normalized]) return normalized;
-	const exactMatch = GOOGLE_HEX_TO_COLOR_ID[normalized];
-	if (exactMatch) return exactMatch;
-	if (!HEX_COLOR_REGEX.test(normalized)) return undefined;
-	const rgb = hexToRgb(normalized);
-	let bestId: string | undefined;
-	let bestDist = Number.POSITIVE_INFINITY;
-	for (const [id, hex] of Object.entries(GOOGLE_COLOR_ID_TO_HEX)) {
-		const dist = colorDistanceSq(rgb, hexToRgb(hex));
-		if (dist < bestDist) {
-			bestDist = dist;
-			bestId = id;
-		}
-	}
-	return bestId;
-};
-
-const toDateTime = (value: number) => new Date(value).toISOString();
-
-const RFC3339_OFFSET_SUFFIX_REGEX = /(z|[+-]\d{2}:\d{2})$/i;
-const LOCAL_DATE_TIME_REGEX =
-	/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(\.(\d{1,3}))?)?$/;
-const timeZoneFormatterCache = new Map<string, Intl.DateTimeFormat>();
-
-const getTimeZoneFormatter = (timeZone: string) => {
-	const existing = timeZoneFormatterCache.get(timeZone);
-	if (existing) return existing;
-	const formatter = new Intl.DateTimeFormat("en-US", {
-		timeZone,
-		hourCycle: "h23",
-		year: "numeric",
-		month: "2-digit",
-		day: "2-digit",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-	});
-	timeZoneFormatterCache.set(timeZone, formatter);
-	return formatter;
-};
-
-const getTimeZoneParts = (timestamp: number, timeZone: string) => {
-	try {
-		const formatter = getTimeZoneFormatter(timeZone);
-		const parts = formatter.formatToParts(new Date(timestamp));
-		const byType = new Map(parts.map((part) => [part.type, part.value]));
-		const year = Number.parseInt(byType.get("year") ?? "", 10);
-		const month = Number.parseInt(byType.get("month") ?? "", 10);
-		const day = Number.parseInt(byType.get("day") ?? "", 10);
-		const hour = Number.parseInt(byType.get("hour") ?? "", 10);
-		const minute = Number.parseInt(byType.get("minute") ?? "", 10);
-		const second = Number.parseInt(byType.get("second") ?? "", 10);
-		if (
-			!Number.isFinite(year) ||
-			!Number.isFinite(month) ||
-			!Number.isFinite(day) ||
-			!Number.isFinite(hour) ||
-			!Number.isFinite(minute) ||
-			!Number.isFinite(second)
-		) {
-			return null;
-		}
-		return {
-			year,
-			month,
-			day,
-			hour,
-			minute,
-			second,
-		};
-	} catch {
-		return null;
-	}
-};
-
-const parseLocalDateTimeInTimeZone = (raw: string, timeZone: string): number | undefined => {
-	const match = raw.match(LOCAL_DATE_TIME_REGEX);
-	if (!match) return undefined;
-
-	const year = Number.parseInt(match[1] ?? "", 10);
-	const month = Number.parseInt(match[2] ?? "", 10);
-	const day = Number.parseInt(match[3] ?? "", 10);
-	const hour = Number.parseInt(match[4] ?? "", 10);
-	const minute = Number.parseInt(match[5] ?? "", 10);
-	const second = Number.parseInt(match[6] ?? "0", 10);
-	const millisecond = Number.parseInt((match[8] ?? "0").padEnd(3, "0"), 10);
-
-	if (
-		!Number.isFinite(year) ||
-		!Number.isFinite(month) ||
-		!Number.isFinite(day) ||
-		!Number.isFinite(hour) ||
-		!Number.isFinite(minute) ||
-		!Number.isFinite(second) ||
-		!Number.isFinite(millisecond)
-	) {
-		return undefined;
-	}
-
-	const targetUtcValue = Date.UTC(year, month - 1, day, hour, minute, second, millisecond);
-	let candidate = targetUtcValue;
-	for (let index = 0; index < 3; index += 1) {
-		const resolved = getTimeZoneParts(candidate, timeZone);
-		if (!resolved) return undefined;
-		const observedUtcValue = Date.UTC(
-			resolved.year,
-			resolved.month - 1,
-			resolved.day,
-			resolved.hour,
-			resolved.minute,
-			resolved.second,
-			millisecond,
-		);
-		const delta = targetUtcValue - observedUtcValue;
-		candidate += delta;
-		if (delta === 0) break;
-	}
-	return candidate;
-};
-
-const maybeDateTimeToMillis = (dt?: GoogleEventDateTime): number | undefined => {
-	if (dt?.dateTime) {
-		if (RFC3339_OFFSET_SUFFIX_REGEX.test(dt.dateTime)) {
-			const parsed = Date.parse(dt.dateTime);
-			return Number.isNaN(parsed) ? undefined : parsed;
-		}
-
-		if (dt.timeZone) {
-			const parsedInTimeZone = parseLocalDateTimeInTimeZone(dt.dateTime, dt.timeZone);
-			if (parsedInTimeZone !== undefined) return parsedInTimeZone;
-		}
-
-		const parsed = Date.parse(dt.dateTime);
-		return Number.isNaN(parsed) ? undefined : parsed;
-	}
-
-	if (!dt?.date) return undefined;
-	const parsed = Date.parse(`${dt.date}T00:00:00.000Z`);
-	return Number.isNaN(parsed) ? undefined : parsed;
-};
-
-const toBusyStatus = (event: GoogleEvent): "free" | "busy" | "tentative" => {
-	if (event.status === "tentative") return "tentative";
-	if (event.transparency === "transparent") return "free";
-	return "busy";
-};
-
-const toGoogleEventUpsert = (
-	event: GoogleEvent,
-	calendarId: string,
-	calendarColor?: string,
-): GoogleEventUpsert | null => {
-	const start = maybeDateTimeToMillis(event.start);
-	const end = maybeDateTimeToMillis(event.end);
-	if (!start || !end || !event.id) return null;
-
-	return {
-		id: event.id,
-		title: event.summary ?? "Untitled event",
-		description: event.description,
-		start,
-		end,
-		allDay: Boolean(event.start?.date && !event.start?.dateTime),
-		googleEventId: event.id,
-		calendarId,
-		appSourceKey: event.extendedProperties?.private?.[APP_SOURCE_KEY_FIELD],
-		recurrenceRule: event.recurrence?.[0],
-		recurringEventId: event.recurringEventId,
-		originalStartTime: maybeDateTimeToMillis(event.originalStartTime),
-		status: event.status,
-		etag: event.etag,
-		htmlLink: event.htmlLink,
-		busyStatus: toBusyStatus(event),
-		visibility: event.visibility,
-		location: event.location,
-		color: normalizeColorTokenToHex(event.colorId ?? calendarColor),
-		lastSyncedAt: Date.now(),
-	};
-};
-
-const toDeletedEvent = (event: GoogleEvent, calendarId: string) => {
-	if (!event.id) return null;
-	return {
-		googleEventId: event.id,
-		calendarId,
-		originalStartTime: maybeDateTimeToMillis(event.originalStartTime),
-		lastSyncedAt: Date.now(),
-	};
-};
-
-const createGoogleEventPayload = (input: CalendarEventCreateInput): Record<string, unknown> => {
-	const isAllDay = Boolean(input.allDay);
-	const colorId = toGoogleColorId(input.color);
-	return {
-		summary: input.title,
-		description: input.description,
-		location: input.location,
-		extendedProperties: input.appSourceKey
-			? { private: { [APP_SOURCE_KEY_FIELD]: input.appSourceKey } }
-			: undefined,
-		visibility: input.visibility,
-		start: isAllDay
-			? { date: new Date(input.start).toISOString().slice(0, 10) }
-			: { dateTime: toDateTime(input.start) },
-		end: isAllDay
-			? { date: new Date(input.end).toISOString().slice(0, 10) }
-			: { dateTime: toDateTime(input.end) },
-		recurrence: input.recurrenceRule ? [input.recurrenceRule] : undefined,
-		transparency: input.busyStatus === "free" ? "transparent" : "opaque",
-		colorId,
-	};
-};
-
-const patchGoogleEventPayload = (
-	patch: CalendarEventUpdateInput,
-	appSourceKey?: string,
-): Record<string, unknown> => {
-	const payload: Record<string, unknown> = {};
-	if (patch.title !== undefined) payload.summary = patch.title;
-	if (patch.description !== undefined) payload.description = patch.description;
-	if (patch.location !== undefined) payload.location = patch.location;
-	if (patch.visibility !== undefined) payload.visibility = patch.visibility;
-	if (patch.start !== undefined || patch.allDay !== undefined) {
-		const allDay = Boolean(patch.allDay);
-		if (patch.start !== undefined) {
-			payload.start = allDay
-				? { date: new Date(patch.start).toISOString().slice(0, 10) }
-				: { dateTime: toDateTime(patch.start) };
-		}
-	}
-	if (patch.end !== undefined || patch.allDay !== undefined) {
-		const allDay = Boolean(patch.allDay);
-		if (patch.end !== undefined) {
-			payload.end = allDay
-				? { date: new Date(patch.end).toISOString().slice(0, 10) }
-				: { dateTime: toDateTime(patch.end) };
-		}
-	}
-	if (patch.recurrenceRule !== undefined) {
-		payload.recurrence = patch.recurrenceRule ? [patch.recurrenceRule] : [];
-	}
-	if (patch.busyStatus !== undefined) {
-		payload.transparency = patch.busyStatus === "free" ? "transparent" : "opaque";
-	}
-	if (patch.color !== undefined) {
-		payload.colorId = toGoogleColorId(patch.color);
-	}
-	if (appSourceKey) {
-		payload.extendedProperties = {
-			private: {
-				[APP_SOURCE_KEY_FIELD]: appSourceKey,
-			},
-		};
-	}
-	return payload;
-};
 
 const getAccessToken = async (refreshToken: string) => {
 	const environment = env();
@@ -431,12 +68,6 @@ const callGoogle = async (
 	return fetch(`${GOOGLE_CALENDAR_BASE}${path}`, { ...init, headers });
 };
 
-const parseWatchExpiration = (raw: string | undefined): number => {
-	const parsed = Number.parseInt(raw ?? "", 10);
-	if (Number.isFinite(parsed) && parsed > 0) return parsed;
-	return Date.now() + 7 * 24 * 60 * 60 * 1000;
-};
-
 export const googleCalendarProvider: CalendarProvider = {
 	async listCalendars({ refreshToken }) {
 		const calendars: ProviderCalendar[] = [];
@@ -446,7 +77,7 @@ export const googleCalendarProvider: CalendarProvider = {
 			const searchParams = new URLSearchParams({
 				showHidden: "false",
 				showDeleted: "false",
-				maxResults: "250",
+				maxResults: String(GOOGLE_CALENDAR_LIST_PAGE_SIZE),
 			});
 			if (nextPageToken) {
 				searchParams.set("pageToken", nextPageToken);
@@ -462,15 +93,9 @@ export const googleCalendarProvider: CalendarProvider = {
 
 			const data = (await response.json()) as GoogleCalendarListResponse;
 			for (const calendar of data.items ?? []) {
-				if (!calendar.id || calendar.deleted || calendar.hidden) continue;
-				calendars.push({
-					id: calendar.id,
-					summary: calendar.summary ?? calendar.id,
-					primary: Boolean(calendar.primary),
-					color: normalizeColorTokenToHex(calendar.backgroundColor ?? calendar.colorId),
-					accessRole: calendar.accessRole,
-					isExternal: isExternalCalendar(calendar),
-				});
+				const mappedCalendar = mapCalendarListEntry(calendar);
+				if (!mappedCalendar) continue;
+				calendars.push(mappedCalendar);
 			}
 			nextPageToken = data.nextPageToken;
 		} while (nextPageToken);
@@ -507,25 +132,20 @@ export const googleCalendarProvider: CalendarProvider = {
 			const unresolvedSeriesIds = new Set<string>();
 			let nextPageToken: string | undefined;
 			let nextSyncToken: string | undefined;
+			const syncRangeIso = resolveSyncRangeIso(rangeStart, rangeEnd);
 
 			do {
 				const searchParams = new URLSearchParams({
 					singleEvents: "true",
 					showDeleted: "true",
-					maxResults: "2500",
+					maxResults: String(GOOGLE_EVENTS_PAGE_SIZE),
 				});
 				if (currentSyncToken) {
 					searchParams.set("syncToken", currentSyncToken);
 				} else {
 					searchParams.set("orderBy", "startTime");
-					searchParams.set(
-						"timeMin",
-						new Date(rangeStart ?? Date.now() - 1000 * 60 * 60 * 24 * 30).toISOString(),
-					);
-					searchParams.set(
-						"timeMax",
-						new Date(rangeEnd ?? Date.now() + 1000 * 60 * 60 * 24 * 180).toISOString(),
-					);
+					searchParams.set("timeMin", syncRangeIso.timeMin);
+					searchParams.set("timeMax", syncRangeIso.timeMax);
 				}
 				if (nextPageToken) {
 					searchParams.set("pageToken", nextPageToken);
@@ -539,23 +159,14 @@ export const googleCalendarProvider: CalendarProvider = {
 					throw new Error(`Google sync failed (${response.status})`);
 				}
 				const data = (await response.json()) as GoogleEventsResponse;
-				for (const event of data.items ?? []) {
-					if (!event.id) continue;
-					if (event.status === "cancelled" || event.deleted) {
-						const deletedEvent = toDeletedEvent(event, calendarId);
-						if (deletedEvent) {
-							deletedEvents.push(deletedEvent);
-						}
-						continue;
-					}
-					const mapped = toGoogleEventUpsert(event, calendarId, calendarColor);
-					if (mapped) {
-						if (!mapped.recurrenceRule && mapped.recurringEventId) {
-							unresolvedSeriesIds.add(mapped.recurringEventId);
-						}
-						events.push(mapped);
-					}
-				}
+				ingestSyncResponseItems({
+					items: data.items,
+					calendarId,
+					calendarColor,
+					events,
+					deletedEvents,
+					unresolvedSeriesIds,
+				});
 				nextPageToken = data.nextPageToken;
 				if (data.nextSyncToken) {
 					nextSyncToken = data.nextSyncToken;
@@ -681,34 +292,7 @@ export const googleCalendarProvider: CalendarProvider = {
 		}
 
 		if (!updated) {
-			updated = {
-				id: googleEventId,
-				summary: event.title,
-				description: event.description,
-				location: event.location,
-				extendedProperties: event.appSourceKey
-					? { private: { [APP_SOURCE_KEY_FIELD]: event.appSourceKey } }
-					: event.sourceId
-						? { private: { [APP_SOURCE_KEY_FIELD]: event.sourceId } }
-						: undefined,
-				visibility: event.visibility,
-				start: event.allDay
-					? { date: new Date(event.start).toISOString().slice(0, 10) }
-					: { dateTime: toDateTime(event.start) },
-				end: event.allDay
-					? { date: new Date(event.end).toISOString().slice(0, 10) }
-					: { dateTime: toDateTime(event.end) },
-				status: event.status,
-				etag: event.etag,
-				recurrence: event.recurrenceRule ? [event.recurrenceRule] : undefined,
-				recurringEventId: event.recurringEventId,
-				originalStartTime:
-					event.originalStartTime !== undefined
-						? { dateTime: toDateTime(event.originalStartTime) }
-						: undefined,
-				transparency: event.busyStatus === "free" ? "transparent" : "opaque",
-				colorId: toGoogleColorId(event.color),
-			};
+			updated = toGoogleUpdateFallbackEvent(event, googleEventId);
 		}
 
 		const mapped = toGoogleEventUpsert(updated, targetCalendarId);
@@ -737,7 +321,7 @@ export const googleCalendarProvider: CalendarProvider = {
 		channelToken,
 		ttlSeconds = 7 * 24 * 60 * 60,
 	}): Promise<CalendarWatchStartResult> {
-		const ttl = Math.max(60, Math.min(Math.round(ttlSeconds), 7 * 24 * 60 * 60));
+		const ttl = clampWatchTtlSeconds(ttlSeconds);
 		const response = await callGoogle(
 			refreshToken,
 			`/calendars/${encodeURIComponent(calendarId)}/events/watch`,

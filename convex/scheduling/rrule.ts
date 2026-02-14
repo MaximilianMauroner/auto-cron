@@ -1,20 +1,6 @@
+import type { HabitPeriod, ParsedRRule, SupportedFrequency } from "../types/scheduling";
 import { MAX_HABIT_DRIFT_DAYS } from "./constants";
-
-type SupportedFrequency = "DAILY" | "WEEKLY" | "MONTHLY";
-
-export type ParsedRRule = {
-	frequency: SupportedFrequency;
-	interval: number;
-	byDay: number[];
-};
-
-export type HabitPeriod = {
-	periodStart: number;
-	periodEnd: number;
-	targetCount: number;
-	expectedSpacingDays: number;
-	driftDays: number;
-};
+export type { HabitPeriod, ParsedRRule, SupportedFrequency } from "../types/scheduling";
 
 const weekdayMap: Record<string, number> = {
 	SU: 0,

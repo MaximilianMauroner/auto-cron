@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
+import type { HabitQuickCreateDefaults, TaskQuickCreateDefaults } from "./hourTypes";
 import {
 	dateFormatValidator,
 	defaultHabitQuickCreateSettings,
@@ -43,20 +44,6 @@ const taskQuickCreateDefaultsValidator = v.object({
 	visibilityPreference: taskVisibilityPreferenceValidator,
 	color: v.string(),
 });
-
-type TaskQuickCreateDefaults = {
-	priority: "low" | "medium" | "high" | "critical" | "blocker";
-	status: "backlog" | "queued";
-	estimatedMinutes: number;
-	splitAllowed: boolean;
-	minChunkMinutes: number;
-	maxChunkMinutes: number;
-	restMinutes: number;
-	travelMinutes: number;
-	sendToUpNext: boolean;
-	visibilityPreference: "default" | "private";
-	color: string;
-};
 
 const sanitizeTaskQuickCreateDefaults = (
 	settings: {
@@ -162,15 +149,6 @@ const habitQuickCreateDefaultsValidator = v.object({
 	visibilityPreference: taskVisibilityPreferenceValidator,
 	color: v.string(),
 });
-
-type HabitQuickCreateDefaults = {
-	priority: "low" | "medium" | "high" | "critical" | "blocker";
-	durationMinutes: number;
-	frequency: "daily" | "weekly" | "biweekly" | "monthly";
-	recoveryPolicy: "skip" | "recover";
-	visibilityPreference: "default" | "private";
-	color: string;
-};
 
 const sanitizeHabitQuickCreateDefaults = (
 	settings: {

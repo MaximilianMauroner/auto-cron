@@ -3,13 +3,11 @@
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
-
-type SyncedUser = {
-	userId: string;
-	googleRefreshToken: string;
-	googleSyncToken?: string;
-	googleCalendarSyncTokens?: Array<{ calendarId: string; syncToken: string }>;
-};
+import type {
+	SyncedUser,
+	UpsertSyncedEventsBatchArgs,
+	UpsertSyncedEventsForUserArgs,
+} from "./syncRuntimeTypes";
 
 export const getCurrentUserGoogleSettings = (ctx: ActionCtx): Promise<Doc<"userSettings"> | null> =>
 	ctx.runQuery(internal.calendar.internal.getUserGoogleSettings, {});
@@ -20,74 +18,11 @@ export const listUsersWithGoogleSync = (
 ): Promise<Array<SyncedUser>> =>
 	ctx.runQuery(internal.calendar.internal.listUsersWithGoogleSync, { limit });
 
-export const upsertSyncedEventsForUser = (
-	ctx: ActionCtx,
-	args: {
-		userId: string;
-		resetCalendars?: string[];
-		events: Array<{
-			googleEventId: string;
-			title: string;
-			description?: string;
-			start: number;
-			end: number;
-			allDay: boolean;
-			calendarId: string;
-			recurrenceRule?: string;
-			recurringEventId?: string;
-			originalStartTime?: number;
-			status?: "confirmed" | "tentative" | "cancelled";
-			etag?: string;
-			busyStatus: "free" | "busy" | "tentative";
-			visibility?: "default" | "public" | "private" | "confidential";
-			location?: string;
-			color?: string;
-			lastSyncedAt: number;
-		}>;
-		deletedEvents?: Array<{
-			googleEventId: string;
-			calendarId: string;
-			originalStartTime?: number;
-			lastSyncedAt: number;
-		}>;
-		nextSyncToken?: string;
-		syncTokens?: Array<{ calendarId: string; syncToken: string }>;
-		connectedCalendars?: Array<{
-			calendarId: string;
-			name: string;
-			primary: boolean;
-			color?: string;
-			accessRole?: "owner" | "writer" | "reader" | "freeBusyReader";
-			isExternal?: boolean;
-		}>;
-	},
-) => ctx.runMutation(internal.calendar.mutations.upsertSyncedEventsForUser, args);
+export const upsertSyncedEventsForUser = (ctx: ActionCtx, args: UpsertSyncedEventsForUserArgs) =>
+	ctx.runMutation(internal.calendar.mutations.upsertSyncedEventsForUser, args);
 
-export const upsertSyncedEventsBatch = (
-	ctx: ActionCtx,
-	args: {
-		userId: string;
-		events: Array<{
-			googleEventId: string;
-			title: string;
-			description?: string;
-			start: number;
-			end: number;
-			allDay: boolean;
-			calendarId: string;
-			recurrenceRule?: string;
-			recurringEventId?: string;
-			originalStartTime?: number;
-			status?: "confirmed" | "tentative" | "cancelled";
-			etag?: string;
-			busyStatus: "free" | "busy" | "tentative";
-			visibility?: "default" | "public" | "private" | "confidential";
-			location?: string;
-			color?: string;
-			lastSyncedAt: number;
-		}>;
-	},
-) => ctx.runMutation(internal.calendar.mutations.upsertSyncedEventsBatch, args);
+export const upsertSyncedEventsBatch = (ctx: ActionCtx, args: UpsertSyncedEventsBatchArgs) =>
+	ctx.runMutation(internal.calendar.mutations.upsertSyncedEventsBatch, args);
 
 export const normalizeGoogleEventsInRange = (
 	ctx: ActionCtx,

@@ -28,27 +28,12 @@ import {
 	formatDurationFromMinutes,
 	parseDurationToMinutes,
 } from "@/lib/duration";
+import { priorityLabels, statusLabels } from "@/lib/scheduling-constants";
 import type { CalendarEventDTO, Priority, TaskStatus } from "@auto-cron/types";
 import { MoreVertical, Pin, PinOff, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
-
-const priorityLabels: Record<Priority, string> = {
-	low: "Low",
-	medium: "Medium",
-	high: "High",
-	critical: "Critical",
-	blocker: "Blocker",
-};
-
-const statusLabels: Record<TaskStatus, string> = {
-	backlog: "Backlog",
-	queued: "Up Next",
-	scheduled: "Scheduled",
-	in_progress: "In Progress",
-	done: "Done",
-};
 
 const toTimestamp = (value: string) => {
 	if (!value) return undefined;

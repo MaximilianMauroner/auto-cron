@@ -1,14 +1,28 @@
 import { ConvexError, v } from "convex/values";
 import type { Doc } from "../_generated/dataModel";
+import type { MutationCtx } from "../_generated/server";
 import { internalMutation, internalQuery } from "../_generated/server";
 import { requireAuth } from "../auth";
 import type { CalendarProviderEvent } from "../providers/calendar/types";
 
 const MINUTE_MS = 60 * 1000;
+
+/**
+ * Floors a timestamp to the nearest minute boundary.
+ */
 const normalizeToMinute = (timestamp: number) => Math.floor(timestamp / MINUTE_MS) * MINUTE_MS;
 
+/**
+ * Computes recency for conflict resolution and deduplication.
+ */
 const recencyScore = (event: Doc<"calendarEvents">) =>
 	Math.max(event.lastSyncedAt ?? 0, event.updatedAt ?? 0, event._creationTime ?? 0);
+
+/**
+ * Clamps a numeric limit into an inclusive range.
+ */
+const clampLimit = (value: number | undefined, min: number, max: number, fallback: number) =>
+	Math.max(min, Math.min(value ?? fallback, max));
 
 const buildDedupeKey = (event: Doc<"calendarEvents">) => {
 	if (event.seriesId && event.occurrenceStart !== undefined && event.recurringEventId) {
@@ -48,6 +62,89 @@ const hydrateEvent = (
 	color: event.color ?? series?.color,
 });
 
+/**
+ * Fetches user events in an optional overlapping time range.
+ */
+const listUserEventsInRange = async (
+	ctx: MutationCtx,
+	userId: string,
+	start?: number,
+	end?: number,
+) => {
+	if (typeof start === "number" && typeof end === "number") {
+		return await ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_start", (q) => q.eq("userId", userId).lte("start", end))
+			.filter((q) => q.gte(q.field("end"), start))
+			.collect();
+	}
+
+	return await ctx.db
+		.query("calendarEvents")
+		.withIndex("by_userId", (q) => q.eq("userId", userId))
+		.collect();
+};
+
+/**
+ * Scores how complete an event row is so dedupe prefers richer records.
+ */
+const eventRichnessScore = (event: Doc<"calendarEvents">) =>
+	(event.title ? 1 : 0) +
+	(event.description ? 1 : 0) +
+	(event.recurrenceRule ? 1 : 0) +
+	(event.busyStatus ? 1 : 0) +
+	(event.visibility ? 1 : 0) +
+	(event.location ? 1 : 0) +
+	(event.color ? 1 : 0);
+
+const getRichestEvent = (group: Doc<"calendarEvents">[]) =>
+	[...group].sort((a, b) => eventRichnessScore(b) - eventRichnessScore(a))[0];
+
+/**
+ * Merges duplicate events by key and removes stale copies.
+ */
+const dedupeEventGroups = async (ctx: MutationCtx, events: Doc<"calendarEvents">[]) => {
+	const groups = new Map<string, Doc<"calendarEvents">[]>();
+	for (const event of events) {
+		const key = buildDedupeKey(event);
+		const existing = groups.get(key) ?? [];
+		existing.push(event);
+		groups.set(key, existing);
+	}
+
+	let merged = 0;
+	let removed = 0;
+
+	for (const group of groups.values()) {
+		if (group.length <= 1) continue;
+		merged += 1;
+
+		const [primary, ...duplicates] = [...group].sort((a, b) => recencyScore(b) - recencyScore(a));
+		if (!primary) continue;
+
+		const richest = getRichestEvent(group);
+		if (richest && richest._id !== primary._id) {
+			await ctx.db.patch(primary._id, {
+				title: primary.title ?? richest.title,
+				description: primary.description ?? richest.description,
+				recurrenceRule: primary.recurrenceRule ?? richest.recurrenceRule,
+				busyStatus: primary.busyStatus ?? richest.busyStatus,
+				visibility: primary.visibility ?? richest.visibility,
+				location: primary.location ?? richest.location,
+				color: primary.color ?? richest.color,
+				allDay: primary.allDay ?? richest.allDay,
+			});
+		}
+
+		for (const duplicate of duplicates) {
+			await ctx.db.delete(duplicate._id);
+			removed += 1;
+		}
+	}
+
+	return { merged, removed };
+};
+
 export const getUserGoogleSettings = internalQuery({
 	args: {
 		userId: v.optional(v.string()),
@@ -81,7 +178,7 @@ export const listUsersWithGoogleSync = internalQuery({
 		}),
 	),
 	handler: async (ctx, args) => {
-		const limit = Math.max(1, Math.min(args.limit ?? 1000, 1000));
+		const limit = clampLimit(args.limit, 1, 1000, 1000);
 		const settings = await ctx.db
 			.query("userSettings")
 			.withIndex("by_googleRefreshToken_userId", (q) => q.gte("googleRefreshToken", ""))
@@ -213,7 +310,7 @@ export const listExpiringWatchChannels = internalQuery({
 		}),
 	),
 	handler: async (ctx, args) => {
-		const limit = Math.max(1, Math.min(args.limit ?? 500, 5000));
+		const limit = clampLimit(args.limit, 1, 5000, 500);
 		const channels = await ctx.db
 			.query("googleCalendarWatchChannels")
 			.withIndex("by_expirationAt", (q) => q.lte("expirationAt", args.before))
@@ -346,21 +443,7 @@ export const normalizeGoogleEventsInRange = internalMutation({
 		const userId = args.userId ?? (await requireAuth(ctx));
 		const now = Date.now();
 
-		const events =
-			typeof args.start === "number" && typeof args.end === "number"
-				? await (() => {
-						const rangeStart = args.start;
-						const rangeEnd = args.end;
-						return ctx.db
-							.query("calendarEvents")
-							.withIndex("by_userId_start", (q) => q.eq("userId", userId).lte("start", rangeEnd))
-							.filter((q) => q.gte(q.field("end"), rangeStart))
-							.collect();
-					})()
-				: await ctx.db
-						.query("calendarEvents")
-						.withIndex("by_userId", (q) => q.eq("userId", userId))
-						.collect();
+		const events = await listUserEventsInRange(ctx, userId, args.start, args.end);
 
 		const seriesCache = new Map<string, Doc<"calendarEventSeries"> | null>();
 		const processedSeriesCacheKeys = new Set<string>();
@@ -515,71 +598,8 @@ export const dedupeUserCalendarEventsInRange = internalMutation({
 	handler: async (ctx, args) => {
 		const userId = args.userId ?? (await requireAuth(ctx));
 
-		const events = await ctx.db
-			.query("calendarEvents")
-			.withIndex("by_userId_start", (q) => q.eq("userId", userId).lte("start", args.end))
-			.filter((q) => q.gte(q.field("end"), args.start))
-			.collect();
-
-		const groups = new Map<string, Doc<"calendarEvents">[]>();
-		for (const event of events) {
-			const key = buildDedupeKey(event);
-			const existing = groups.get(key) ?? [];
-			existing.push(event);
-			groups.set(key, existing);
-		}
-
-		let merged = 0;
-		let removed = 0;
-
-		for (const group of groups.values()) {
-			if (group.length <= 1) continue;
-			merged += 1;
-			const sorted = [...group].sort((a, b) => recencyScore(b) - recencyScore(a));
-			const [primary, ...duplicates] = sorted;
-			if (!primary) continue;
-
-			// Keep the canonical row hydrated with the most complete data.
-			const richest = [...group].sort((a, b) => {
-				const aScore =
-					(a.title ? 1 : 0) +
-					(a.description ? 1 : 0) +
-					(a.recurrenceRule ? 1 : 0) +
-					(a.busyStatus ? 1 : 0) +
-					(a.visibility ? 1 : 0) +
-					(a.location ? 1 : 0) +
-					(a.color ? 1 : 0);
-				const bScore =
-					(b.title ? 1 : 0) +
-					(b.description ? 1 : 0) +
-					(b.recurrenceRule ? 1 : 0) +
-					(b.busyStatus ? 1 : 0) +
-					(b.visibility ? 1 : 0) +
-					(b.location ? 1 : 0) +
-					(b.color ? 1 : 0);
-				return bScore - aScore;
-			})[0];
-
-			if (richest && richest._id !== primary._id) {
-				await ctx.db.patch(primary._id, {
-					title: primary.title ?? richest.title,
-					description: primary.description ?? richest.description,
-					recurrenceRule: primary.recurrenceRule ?? richest.recurrenceRule,
-					busyStatus: primary.busyStatus ?? richest.busyStatus,
-					visibility: primary.visibility ?? richest.visibility,
-					location: primary.location ?? richest.location,
-					color: primary.color ?? richest.color,
-					allDay: primary.allDay ?? richest.allDay,
-				});
-			}
-
-			for (const duplicate of duplicates) {
-				await ctx.db.delete(duplicate._id);
-				removed += 1;
-			}
-		}
-
-		return { merged, removed };
+		const events = await listUserEventsInRange(ctx, userId, args.start, args.end);
+		return await dedupeEventGroups(ctx, events);
 	},
 });
 
@@ -601,21 +621,7 @@ export const normalizeAndDedupeEventsInRange = internalMutation({
 		const now = Date.now();
 
 		// Fetch events once for both normalize and dedupe
-		const events =
-			typeof args.start === "number" && typeof args.end === "number"
-				? await (() => {
-						const rangeStart = args.start;
-						const rangeEnd = args.end;
-						return ctx.db
-							.query("calendarEvents")
-							.withIndex("by_userId_start", (q) => q.eq("userId", userId).lte("start", rangeEnd))
-							.filter((q) => q.gte(q.field("end"), rangeStart))
-							.collect();
-					})()
-				: await ctx.db
-						.query("calendarEvents")
-						.withIndex("by_userId", (q) => q.eq("userId", userId))
-						.collect();
+		const events = await listUserEventsInRange(ctx, userId, args.start, args.end);
 
 		// --- Normalize phase ---
 		const normalizedEventsById = new Map(events.map((event) => [event._id, event]));
@@ -755,65 +761,8 @@ export const normalizeAndDedupeEventsInRange = internalMutation({
 			occurrencesPatched += 1;
 		}
 
-		// --- Dedupe phase (reuse normalized event view without re-query) ---
 		const dedupeEvents = Array.from(normalizedEventsById.values());
-
-		const groups = new Map<string, Doc<"calendarEvents">[]>();
-		for (const event of dedupeEvents) {
-			const key = buildDedupeKey(event);
-			const existing = groups.get(key) ?? [];
-			existing.push(event);
-			groups.set(key, existing);
-		}
-
-		let merged = 0;
-		let removed = 0;
-
-		for (const group of groups.values()) {
-			if (group.length <= 1) continue;
-			merged += 1;
-			const sorted = [...group].sort((a, b) => recencyScore(b) - recencyScore(a));
-			const [primary, ...duplicates] = sorted;
-			if (!primary) continue;
-
-			const richest = [...group].sort((a, b) => {
-				const aScore =
-					(a.title ? 1 : 0) +
-					(a.description ? 1 : 0) +
-					(a.recurrenceRule ? 1 : 0) +
-					(a.busyStatus ? 1 : 0) +
-					(a.visibility ? 1 : 0) +
-					(a.location ? 1 : 0) +
-					(a.color ? 1 : 0);
-				const bScore =
-					(b.title ? 1 : 0) +
-					(b.description ? 1 : 0) +
-					(b.recurrenceRule ? 1 : 0) +
-					(b.busyStatus ? 1 : 0) +
-					(b.visibility ? 1 : 0) +
-					(b.location ? 1 : 0) +
-					(b.color ? 1 : 0);
-				return bScore - aScore;
-			})[0];
-
-			if (richest && richest._id !== primary._id) {
-				await ctx.db.patch(primary._id, {
-					title: primary.title ?? richest.title,
-					description: primary.description ?? richest.description,
-					recurrenceRule: primary.recurrenceRule ?? richest.recurrenceRule,
-					busyStatus: primary.busyStatus ?? richest.busyStatus,
-					visibility: primary.visibility ?? richest.visibility,
-					location: primary.location ?? richest.location,
-					color: primary.color ?? richest.color,
-					allDay: primary.allDay ?? richest.allDay,
-				});
-			}
-
-			for (const duplicate of duplicates) {
-				await ctx.db.delete(duplicate._id);
-				removed += 1;
-			}
-		}
+		const { merged, removed } = await dedupeEventGroups(ctx, dedupeEvents);
 
 		return {
 			seriesCreated,

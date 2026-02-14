@@ -5,6 +5,7 @@ import { withQueryAuth } from "../auth";
 import { GOOGLE_CALENDAR_COLORS } from "../categories/shared";
 import { normalizeSchedulingDowntimeMinutes } from "../hours/shared";
 import { getMaxHorizonDays } from "../planLimits";
+import type { SchedulableTaskStatus } from "./queryTypes";
 import { recurrenceFromLegacyFrequency } from "./rrule";
 import { isRunNewer } from "./run_order";
 
@@ -125,8 +126,6 @@ const normalizeTravelMinutes = (value: number | undefined) => {
 	if (!Number.isFinite(value)) return 0;
 	return Math.max(0, Math.round(value ?? 0));
 };
-
-type SchedulableTaskStatus = "queued" | "scheduled";
 
 const isSchedulableTaskStatus = (status: string): status is SchedulableTaskStatus =>
 	status === "queued" || status === "scheduled";

@@ -17,6 +17,7 @@ import {
 	trackFeatureUsage,
 } from "../billing";
 import { taskSchedulingModeValidator } from "../hours/shared";
+import type { CreateTaskArgs } from "./taskTypes";
 
 const taskPriorityValidator = v.union(
 	v.literal("low"),
@@ -49,33 +50,6 @@ const taskCreateInputValidator = v.object({
 	color: v.optional(v.string()),
 	categoryId: v.optional(v.id("taskCategories")),
 });
-
-type TaskCreateInput = {
-	title: string;
-	description?: string;
-	priority?: "low" | "medium" | "high" | "critical" | "blocker";
-	status?: "backlog" | "queued";
-	estimatedMinutes: number;
-	deadline?: number;
-	scheduleAfter?: number;
-	splitAllowed?: boolean;
-	minChunkMinutes?: number;
-	maxChunkMinutes?: number;
-	restMinutes?: number;
-	travelMinutes?: number;
-	location?: string;
-	sendToUpNext?: boolean;
-	hoursSetId?: Id<"hoursSets">;
-	schedulingMode?: "fastest" | "balanced" | "packed";
-	visibilityPreference?: "default" | "private";
-	preferredCalendarId?: string;
-	color?: string;
-	categoryId?: Id<"taskCategories">;
-};
-type CreateTaskArgs = {
-	requestId: string;
-	input: TaskCreateInput;
-};
 
 const toErrorMessage = (error: unknown) => {
 	if (error instanceof Error && error.message) return error.message;

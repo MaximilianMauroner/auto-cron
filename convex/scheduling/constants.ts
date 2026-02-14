@@ -1,3 +1,7 @@
+import type { HabitPriorityLevel, PriorityLevel, SchedulingMode } from "../types/scheduling";
+
+export type { HabitPriorityLevel, PriorityLevel, SchedulingMode } from "../types/scheduling";
+
 export const SLOT_MINUTES = 15;
 export const SLOT_MS = SLOT_MINUTES * 60 * 1000;
 
@@ -10,8 +14,6 @@ export const DEBOUNCE_WINDOW_MS = 30 * 1000;
 export const MAX_HABIT_DRIFT_DAYS = 30;
 
 export const PRIORITY_LEVELS = ["low", "medium", "high", "critical", "blocker"] as const;
-export type PriorityLevel = (typeof PRIORITY_LEVELS)[number];
-export type HabitPriorityLevel = Exclude<PriorityLevel, "blocker">;
 
 export const PRIORITY_VALUE: Record<PriorityLevel, number> = {
 	low: 0,
@@ -42,8 +44,6 @@ export const WEIGHTS = {
 } as const;
 
 export const DAY_SLOTS = Math.floor((24 * 60) / SLOT_MINUTES);
-
-export type SchedulingMode = "fastest" | "balanced" | "packed";
 
 export const MODE_MOVE_WEIGHT: Record<SchedulingMode, number> = {
 	fastest: WEIGHTS.moveFastest,

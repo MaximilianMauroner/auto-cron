@@ -7,7 +7,7 @@ import { getPricingTableContent } from "@/lib/autumn/pricing-table-content";
 import { cn } from "@/lib/utils";
 import type { Product, ProductItem } from "autumn-js";
 import { type ProductDetails, useCustomer, usePricingTable } from "autumn-js/react";
-import { useMutation } from "convex/react";
+import { useAction } from "convex/react";
 import { Check, Loader2 } from "lucide-react";
 import { createContext, useContext, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
@@ -18,7 +18,7 @@ export default function PricingTable({
 	productDetails?: ProductDetails[];
 }) {
 	const { customer, checkout } = useCustomer({ errorOnNotFound: false });
-	const updateActiveProduct = useMutation(api.hours.mutations.updateActiveProduct);
+	const syncActiveProduct = useAction(api.hours.actions.syncActiveProduct);
 
 	const [isAnnual, setIsAnnual] = useState(false);
 	const { products, isLoading, error } = usePricingTable({ productDetails });
@@ -81,7 +81,7 @@ export default function PricingTable({
 											dialog: CheckoutDialog,
 										});
 										try {
-											await updateActiveProduct({ productId: product.id });
+											await syncActiveProduct({ productId: product.id });
 										} catch {
 											// Best-effort sync; the backend still enforces limits
 										}

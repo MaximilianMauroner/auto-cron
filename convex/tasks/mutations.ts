@@ -10,6 +10,16 @@ import {
 	taskSchedulingModeValidator,
 } from "../hours/shared";
 import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
+import type {
+	DeleteTaskArgs,
+	InternalCreateTaskArgs,
+	InternalRollbackTaskArgs,
+	ReorderTasksArgs,
+	TaskCreateInput,
+	TaskStatus,
+	TaskUpdatePatch,
+	UpdateTaskArgs,
+} from "./taskTypes";
 
 const taskStatusValidator = v.union(
 	v.literal("backlog"),
@@ -78,80 +88,6 @@ const taskUpdatePatchValidator = v.object({
 	categoryId: v.optional(v.id("taskCategories")),
 });
 
-type TaskStatus = "backlog" | "queued" | "scheduled" | "in_progress" | "done";
-type TaskPriority = "low" | "medium" | "high" | "critical" | "blocker";
-type TaskCreateInput = {
-	title: string;
-	description?: string;
-	priority?: TaskPriority;
-	status?: "backlog" | "queued";
-	estimatedMinutes: number;
-	deadline?: number;
-	scheduleAfter?: number;
-	splitAllowed?: boolean;
-	minChunkMinutes?: number;
-	maxChunkMinutes?: number;
-	restMinutes?: number;
-	travelMinutes?: number;
-	location?: string;
-	sendToUpNext?: boolean;
-	hoursSetId?: Id<"hoursSets">;
-	schedulingMode?: "fastest" | "balanced" | "packed";
-	visibilityPreference?: "default" | "private";
-	preferredCalendarId?: string;
-	color?: string;
-	categoryId?: Id<"taskCategories">;
-};
-type TaskUpdatePatch = {
-	title?: string;
-	description?: string | null;
-	priority?: TaskPriority;
-	status?: TaskStatus;
-	estimatedMinutes?: number;
-	deadline?: number | null;
-	scheduleAfter?: number | null;
-	scheduledStart?: number | null;
-	scheduledEnd?: number | null;
-	completedAt?: number | null;
-	sortOrder?: number;
-	splitAllowed?: boolean | null;
-	minChunkMinutes?: number | null;
-	maxChunkMinutes?: number | null;
-	restMinutes?: number | null;
-	travelMinutes?: number | null;
-	location?: string | null;
-	sendToUpNext?: boolean | null;
-	hoursSetId?: Id<"hoursSets"> | null;
-	schedulingMode?: "fastest" | "balanced" | "packed" | null;
-	visibilityPreference?: "default" | "private" | null;
-	preferredCalendarId?: string | null;
-	color?: string | null;
-	categoryId?: Id<"taskCategories">;
-};
-type UpdateTaskArgs = {
-	id: Id<"tasks">;
-	patch: TaskUpdatePatch;
-};
-type DeleteTaskArgs = {
-	id: Id<"tasks">;
-};
-type ReorderTasksArgs = {
-	items: Array<{
-		id: Id<"tasks">;
-		sortOrder: number;
-		status: TaskStatus;
-	}>;
-};
-type InternalCreateTaskArgs = {
-	userId: string;
-	operationKey: string;
-	input: TaskCreateInput;
-};
-type InternalRollbackTaskArgs = {
-	operationKey: string;
-	userId: string;
-};
-
 const notFoundError = () =>
 	new ConvexError({
 		code: "NOT_FOUND",
@@ -211,24 +147,49 @@ const clearPinnedTaskCalendarEvents = async (
 	taskId: Id<"tasks">,
 ) => {
 	const taskSourceId = String(taskId);
-	const taskTravelSourcePrefix = `${taskSourceId}:travel:`;
-	const events = await ctx.db
-		.query("calendarEvents")
-		.withIndex("by_userId", (q) => q.eq("userId", userId))
-		.collect();
-	const matchingPinnedEvents = events.filter(
-		(event) =>
-			event.source === "task" &&
-			event.pinned === true &&
-			typeof event.sourceId === "string" &&
-			(event.sourceId === taskSourceId || event.sourceId.startsWith(taskTravelSourcePrefix)),
+	const travelPrefix = `task:${taskSourceId}:travel:`;
+	const legacyTravelPrefix = `${taskSourceId}:travel:`;
+	// Use targeted index queries instead of loading all task-source events:
+	// 1. Main task event (exact sourceId match)
+	// 2. Travel blocks with current format (task:${id}:travel:...)
+	// 3. Travel blocks with legacy format (${id}:travel:...)
+	const [mainEvents, travelEvents, legacyTravelEvents] = await Promise.all([
+		ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_source_sourceId", (q) =>
+				q.eq("userId", userId).eq("source", "task").eq("sourceId", taskSourceId),
+			)
+			.collect(),
+		ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_source_sourceId", (q) =>
+				q
+					.eq("userId", userId)
+					.eq("source", "task")
+					.gte("sourceId", travelPrefix)
+					.lt("sourceId", `task:${taskSourceId}:travel;`),
+			)
+			.collect(),
+		ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_source_sourceId", (q) =>
+				q
+					.eq("userId", userId)
+					.eq("source", "task")
+					.gte("sourceId", legacyTravelPrefix)
+					.lt("sourceId", `${taskSourceId}:travel;`),
+			)
+			.collect(),
+	]);
+	const pinnedEvents = [...mainEvents, ...travelEvents, ...legacyTravelEvents].filter(
+		(e) => e.pinned === true,
 	);
-	if (matchingPinnedEvents.length === 0) {
+	if (pinnedEvents.length === 0) {
 		return;
 	}
 	const now = Date.now();
 	await Promise.all(
-		matchingPinnedEvents.map((event) =>
+		pinnedEvents.map((event) =>
 			ctx.db.patch(event._id, {
 				pinned: false,
 				updatedAt: now,
@@ -334,11 +295,10 @@ export const reorderTasks = mutation({
 				}),
 			),
 		);
-		for (const item of args.items) {
-			if (item.status === "backlog") {
-				await clearPinnedTaskCalendarEvents(ctx, ctx.userId, item.id);
-			}
-		}
+		const backlogItems = args.items.filter((item) => item.status === "backlog");
+		await Promise.all(
+			backlogItems.map((item) => clearPinnedTaskCalendarEvents(ctx, ctx.userId, item.id)),
+		);
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId: ctx.userId,
 			triggeredBy: "task_change",
