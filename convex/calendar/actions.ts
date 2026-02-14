@@ -671,6 +671,15 @@ export const handleGoogleCalendarWebhook: ReturnType<typeof internalAction> = in
 			};
 		}
 
+		const notification = await ctx.runMutation(
+			internal.calendar.mutations.recordWatchNotification,
+			{
+				watchChannelId: channel._id,
+				lastNotifiedAt: Date.now(),
+				lastMessageNumber: args.messageNumber,
+			},
+		);
+
 		if (args.resourceState === "sync") {
 			return {
 				accepted: true,
@@ -685,15 +694,6 @@ export const handleGoogleCalendarWebhook: ReturnType<typeof internalAction> = in
 				reason: "ignored_state",
 			};
 		}
-
-		const notification = await ctx.runMutation(
-			internal.calendar.mutations.recordWatchNotification,
-			{
-				watchChannelId: channel._id,
-				lastNotifiedAt: Date.now(),
-				lastMessageNumber: args.messageNumber,
-			},
-		);
 		if (!notification.shouldEnqueue) {
 			return {
 				accepted: true,

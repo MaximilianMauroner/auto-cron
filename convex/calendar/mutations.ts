@@ -1668,12 +1668,10 @@ export const upsertSyncedEventsForUser = internalMutation({
 	}),
 	handler: async (ctx, args) => {
 		const result = await performUpsertSyncedEventsForUser(ctx, args.userId, args);
-		if (result.needsReschedule) {
-			await enqueueSchedulingRunFromMutation(ctx, {
-				userId: args.userId,
-				triggeredBy: "calendar_change",
-			});
-		}
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: args.userId,
+			triggeredBy: "calendar_change",
+		});
 		return { upserted: result.upserted };
 	},
 });
