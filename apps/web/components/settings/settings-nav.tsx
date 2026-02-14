@@ -9,8 +9,9 @@ const navItems = [
 	{ href: "/app/settings/scheduling", label: "Scheduling", number: "02" },
 	{ href: "/app/settings/hours", label: "Hours", number: "03" },
 	{ href: "/app/settings/categories", label: "Categories", number: "04" },
-	{ href: "/app/settings/account", label: "Account", number: "05" },
-	{ href: "/app/settings/notifications", label: "Alerts", number: "06" },
+	{ href: "/app/settings/calendars", label: "Calendars", number: "05" },
+	{ href: "/app/settings/account", label: "Account", number: "06" },
+	{ href: "/app/settings/notifications", label: "Alerts", number: "07" },
 ] as const;
 
 export function SettingsNav() {

@@ -5,7 +5,7 @@ export default function NotificationSettingsPage() {
 	return (
 		<>
 			<SettingsSectionHeader
-				sectionNumber="05"
+				sectionNumber="07"
 				sectionLabel="Notifications"
 				title="Notification Settings"
 				description="Configure how and when you receive reminders and alerts."

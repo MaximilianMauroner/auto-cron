@@ -37,8 +37,7 @@ function EventRow({
 
 	const startDate = new Date(event.start);
 	const endDate = new Date(event.end);
-	const isTravelBlock = event.sourceId?.includes(":travel:");
-	const isTaskEvent = event.source === "task" && !isTravelBlock;
+	const isTaskEvent = event.source === "task";
 	const isPinned = event.pinned === true;
 
 	const dateStr = new Intl.DateTimeFormat(undefined, {
@@ -77,9 +76,17 @@ function EventRow({
 	};
 
 	return (
-		<button
-			type="button"
+		// biome-ignore lint/a11y/useSemanticElements: can't use <button> here — it would nest inside DropdownMenuTrigger's <button>
+		<div
+			role="button"
+			tabIndex={0}
 			onClick={handleNavigate}
+			onKeyDown={(e) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault();
+					handleNavigate();
+				}
+			}}
 			className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.7rem] cursor-pointer transition-colors hover:bg-accent/30 ${muted ? "opacity-60" : ""}`}
 		>
 			{isPinned && isTaskEvent ? <Pin className="size-3 shrink-0 text-amber-600" /> : null}
@@ -130,7 +137,7 @@ function EventRow({
 					</DropdownMenuContent>
 				</DropdownMenu>
 			</div>
-		</button>
+		</div>
 	);
 }
 

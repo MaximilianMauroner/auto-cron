@@ -1,6 +1,8 @@
 import { v } from "convex/values";
+import type { Id } from "../_generated/dataModel";
 import { internalQuery, query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
+import { GOOGLE_CALENDAR_COLORS } from "../categories/shared";
 import { normalizeSchedulingDowntimeMinutes } from "../hours/shared";
 import { getMaxHorizonDays } from "../planLimits";
 import { recurrenceFromLegacyFrequency } from "./rrule";
@@ -129,6 +131,32 @@ type SchedulableTaskStatus = "queued" | "scheduled";
 const isSchedulableTaskStatus = (status: string): status is SchedulableTaskStatus =>
 	status === "queued" || status === "scheduled";
 
+const resolvePreferredCalendarId = ({
+	explicitPreferredCalendarId,
+	hoursSetId,
+	hoursSetCalendarById,
+	defaultHoursSetId,
+}: {
+	explicitPreferredCalendarId?: string;
+	hoursSetId?: Id<"hoursSets">;
+	hoursSetCalendarById: Map<string, string | undefined>;
+	defaultHoursSetId?: Id<"hoursSets">;
+}) => {
+	if (explicitPreferredCalendarId) {
+		return explicitPreferredCalendarId;
+	}
+	if (hoursSetId) {
+		const hoursSetCalendar = hoursSetCalendarById.get(String(hoursSetId));
+		if (hoursSetCalendar) {
+			return hoursSetCalendar;
+		}
+	}
+	if (!defaultHoursSetId) {
+		return undefined;
+	}
+	return hoursSetCalendarById.get(String(defaultHoursSetId));
+};
+
 export const getSchedulingInputForUser = internalQuery({
 	args: {
 		userId: v.string(),
@@ -163,6 +191,7 @@ export const getSchedulingInputForUser = internalQuery({
 				effectiveSchedulingMode: schedulingModeValidator,
 				preferredCalendarId: v.optional(v.string()),
 				color: v.optional(v.string()),
+				travelColor: v.optional(v.string()),
 				pinnedEventMinutes: v.optional(v.number()),
 			}),
 		),
@@ -264,7 +293,7 @@ export const getSchedulingInputForUser = internalQuery({
 			}
 		}
 
-		const [tasks, habits, hoursSets] = await Promise.all([
+		const [tasks, habits, hoursSets, travelCategory] = await Promise.all([
 			ctx.db
 				.query("tasks")
 				.withIndex("by_userId", (q) => q.eq("userId", args.userId))
@@ -277,7 +306,16 @@ export const getSchedulingInputForUser = internalQuery({
 				.query("hoursSets")
 				.withIndex("by_userId", (q) => q.eq("userId", args.userId))
 				.collect(),
+			ctx.db
+				.query("taskCategories")
+				.withIndex("by_userId_name", (q) => q.eq("userId", args.userId).eq("name", "Travel"))
+				.unique(),
 		]);
+		const resolvedTravelColor = travelCategory?.color ?? GOOGLE_CALENDAR_COLORS[7];
+		const defaultHoursSetId = hoursSets.find((set) => set.isDefault)?._id;
+		const hoursSetCalendarById = new Map(
+			hoursSets.map((set) => [String(set._id), set.defaultCalendarId] as const),
+		);
 		const schedulableTasks = tasks
 			.filter((task) => isSchedulableTaskStatus(task.status))
 			.map((task) => ({
@@ -294,15 +332,21 @@ export const getSchedulingInputForUser = internalQuery({
 				minChunkMinutes: task.minChunkMinutes,
 				maxChunkMinutes: task.maxChunkMinutes,
 				restMinutes: task.restMinutes,
-				travelMinutes: task.travelMinutes,
+				travelMinutes: task.travelMinutes ?? defaultTravelMinutes,
 				location: task.location,
 				hoursSetId: task.hoursSetId,
 				schedulingMode: task.schedulingMode ? sanitizeTaskMode(task.schedulingMode) : undefined,
 				effectiveSchedulingMode: task.schedulingMode
 					? sanitizeTaskMode(task.schedulingMode)
 					: defaultTaskMode,
-				preferredCalendarId: task.preferredCalendarId,
+				preferredCalendarId: resolvePreferredCalendarId({
+					explicitPreferredCalendarId: task.preferredCalendarId,
+					hoursSetId: task.hoursSetId,
+					hoursSetCalendarById,
+					defaultHoursSetId,
+				}),
 				color: task.color,
+				travelColor: resolvedTravelColor,
 				pinnedEventMinutes: pinnedMinutesByTask.get(String(task._id)) ?? 0,
 			}));
 
@@ -324,7 +368,12 @@ export const getSchedulingInputForUser = internalQuery({
 			idealTime: habit.idealTime,
 			preferredDays: habit.preferredDays,
 			hoursSetId: habit.hoursSetId,
-			preferredCalendarId: habit.preferredCalendarId,
+			preferredCalendarId: resolvePreferredCalendarId({
+				explicitPreferredCalendarId: habit.preferredCalendarId,
+				hoursSetId: habit.hoursSetId,
+				hoursSetCalendarById,
+				defaultHoursSetId,
+			}),
 			color: habit.color,
 			isActive: habit.isActive,
 		}));
@@ -335,8 +384,6 @@ export const getSchedulingInputForUser = internalQuery({
 			string,
 			Array<{ day: 0 | 1 | 2 | 3 | 4 | 5 | 6; startMinute: number; endMinute: number }>
 		>;
-		const defaultHoursSetId = hoursSets.find((set) => set.isDefault)?._id;
-
 		const busy = events
 			.filter(
 				(event) =>

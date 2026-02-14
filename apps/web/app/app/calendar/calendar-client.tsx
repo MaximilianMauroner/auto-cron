@@ -257,6 +257,13 @@ const getCalendarKey = (event: CalendarEventDTO) => {
 	return event.source;
 };
 
+const shouldPromptRecurringMoveScope = (event: CalendarEventDTO) => {
+	if (event.source === "task" || event.source === "habit") {
+		return false;
+	}
+	return Boolean(event.recurrenceRule || event.recurringEventId);
+};
+
 const sourceCalendarLabel: Record<CalendarSource, string> = {
 	google: "Google",
 	task: "Task",
@@ -493,6 +500,7 @@ const toScheduleXEvent = (vm: ScheduleXEventVM, timeZone: string): CalendarEvent
 		calendarId: vm.calendarKey,
 		source: vm.event.source,
 		sourceId: vm.event.sourceId,
+		pinned: vm.event.pinned,
 		googleEventId: vm.event.googleEventId,
 		colorId: vm.event.color,
 		isRecurring: !!(vm.event.recurrenceRule || vm.event.recurringEventId),
@@ -812,6 +820,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
 	const [error, setError] = useState<string | null>(initialErrorMessage);
 	const [sourceFilter, setSourceFilter] = useState<CalendarSource[]>(DEFAULT_SOURCE_FILTER);
+	const [hiddenCalendarIds, setHiddenCalendarIds] = useState<Set<string>>(new Set());
 	const [editor, setEditor] = useState<EditorState | null>(null);
 	const [quickCreateTaskOpen, setQuickCreateTaskOpen] = useState(false);
 	const [quickCreateHabitOpen, setQuickCreateHabitOpen] = useState(false);
@@ -960,12 +969,18 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	}, [normalizedEvents]);
 
 	const scheduleEvents = useMemo(() => {
-		return normalizedEvents.map((event) => ({
-			dedupeKey: buildDedupeKey(event),
-			calendarKey: getCalendarKey(event),
-			event,
-		}));
-	}, [normalizedEvents]);
+		return normalizedEvents
+			.filter((event) => {
+				if (hiddenCalendarIds.size === 0) return true;
+				const id = event.source === "google" ? (event.calendarId ?? "primary") : null;
+				return !id || !hiddenCalendarIds.has(id);
+			})
+			.map((event) => ({
+				dedupeKey: buildDedupeKey(event),
+				calendarKey: getCalendarKey(event),
+				event,
+			}));
+	}, [normalizedEvents, hiddenCalendarIds]);
 	const scheduleXEvents = useMemo(() => {
 		const baseEvents = scheduleEvents
 			.map((event) => {
@@ -1355,7 +1370,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 								);
 								const current = scheduleEventsByIdRef.current.get(eventId);
 								if (!current) return;
-								if (current.recurrenceRule || current.recurringEventId) {
+								if (shouldPromptRecurringMoveScope(current)) {
 									setPendingMoveUpdate({
 										eventId,
 										start: snappedStart,
@@ -1493,6 +1508,36 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			window.removeEventListener("calendar:event-pin", onAsidePin);
 		};
 	}, [deleteEventMutation, pushEventToGoogle, setEventPinnedMutation]);
+
+	// Listen for calendar visibility toggles from the sidebar
+	useEffect(() => {
+		const onToggle = (rawEvent: Event) => {
+			const { calendarId } = (rawEvent as CustomEvent<{ calendarId?: string }>).detail ?? {};
+			if (!calendarId) return;
+			setHiddenCalendarIds((prev) => {
+				const next = new Set(prev);
+				if (next.has(calendarId)) {
+					next.delete(calendarId);
+				} else {
+					next.add(calendarId);
+				}
+				return next;
+			});
+		};
+		window.addEventListener("calendar:toggle-calendar", onToggle);
+		return () => {
+			window.removeEventListener("calendar:toggle-calendar", onToggle);
+		};
+	}, []);
+
+	// Broadcast hidden calendar IDs so the sidebar can reflect the state
+	useEffect(() => {
+		window.dispatchEvent(
+			new CustomEvent("calendar:hidden-calendars-changed", {
+				detail: { hiddenCalendarIds: Array.from(hiddenCalendarIds) },
+			}),
+		);
+	}, [hiddenCalendarIds]);
 
 	useEffect(() => {
 		const onResizeStart = (rawEvent: Event) => {
