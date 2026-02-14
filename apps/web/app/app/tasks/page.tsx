@@ -991,48 +991,78 @@ function TaskDialog({
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent className="sm:max-w-2xl">
-				<DialogHeader>
-					<DialogTitle className="flex items-center gap-2">
+			<DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+				{/* ── Header ── */}
+				<DialogHeader className="space-y-1">
+					<div className="flex items-center gap-2.5">
 						<span
-							className="size-3 rounded-full"
-							style={{ backgroundColor: value.color || "#f59e0b" }}
+							className="size-2.5 rounded-full ring-2 ring-offset-1 ring-offset-background"
+							style={{
+								backgroundColor: value.color || "#f59e0b",
+								boxShadow: `0 0 8px ${value.color || "#f59e0b"}30`,
+								// biome-ignore lint/suspicious/noExplicitAny: ring color via style
+								["--tw-ring-color" as any]: `${value.color || "#f59e0b"}40`,
+							}}
 						/>
-						{title}
+						<p className="font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+							{title}
+						</p>
+					</div>
+					<DialogTitle className="font-[family-name:var(--font-outfit)] text-xl font-semibold tracking-tight">
+						{value.title || "New task"}
 					</DialogTitle>
 				</DialogHeader>
-				<div className="max-h-[70vh] overflow-y-auto pr-1">
+
+				<div className="space-y-4">
 					{compactCreate && !showAdvanced ? (
-						<div className="space-y-4 rounded-xl border border-border/70 bg-muted/20 p-4">
-							<div className="space-y-2">
-								<Label htmlFor="quick-task-name">Task name</Label>
+						<div className="space-y-5 rounded-xl border border-border/50 p-5">
+							<div className="space-y-1.5">
+								<Label
+									htmlFor="quick-task-name"
+									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+								>
+									Task name
+								</Label>
 								<Input
 									id="quick-task-name"
 									placeholder="What needs to get done?"
 									value={value.title}
 									onChange={(event) => onChange({ ...value, title: event.target.value })}
+									className="border-0 border-b border-border/50 bg-transparent px-0 font-[family-name:var(--font-outfit)] text-[0.9rem] font-medium shadow-none ring-0 transition-colors placeholder:text-muted-foreground/40 focus-visible:border-accent focus-visible:ring-0"
 								/>
 							</div>
-							<div className="space-y-2">
-								<Label htmlFor="quick-task-location">Location (optional)</Label>
+							<div className="space-y-1.5">
+								<Label
+									htmlFor="quick-task-location"
+									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+								>
+									Location (optional)
+								</Label>
 								<Input
 									id="quick-task-location"
 									placeholder="Office, gym, client site..."
 									value={value.location}
 									onChange={(event) => onChange({ ...value, location: event.target.value })}
+									className="font-[family-name:var(--font-outfit)] text-[0.82rem]"
 								/>
 							</div>
 
-							<div className="grid gap-3 md:grid-cols-2">
-								<div className="space-y-2">
-									<Label>Time needed</Label>
+							<div className="h-px bg-border/30" />
+
+							<div className="grid gap-4 md:grid-cols-2">
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Time needed
+									</Label>
 									<DurationInput
 										value={value.estimatedMinutes}
 										onChange={(estimatedMinutes) => onChange({ ...value, estimatedMinutes })}
 									/>
 								</div>
-								<div className="space-y-2">
-									<Label>Due date</Label>
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Due date
+									</Label>
 									<DateTimePicker
 										value={value.deadline}
 										onChange={(deadline) => onChange({ ...value, deadline })}
@@ -1042,9 +1072,11 @@ function TaskDialog({
 								</div>
 							</div>
 
-							<div className="grid gap-3 md:grid-cols-2">
-								<div className="space-y-2">
-									<Label>Priority</Label>
+							<div className="grid gap-4 md:grid-cols-2">
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Priority
+									</Label>
 									<Select
 										value={value.priority}
 										onValueChange={(priority) =>
@@ -1064,10 +1096,14 @@ function TaskDialog({
 									</Select>
 								</div>
 								<div className="flex items-end">
-									<div className="flex w-full items-center justify-between rounded-lg border border-border px-3 py-2">
+									<div className="flex w-full items-center justify-between rounded-lg border border-border/40 px-3.5 py-3">
 										<div>
-											<p className="text-sm font-medium">Send to Up Next</p>
-											<p className="text-xs text-muted-foreground">Queue it immediately.</p>
+											<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-medium">
+												Send to Up Next
+											</p>
+											<p className="font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground">
+												Queue it immediately.
+											</p>
 										</div>
 										<Switch
 											checked={value.sendToUpNext}
@@ -1077,7 +1113,7 @@ function TaskDialog({
 								</div>
 							</div>
 
-							<p className="text-xs text-muted-foreground">
+							<p className="font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground">
 								Using account defaults for split, rest, travel, visibility, color, hours, and
 								calendar. Change these in{" "}
 								<a href="/app/settings/scheduling" className="underline underline-offset-2">
@@ -1089,43 +1125,66 @@ function TaskDialog({
 					) : null}
 
 					{!compactCreate || showAdvanced ? (
-						<Accordion
-							type="multiple"
-							defaultValue={compactCreate ? ["general"] : ["general", "scheduling", "visibility"]}
-						>
-							<AccordionItem value="general">
-								<AccordionTrigger>General details</AccordionTrigger>
-								<AccordionContent className="space-y-4">
-									<div className="space-y-2">
-										<Label htmlFor="task-name">Task name</Label>
+						<Accordion type="multiple" defaultValue={["general"]}>
+							{/* ── Section 1: General ── */}
+							<AccordionItem value="general" className="rounded-xl border border-border/50 px-5">
+								<AccordionTrigger className="py-4">
+									<div className="text-left">
+										<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+											01 / General
+										</p>
+										<p className="mt-1 font-[family-name:var(--font-outfit)] text-lg font-semibold tracking-tight">
+											General details
+										</p>
+										<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-normal text-muted-foreground">
+											Name, category, color, and notes
+										</p>
+									</div>
+								</AccordionTrigger>
+								<AccordionContent className="space-y-5 pb-5">
+									<div className="space-y-1.5">
+										<Label
+											htmlFor="task-name"
+											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+										>
+											Task name
+										</Label>
 										<Input
 											id="task-name"
 											placeholder="Task name..."
 											value={value.title}
 											onChange={(event) => onChange({ ...value, title: event.target.value })}
+											className="border-0 border-b border-border/50 bg-transparent px-0 font-[family-name:var(--font-outfit)] text-[0.9rem] font-medium shadow-none ring-0 transition-colors placeholder:text-muted-foreground/40 focus-visible:border-accent focus-visible:ring-0"
 										/>
 									</div>
-									<div className="space-y-2">
-										<Label>Category</Label>
+
+									<div className="h-px bg-border/30" />
+
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Category
+										</Label>
 										<CategoryPicker
 											value={value.categoryId}
 											onValueChange={(categoryId) => onChange({ ...value, categoryId })}
 										/>
 									</div>
-									<div className="grid gap-3 md:grid-cols-3">
-										<div className="space-y-2">
-											<Label>Color</Label>
-											<div className="flex flex-wrap gap-2 rounded-lg border border-border p-2">
+									<div className="grid gap-4 md:grid-cols-3">
+										<div className="space-y-1.5">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Color
+											</Label>
+											<div className="flex flex-wrap gap-2 rounded-lg border border-border/40 p-2">
 												{taskColors.map((color) => (
 													<button
 														key={color}
 														type="button"
 														onClick={() => onChange({ ...value, color })}
 														className={cn(
-															"size-6 rounded-full border transition-transform hover:scale-105",
+															"size-6 rounded-full border transition-transform hover:scale-110",
 															value.color === color
-																? "border-foreground ring-2 ring-foreground/20"
-																: "border-border",
+																? "border-foreground ring-2 ring-foreground/20 scale-110"
+																: "border-border/50",
 														)}
 														style={{ backgroundColor: color }}
 														aria-label={`Select ${color}`}
@@ -1133,8 +1192,10 @@ function TaskDialog({
 												))}
 											</div>
 										</div>
-										<div className="space-y-2">
-											<Label>Hours</Label>
+										<div className="space-y-1.5">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Hours
+											</Label>
 											<Select
 												value={value.hoursSetId || undefined}
 												onValueChange={(hoursSetId) => onChange({ ...value, hoursSetId })}
@@ -1152,8 +1213,10 @@ function TaskDialog({
 												</SelectContent>
 											</Select>
 										</div>
-										<div className="space-y-2">
-											<Label>Calendar</Label>
+										<div className="space-y-1.5">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Calendar
+											</Label>
 											<Select
 												value={value.preferredCalendarId}
 												onValueChange={(preferredCalendarId) =>
@@ -1173,37 +1236,69 @@ function TaskDialog({
 											</Select>
 										</div>
 									</div>
-									<div className="space-y-2">
-										<Label htmlFor="task-notes">Notes</Label>
+
+									<div className="h-px bg-border/30" />
+
+									<div className="space-y-1.5">
+										<Label
+											htmlFor="task-notes"
+											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+										>
+											Notes
+										</Label>
 										<Textarea
 											id="task-notes"
-											placeholder="Add notes here..."
+											placeholder="Add notes..."
 											value={value.description}
 											onChange={(event) => onChange({ ...value, description: event.target.value })}
-											className="min-h-24"
+											className="min-h-24 font-[family-name:var(--font-outfit)] text-[0.82rem]"
 										/>
 									</div>
-									<div className="space-y-2">
-										<Label htmlFor="task-location">Location</Label>
+									<div className="space-y-1.5">
+										<Label
+											htmlFor="task-location"
+											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+										>
+											Location
+										</Label>
 										<Input
 											id="task-location"
 											placeholder="Office, gym, client site..."
 											value={value.location}
 											onChange={(event) => onChange({ ...value, location: event.target.value })}
+											className="font-[family-name:var(--font-outfit)] text-[0.82rem]"
 										/>
-										<p className="text-xs text-muted-foreground">
+										<p className="font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground">
 											If set, scheduler can add travel events before and after this task.
 										</p>
 									</div>
 								</AccordionContent>
 							</AccordionItem>
 
-							<AccordionItem value="scheduling">
-								<AccordionTrigger>Scheduling</AccordionTrigger>
-								<AccordionContent className="space-y-4">
-									<div className="grid gap-3 md:grid-cols-2">
-										<div className="space-y-2">
-											<Label>Priority</Label>
+							{/* ── Section 2: Scheduling ── */}
+							<AccordionItem
+								value="scheduling"
+								className="mt-4 rounded-xl border border-border/50 px-5"
+							>
+								<AccordionTrigger className="py-4">
+									<div className="text-left">
+										<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+											02 / Scheduling
+										</p>
+										<p className="mt-1 font-[family-name:var(--font-outfit)] text-lg font-semibold tracking-tight">
+											Scheduling
+										</p>
+										<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-normal text-muted-foreground">
+											Priority, timing, duration, and split settings
+										</p>
+									</div>
+								</AccordionTrigger>
+								<AccordionContent className="space-y-5 pb-5">
+									<div className="grid gap-4 md:grid-cols-2">
+										<div className="space-y-1.5">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Priority
+											</Label>
 											<Select
 												value={value.priority}
 												onValueChange={(priority) =>
@@ -1222,8 +1317,10 @@ function TaskDialog({
 												</SelectContent>
 											</Select>
 										</div>
-										<div className="space-y-2">
-											<Label>Status</Label>
+										<div className="space-y-1.5">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Status
+											</Label>
 											<Select
 												value={value.status}
 												onValueChange={(status) =>
@@ -1244,42 +1341,46 @@ function TaskDialog({
 										</div>
 									</div>
 
-									<div className="grid gap-3 md:grid-cols-2">
-										<div className="space-y-2">
-											<Label>Scheduling mode</Label>
-											<Select
-												value={value.schedulingMode}
-												onValueChange={(schedulingMode) =>
-													onChange({
-														...value,
-														schedulingMode: schedulingMode as "default" | TaskSchedulingMode,
-													})
-												}
-											>
-												<SelectTrigger>
-													<SelectValue placeholder="Scheduling mode" />
-												</SelectTrigger>
-												<SelectContent>
-													<SelectItem value="default">
-														Use default ({schedulingModeLabels[defaultTaskSchedulingMode]})
+									<div className="space-y-1.5">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											Scheduling mode
+										</Label>
+										<Select
+											value={value.schedulingMode}
+											onValueChange={(schedulingMode) =>
+												onChange({
+													...value,
+													schedulingMode: schedulingMode as "default" | TaskSchedulingMode,
+												})
+											}
+										>
+											<SelectTrigger>
+												<SelectValue placeholder="Scheduling mode" />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="default">
+													Use default ({schedulingModeLabels[defaultTaskSchedulingMode]})
+												</SelectItem>
+												{Object.entries(schedulingModeLabels).map(([mode, label]) => (
+													<SelectItem key={mode} value={mode}>
+														{label}
 													</SelectItem>
-													{Object.entries(schedulingModeLabels).map(([mode, label]) => (
-														<SelectItem key={mode} value={mode}>
-															{label}
-														</SelectItem>
-													))}
-												</SelectContent>
-											</Select>
-											<p className="text-xs text-muted-foreground">
-												This stores mode intent for the scheduler. Algorithms remain unchanged.
-											</p>
-										</div>
+												))}
+											</SelectContent>
+										</Select>
+										<p className="font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground">
+											This stores mode intent for the scheduler. Algorithms remain unchanged.
+										</p>
 									</div>
 
-									<div className="grid gap-3 md:grid-cols-[1fr_auto]">
-										<div className="space-y-2">
-											<Label>Time needed</Label>
-											<div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+									<div className="h-px bg-border/30" />
+
+									<div className="grid gap-4 md:grid-cols-[1fr_auto]">
+										<div className="space-y-1.5">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Time needed
+											</Label>
+											<div className="flex items-center gap-2 rounded-lg border border-border/40 px-3 py-2">
 												<Button
 													type="button"
 													variant="ghost"
@@ -1310,27 +1411,33 @@ function TaskDialog({
 											</div>
 										</div>
 										<div className="flex items-end">
-											<div className="flex items-center gap-2 rounded-lg border border-border px-3 py-2">
+											<div className="flex items-center gap-2 rounded-lg border border-border/40 px-3.5 py-3">
 												<Switch
 													checked={value.splitAllowed}
 													onCheckedChange={(splitAllowed) => onChange({ ...value, splitAllowed })}
 												/>
-												<Label>Split up</Label>
+												<Label className="font-[family-name:var(--font-outfit)] text-[0.82rem]">
+													Split up
+												</Label>
 											</div>
 										</div>
 									</div>
 
-									<div className="grid gap-3 md:grid-cols-2">
-										<div className="space-y-2">
-											<Label>Min chunk</Label>
+									<div className="grid gap-4 md:grid-cols-2">
+										<div className="space-y-1.5">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Min chunk
+											</Label>
 											<DurationInput
 												value={value.minChunkMinutes}
 												onChange={(minChunkMinutes) => onChange({ ...value, minChunkMinutes })}
 												className={cn(!value.splitAllowed && "pointer-events-none opacity-60")}
 											/>
 										</div>
-										<div className="space-y-2">
-											<Label>Max chunk</Label>
+										<div className="space-y-1.5">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Max chunk
+											</Label>
 											<DurationInput
 												value={value.maxChunkMinutes}
 												onChange={(maxChunkMinutes) => onChange({ ...value, maxChunkMinutes })}
@@ -1338,30 +1445,38 @@ function TaskDialog({
 											/>
 										</div>
 									</div>
-									<div className="grid gap-3 md:grid-cols-2">
-										<div className="space-y-2">
-											<Label>Rest time</Label>
+									<div className="grid gap-4 md:grid-cols-2">
+										<div className="space-y-1.5">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Rest time
+											</Label>
 											<DurationInput
 												value={value.restMinutes}
 												onChange={(restMinutes) => onChange({ ...value, restMinutes })}
 											/>
 										</div>
-										<div className="space-y-2">
-											<Label>Travel duration (each side)</Label>
+										<div className="space-y-1.5">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Travel duration (each side)
+											</Label>
 											<DurationInput
 												value={value.travelMinutes}
 												onChange={(travelMinutes) => onChange({ ...value, travelMinutes })}
 												className={cn(!value.location.trim() && "pointer-events-none opacity-60")}
 											/>
-											<p className="text-xs text-muted-foreground">
+											<p className="font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground">
 												Used only when location is set.
 											</p>
 										</div>
 									</div>
 
-									<div className="grid gap-3 md:grid-cols-2">
-										<div className="space-y-2">
-											<Label>Schedule after</Label>
+									<div className="h-px bg-border/30" />
+
+									<div className="grid gap-4 md:grid-cols-2">
+										<div className="space-y-1.5">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Schedule after
+											</Label>
 											<DateTimePicker
 												value={value.scheduleAfter}
 												onChange={(scheduleAfter) => onChange({ ...value, scheduleAfter })}
@@ -1369,8 +1484,10 @@ function TaskDialog({
 												minuteStep={15}
 											/>
 										</div>
-										<div className="space-y-2">
-											<Label>Due date</Label>
+										<div className="space-y-1.5">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+												Due date
+											</Label>
 											<DateTimePicker
 												value={value.deadline}
 												onChange={(deadline) => onChange({ ...value, deadline })}
@@ -1380,10 +1497,12 @@ function TaskDialog({
 										</div>
 									</div>
 
-									<div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+									<div className="flex items-center justify-between rounded-lg border border-border/40 px-3.5 py-3">
 										<div>
-											<p className="text-sm font-medium">Send to Up Next</p>
-											<p className="text-xs text-muted-foreground">
+											<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-medium">
+												Send to Up Next
+											</p>
+											<p className="font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground">
 												Push this task to queued immediately.
 											</p>
 										</div>
@@ -1395,9 +1514,25 @@ function TaskDialog({
 								</AccordionContent>
 							</AccordionItem>
 
-							<AccordionItem value="visibility">
-								<AccordionTrigger>Visibility</AccordionTrigger>
-								<AccordionContent className="space-y-3">
+							{/* ── Section 3: Visibility ── */}
+							<AccordionItem
+								value="visibility"
+								className="mt-4 rounded-xl border border-border/50 px-5"
+							>
+								<AccordionTrigger className="py-4">
+									<div className="text-left">
+										<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+											03 / Visibility
+										</p>
+										<p className="mt-1 font-[family-name:var(--font-outfit)] text-lg font-semibold tracking-tight">
+											Visibility
+										</p>
+										<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-normal text-muted-foreground">
+											Calendar privacy and event visibility
+										</p>
+									</div>
+								</AccordionTrigger>
+								<AccordionContent className="space-y-3 pb-5">
 									<RadioGroup
 										value={value.visibilityPreference}
 										onValueChange={(visibilityPreference) =>
@@ -1406,29 +1541,31 @@ function TaskDialog({
 												visibilityPreference: visibilityPreference as TaskVisibilityPreference,
 											})
 										}
-										className="space-y-2"
+										className="rounded-lg border border-border/40"
 									>
 										{Object.entries(visibilityLabels).map(([key, label]) => (
-											<label
+											<div
 												key={key}
-												htmlFor={`visibility-${key}`}
 												className={cn(
-													"flex items-start gap-3 rounded-lg border p-3 text-sm transition-colors",
-													value.visibilityPreference === key
-														? "border-primary/40 bg-primary/5"
-														: "border-border",
+													"flex cursor-pointer items-center gap-3 border-b border-border/40 px-3.5 py-3 last:border-b-0",
+													value.visibilityPreference === key && "bg-muted/40",
 												)}
 											>
-												<RadioGroupItem id={`visibility-${key}`} value={key} className="mt-1" />
+												<RadioGroupItem id={`visibility-${key}`} value={key} />
 												<div>
-													<p className="font-medium">{label}</p>
-													<p className="text-xs text-muted-foreground">
+													<Label
+														htmlFor={`visibility-${key}`}
+														className="cursor-pointer font-[family-name:var(--font-outfit)] text-[0.82rem]"
+													>
+														{label}
+													</Label>
+													<p className="font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground">
 														{key === "private"
 															? "Task events are marked private and busy."
 															: "Task events follow the calendar's default privacy settings."}
 													</p>
 												</div>
-											</label>
+											</div>
 										))}
 									</RadioGroup>
 								</AccordionContent>
@@ -1436,20 +1573,32 @@ function TaskDialog({
 						</Accordion>
 					) : null}
 				</div>
+
+				{/* ── Footer ── */}
 				<DialogFooter>
 					{compactCreate ? (
 						<Button
 							variant="ghost"
 							onClick={() => setShowAdvanced((current) => !current)}
 							disabled={busy}
+							className="font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium tracking-[0.02em] text-muted-foreground hover:text-foreground"
 						>
 							{showAdvanced ? "Back to quick form" : "Show advanced fields"}
 						</Button>
 					) : null}
-					<Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+					<Button
+						variant="ghost"
+						onClick={() => onOpenChange(false)}
+						disabled={busy}
+						className="font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium tracking-[0.02em] text-muted-foreground hover:text-foreground"
+					>
 						Cancel
 					</Button>
-					<Button onClick={onSubmit} disabled={busy}>
+					<Button
+						onClick={onSubmit}
+						disabled={busy}
+						className="gap-2 bg-accent font-[family-name:var(--font-outfit)] text-[0.76rem] font-bold uppercase tracking-[0.1em] text-accent-foreground shadow-[0_2px_12px_-3px_rgba(252,163,17,0.3)] transition-all hover:bg-accent/90 hover:shadow-[0_4px_16px_-3px_rgba(252,163,17,0.4)]"
+					>
 						{submitLabel}
 					</Button>
 				</DialogFooter>
