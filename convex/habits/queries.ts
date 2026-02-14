@@ -9,16 +9,6 @@ const habitFrequencyValidator = v.union(
 	v.literal("monthly"),
 );
 
-const habitCategoryValidator = v.union(
-	v.literal("health"),
-	v.literal("fitness"),
-	v.literal("learning"),
-	v.literal("mindfulness"),
-	v.literal("productivity"),
-	v.literal("social"),
-	v.literal("other"),
-);
-
 const habitPriorityValidator = v.union(
 	v.literal("low"),
 	v.literal("medium"),
@@ -53,7 +43,7 @@ const habitDtoValidator = v.object({
 	title: v.string(),
 	description: v.optional(v.string()),
 	priority: v.optional(habitPriorityValidator),
-	category: habitCategoryValidator,
+	categoryId: v.id("taskCategories"),
 	recurrenceRule: v.optional(v.string()),
 	recoveryPolicy: v.optional(habitRecoveryPolicyValidator),
 	frequency: v.optional(habitFrequencyValidator),
@@ -82,6 +72,7 @@ const habitDtoValidator = v.object({
 	dependencyNote: v.optional(v.string()),
 	publicDescription: v.optional(v.string()),
 	isActive: v.boolean(),
+	effectiveColor: v.string(),
 });
 
 type ListHabitsArgs = {
@@ -100,11 +91,21 @@ export const listHabits = query({
 			.collect();
 
 		const filtered = args.activeOnly ? allHabits.filter((habit) => habit.isActive) : allHabits;
+
+		// Batch-load all unique categories for effective color resolution
+		const uniqueCategoryIds = [...new Set(filtered.map((h) => h.categoryId))];
+		const categories = await Promise.all(uniqueCategoryIds.map((id) => ctx.db.get(id)));
+		const categoryMap = new Map(uniqueCategoryIds.map((id, i) => [id, categories[i]]));
+
 		return filtered
-			.map((habit) => ({
-				...habit,
-				priority: habit.priority === "blocker" ? "critical" : habit.priority,
-			}))
+			.map((habit) => {
+				const category = categoryMap.get(habit.categoryId) ?? null;
+				return {
+					...habit,
+					priority: habit.priority === "blocker" ? "critical" : habit.priority,
+					effectiveColor: habit.color ?? category?.color ?? "#f59e0b",
+				};
+			})
 			.sort((a, b) => a.title.localeCompare(b.title));
 	}),
 });

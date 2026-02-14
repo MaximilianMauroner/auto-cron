@@ -60,6 +60,7 @@ import { ScheduleXCalendar } from "@schedule-x/react";
 import { createScrollControllerPlugin } from "@schedule-x/scroll-controller";
 import { useAction, useConvexAuth } from "convex/react";
 import {
+	AlertTriangle,
 	ArrowRight,
 	Bell,
 	CalendarDays,
@@ -1630,7 +1631,6 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	}, [dayBoundaries.end, dayBoundaries.start]);
 	const weekOptions = useMemo(
 		() => ({
-			// Keep ~16 visible hours on desktop so the calendar itself scrolls through the day.
 			gridHeight: 2100,
 			eventWidth: 94,
 			nDays: 7,
@@ -1657,7 +1657,6 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		scheduleXTimeZone,
 		calendarTimeFormatPreference,
 		String(schedulingStepMinutes),
-		isDarkTheme ? "dark" : "light",
 		defaultCreateCalendarId,
 	].join("|");
 	const calendar = useResettableCalendarApp(
@@ -1796,13 +1795,59 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			if (!matched) return;
 			openEditorForEventRef.current(matched, "edit");
 		};
+		const onNavigateToEvent = (rawEvent: Event) => {
+			const customEvent = rawEvent as CustomEvent<{ eventId?: string; start?: number }>;
+			const { eventId, start } = customEvent.detail ?? {};
+			if (!eventId || !start) return;
+
+			// Navigate calendar to the event's date
+			const eventDate = new Date(start);
+			const dateStr = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, "0")}-${String(eventDate.getDate()).padStart(2, "0")}`;
+			setSelectedDate(dateStr);
+
+			// Scroll to the event's time (offset by 1h for context)
+			const eventHour = eventDate.getHours();
+			const scrollHour = Math.max(0, eventHour - 1);
+			const scrollTime = `${String(scrollHour).padStart(2, "0")}:00`;
+			runWhenScrollControllerReady(scrollControllerPlugin, () => {
+				try {
+					scrollControllerPlugin.scrollTo(scrollTime);
+				} catch {
+					// Ignore transient plugin lifecycle races
+				}
+			});
+
+			// Highlight the event element after a short delay for the calendar to render
+			const highlightEvent = () => {
+				const el = document.querySelector(`[data-event-id="${CSS.escape(eventId)}"]`);
+				if (!el) return false;
+				el.classList.add("calendar-event-highlight");
+				el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+				const onEnd = () => {
+					el.classList.remove("calendar-event-highlight");
+					el.removeEventListener("animationend", onEnd);
+				};
+				el.addEventListener("animationend", onEnd);
+				return true;
+			};
+
+			// Try highlighting with increasing delays to handle render timing
+			setTimeout(() => {
+				if (!highlightEvent()) {
+					setTimeout(() => highlightEvent(), 300);
+				}
+			}, 150);
+		};
+
 		window.addEventListener("calendar:event-preview", onPreviewEvent);
 		window.addEventListener("calendar:event-edit", onEditEvent);
+		window.addEventListener("calendar:navigate-to-event", onNavigateToEvent);
 		return () => {
 			window.removeEventListener("calendar:event-preview", onPreviewEvent);
 			window.removeEventListener("calendar:event-edit", onEditEvent);
+			window.removeEventListener("calendar:navigate-to-event", onNavigateToEvent);
 		};
-	}, []);
+	}, [scrollControllerPlugin]);
 
 	useEffect(() => {
 		const onResizeStart = (rawEvent: Event) => {
@@ -2341,10 +2386,18 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 
 	useEffect(() => {
 		if (!isAuthenticated) return;
+		const syncHealth = googleSyncHealthQuery.data;
+		if (syncHealth === undefined) return;
+
 		const targetRange: SyncRange = {
 			start: queryRange.start,
 			end: queryRange.end,
 		};
+
+		if (!syncedGoogleRangeRef.current && syncHealth.activeChannels > 0) {
+			syncedGoogleRangeRef.current = targetRange;
+		}
+
 		const currentSyncedRange = syncedGoogleRangeRef.current;
 		const rangeIsCovered = Boolean(
 			currentSyncedRange &&
@@ -2357,7 +2410,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		if (autoSyncAttemptedRangeKeyRef.current === rangeKey) return;
 		autoSyncAttemptedRangeKeyRef.current = rangeKey;
 		void syncNow("auto", targetRange);
-	}, [isAuthenticated, queryRange.end, queryRange.start, syncNow]);
+	}, [isAuthenticated, queryRange.end, queryRange.start, syncNow, googleSyncHealthQuery.data]);
 
 	const createEvent = async (payload: CalendarEventCreateInput) => {
 		const id = await createEventMutation({ input: payload });
@@ -2594,7 +2647,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		[normalizedEvents],
 	);
 	const syncStatusLabel = useMemo(() => {
-		if (syncStatus === "syncing") return "Syncing with Google Calendar...";
+		if (syncStatus === "syncing") return "Syncing with Google Calendar…";
 		if (syncStatus === "error") return "Sync failed";
 		const effectiveLastSyncedAt = Math.max(lastSyncedAt ?? 0, latestSyncedAtFromEvents);
 		if (!effectiveLastSyncedAt) return "Auto sync every 15 minutes";
@@ -2878,22 +2931,33 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				if (!open) closeEditor();
 			}}
 		>
-			<SheetContent side="right" className="w-96 p-0 sm:max-w-md" showCloseButton={false}>
+			<SheetContent
+				side="right"
+				className="w-96 border-border/80 bg-card/95 p-0 sm:max-w-md"
+				showCloseButton={false}
+			>
 				<SheetTitle className="sr-only">Event editor</SheetTitle>
 				<div className="flex h-full flex-col gap-3 overflow-y-auto p-3">
 					<div className="flex items-center justify-between">
-						<div className="text-xs uppercase tracking-[0.14em] text-muted-foreground">Event</div>
-						<div className="text-[0.68rem] text-muted-foreground">{monthLabel}</div>
+						<div className="font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+							Event
+						</div>
+						<div className="font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+							{monthLabel}
+						</div>
 					</div>
 
 					{editor ? (
 						<div className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-							<div className="rounded-xl border border-border bg-card">
+							<div className="rounded-xl border border-border/60 bg-card">
 								<div className="px-3 py-3">
 									<div className="flex items-start justify-between gap-3">
 										<div className="min-w-0 flex-1">
 											{isDetailsMode ? (
-												<div className="text-[1.65rem] leading-[1.12] font-semibold tracking-tight text-foreground break-words">
+												<div
+													className="font-[family-name:var(--font-outfit)] text-[1.5rem] leading-[1.12] font-semibold tracking-tight text-foreground break-words"
+													style={{ textWrap: "balance" }}
+												>
 													{editor.title || "Untitled"}
 												</div>
 											) : (
@@ -2919,8 +2983,8 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 
 								{/* Task indicator: badge + Open Task + pin toggle */}
 								{isTaskBoundEvent && selectedEvent?.sourceId ? (
-									<div className="flex items-center gap-2 border-t border-border px-3 py-2">
-										<Badge className="bg-chart-3/15 text-chart-3 border-chart-3/25 text-[0.6rem] px-1.5 py-0">
+									<div className="flex items-center gap-2 border-t border-border/60 px-3 py-2">
+										<Badge className="bg-chart-3/15 text-chart-3 border-chart-3/25 font-[family-name:var(--font-cutive)] text-[0.5rem] uppercase tracking-[0.1em] px-1.5 py-0">
 											Task
 										</Badge>
 										<Button
@@ -2933,7 +2997,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 										</Button>
 										<div className="ml-auto flex items-center gap-1.5">
 											{selectedEvent.pinned === true ? (
-												<Badge className="bg-amber-500/15 text-amber-700 border-amber-500/25 text-[0.6rem] px-1.5 py-0">
+												<Badge className="bg-amber-500/15 text-amber-700 border-amber-500/25 font-[family-name:var(--font-cutive)] text-[0.5rem] uppercase tracking-[0.1em] px-1.5 py-0">
 													Pinned
 												</Badge>
 											) : null}
@@ -2964,7 +3028,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 									</div>
 								) : null}
 
-								<div className="border-t border-border px-3 py-3 space-y-2.5">
+								<div className="border-t border-border/60 px-3 py-3 space-y-2.5">
 									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
 										<Clock3 className="size-4 text-muted-foreground" />
 										<div>
@@ -3208,7 +3272,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 													</DropdownMenuContent>
 												</DropdownMenu>
 
-												<div className="text-[0.72rem] text-muted-foreground">
+												<div className="font-[family-name:var(--font-cutive)] text-[0.52rem] tracking-[0.1em] text-muted-foreground/60">
 													Google-compatible RRULE stored in event metadata.
 												</div>
 											</div>
@@ -3445,18 +3509,18 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 									</Dialog>
 								</div>
 
-								<div className="border-t border-border px-3 py-3 space-y-2.5">
+								<div className="border-t border-border/60 px-3 py-3 space-y-2.5">
 									<div className="grid grid-cols-[20px_1fr] items-center gap-3">
 										<User className="size-4 text-muted-foreground" />
 										<div className="text-[0.95rem] text-foreground/90 truncate">
 											Created by connected account
 										</div>
 									</div>
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3 opacity-60">
+									<div className="grid grid-cols-[20px_1fr] items-center gap-3 opacity-40">
 										<Video className="size-4 text-muted-foreground" />
 										<div className="text-[0.95rem] text-muted-foreground">Conferencing</div>
 									</div>
-									<div className="grid grid-cols-[20px_1fr] items-center gap-3 opacity-60">
+									<div className="grid grid-cols-[20px_1fr] items-center gap-3 opacity-40">
 										<FileText className="size-4 text-muted-foreground" />
 										<div className="text-[0.95rem] text-muted-foreground">
 											AI Meeting Notes and Docs
@@ -3493,8 +3557,8 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 									</div>
 								</div>
 
-								<div className="border-t border-border px-3 py-3">
-									<div className="mb-2 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+								<div className="border-t border-border/60 px-3 py-3">
+									<div className="mb-2 font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
 										Description
 									</div>
 									{isDetailsMode ? (
@@ -3514,7 +3578,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 									)}
 								</div>
 
-								<div className="border-t border-border px-3 py-3 space-y-2.5">
+								<div className="border-t border-border/60 px-3 py-3 space-y-2.5">
 									<div className="flex items-center gap-2 text-[0.95rem] text-foreground/90">
 										<span
 											className="size-3 rounded-[5px]"
@@ -3629,11 +3693,13 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 									</div>
 								</div>
 
-								<div className="border-t border-border px-3 py-3 space-y-2">
+								<div className="border-t border-border/60 px-3 py-3 space-y-2">
 									<div className="grid grid-cols-[20px_1fr] items-start gap-3">
 										<Clock3 className="size-4 text-muted-foreground" />
 										<div className="space-y-1.5">
-											<div className="text-[0.9rem] text-foreground/85">Duration</div>
+											<div className="font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+												Duration
+											</div>
 											{isDetailsMode ? (
 												<div className="text-[0.92rem] text-foreground/80">
 													{formatDuration(
@@ -3684,7 +3750,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 															<span className="text-[0.82rem] text-muted-foreground">min</span>
 														</div>
 													</div>
-													<div className="text-[0.72rem] text-muted-foreground">
+													<div className="font-[family-name:var(--font-cutive)] text-[0.52rem] tracking-[0.1em] text-muted-foreground/60">
 														Snaps to {schedulingStepMinutes}-minute increments.
 													</div>
 												</>
@@ -3694,7 +3760,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 								</div>
 							</div>
 
-							<div className="flex items-center justify-between border-t border-border pt-2.5">
+							<div className="flex items-center justify-between border-t border-border/40 bg-muted/5 rounded-b-xl pt-2.5 px-1">
 								{editor.mode === "edit" && editor.eventId ? (
 									<Button
 										variant="outline"
@@ -3747,7 +3813,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 									{!isDetailsMode ? (
 										<Button
 											size="sm"
-											className="bg-accent text-accent-foreground text-[0.72rem] font-medium hover:bg-accent/85"
+											className="bg-accent text-accent-foreground text-[0.72rem] font-medium uppercase tracking-[0.04em] hover:bg-accent/85"
 											onClick={onSubmitEditor}
 										>
 											Save
@@ -3758,34 +3824,34 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 						</div>
 					) : (
 						<>
-							<div className="rounded-xl border border-border/60 bg-card/60 p-4 text-center">
+							<div className="rounded-xl border border-dashed border-border/60 bg-card/40 p-4 text-center">
 								<CalendarDays className="mx-auto mb-2 size-6 text-muted-foreground/40" />
-								<div className="text-[0.78rem] font-medium text-muted-foreground">
+								<div className="font-[family-name:var(--font-cutive)] text-[0.56rem] uppercase tracking-[0.1em] text-muted-foreground">
 									Select an event to view details
 								</div>
-								<div className="mt-0.5 text-[0.66rem] text-muted-foreground/60">
-									Click any event on the calendar
+								<div className="mt-1 font-[family-name:var(--font-cutive)] text-[0.52rem] tracking-[0.1em] text-muted-foreground/60">
+									Click any event on the calendar…
 								</div>
 							</div>
-							<div className="rounded-xl border border-border/60 bg-card/60 p-4">
-								<div className="text-[0.62rem] uppercase tracking-[0.14em] text-muted-foreground/70 font-medium">
+							<div className="rounded-xl border border-dashed border-border/60 bg-card/40 p-4">
+								<div className="font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
 									Shortcuts
 								</div>
-								<ul className="mt-2.5 space-y-2 text-[0.72rem] text-muted-foreground">
+								<ul className="mt-2.5 space-y-2 font-[family-name:var(--font-cutive)] text-[0.56rem] tracking-[0.06em] text-muted-foreground">
 									<li className="flex items-center gap-2">
-										<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.58rem] font-semibold text-muted-foreground/70">
+										<span className="inline-flex size-5 items-center justify-center rounded border border-border/40 bg-muted font-[family-name:var(--font-cutive)] text-[0.5rem] font-semibold text-muted-foreground/70">
 											1×
 										</span>
 										Open event details
 									</li>
 									<li className="flex items-center gap-2">
-										<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.58rem] font-semibold text-muted-foreground/70">
+										<span className="inline-flex size-5 items-center justify-center rounded border border-border/40 bg-muted font-[family-name:var(--font-cutive)] text-[0.5rem] font-semibold text-muted-foreground/70">
 											2×
 										</span>
 										Edit event
 									</li>
 									<li className="flex items-center gap-2">
-										<span className="inline-flex size-5 items-center justify-center rounded bg-muted text-[0.55rem] font-semibold text-muted-foreground/70">
+										<span className="inline-flex size-5 items-center justify-center rounded border border-border/40 bg-muted font-[family-name:var(--font-cutive)] text-[0.5rem] font-semibold text-muted-foreground/70">
 											⇕
 										</span>
 										Drag to create event
@@ -3802,17 +3868,17 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	return (
 		<>
 			<div className="h-full min-h-0 overflow-hidden bg-background text-foreground flex flex-col gap-0">
-				<header className="shrink-0 sticky top-0 z-20 border-b border-border bg-card px-4 py-2.5 flex flex-col gap-2">
+				<header className="shrink-0 sticky top-0 z-20 border-b border-border/50 bg-background/80 backdrop-blur-sm px-4 py-2.5 flex flex-col gap-2">
 					<div className="flex items-center justify-between gap-3 flex-wrap">
 						<div className="flex items-center gap-3">
-							<h1 className="text-[1.05rem] font-semibold uppercase tracking-[0.04em] text-foreground">
+							<h1 className="font-[family-name:var(--font-bebas)] text-xl uppercase tracking-wide text-foreground/80 min-w-[8.5rem]">
 								{monthLabel}
 							</h1>
 							<div className="flex items-center gap-1">
 								<Button
 									variant="outline"
 									size="icon-sm"
-									className="size-8 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
+									className="size-7 border-border/60 bg-background text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
 									onClick={() => shiftDate(-1)}
 									aria-label="Previous period"
 								>
@@ -3821,7 +3887,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 								<Button
 									variant="outline"
 									size="sm"
-									className="h-7 px-2.5 border-border bg-secondary text-foreground/80 text-[0.72rem] hover:border-border hover:bg-accent hover:text-foreground"
+									className="h-7 px-2.5 border-border/60 bg-background text-foreground/80 text-[0.72rem] hover:border-border hover:bg-accent hover:text-foreground"
 									onClick={() => setDateValue(formatDateInput(new Date()))}
 								>
 									Today
@@ -3829,7 +3895,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 								<Button
 									variant="outline"
 									size="icon-sm"
-									className="size-7 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
+									className="size-7 border-border/60 bg-background text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
 									onClick={() => shiftDate(1)}
 									aria-label="Next period"
 								>
@@ -3857,7 +3923,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 										value={tab.key}
 										variant="outline"
 										size="sm"
-										className="h-6 px-2.5 border-0 bg-transparent text-muted-foreground text-[0.7rem] font-medium hover:text-foreground hover:bg-transparent data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:shadow-sm rounded-md"
+										className="h-6 px-2.5 border-0 bg-transparent font-[family-name:var(--font-cutive)] text-[0.6rem] uppercase tracking-[0.1em] text-muted-foreground hover:text-foreground hover:bg-transparent data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:shadow-sm rounded-md"
 									>
 										{tab.label}
 									</ToggleGroupItem>
@@ -3870,7 +3936,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 								<DropdownMenuTrigger asChild>
 									<Button
 										size="sm"
-										className="h-7 px-2.5 bg-accent text-accent-foreground text-[0.72rem] font-semibold gap-1.5 border-accent hover:bg-accent/90 shadow-[0_2px_8px_-2px_rgba(252,163,17,0.3)]"
+										className="h-7 px-2.5 bg-accent text-accent-foreground text-[0.72rem] font-semibold uppercase tracking-[0.04em] gap-1.5 border-accent hover:bg-accent/90 shadow-[0_2px_8px_-2px_rgba(252,163,17,0.3)]"
 									>
 										<Sparkles className="size-3" />
 										Create new
@@ -3920,7 +3986,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 							<Button
 								variant="outline"
 								size="icon-sm"
-								className="size-7 border-border bg-secondary text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
+								className="size-7 border-border/60 bg-background text-muted-foreground hover:border-border hover:bg-accent hover:text-foreground"
 								onClick={() => {
 									void syncNow("manual");
 								}}
@@ -3938,7 +4004,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 										variant="outline"
 										size="sm"
 										aria-label="Choose date"
-										className="h-8 px-2.5 border-border bg-secondary text-foreground/70 text-[0.72rem] gap-1.5 hover:border-border hover:bg-accent hover:text-foreground"
+										className="h-8 px-2.5 border-border/60 bg-background text-foreground/70 text-[0.72rem] gap-1.5 hover:border-border hover:bg-accent hover:text-foreground"
 									>
 										<CalendarDays className="size-3.5" />
 										{selectedDate}
@@ -3980,14 +4046,14 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 									value={source}
 									variant="outline"
 									size="sm"
-									className="h-7 rounded-md border border-border bg-secondary px-2 text-[0.68rem] uppercase tracking-[0.06em] text-muted-foreground data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:border-primary/20 gap-1.5"
+									className="h-7 rounded-md border border-border bg-secondary px-2 font-[family-name:var(--font-cutive)] text-[0.56rem] uppercase tracking-[0.12em] text-muted-foreground data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:border-primary/20 gap-1.5"
 								>
-									<span className={`size-1.5 rounded-full ${sourceColorDot[source]}`} />
+									<span className={`size-2 rounded-full ${sourceColorDot[source]}`} />
 									{source}
 								</ToggleGroupItem>
 							))}
 						</ToggleGroup>
-						<div className="flex items-center gap-2 text-[0.66rem] text-muted-foreground/70">
+						<div className="flex items-center gap-2 font-[family-name:var(--font-cutive)] text-[0.56rem] uppercase tracking-[0.1em] text-muted-foreground/70">
 							<span className="tabular-nums">{visibleEventCount} events</span>
 							<span className="text-border">·</span>
 							<div
@@ -4000,6 +4066,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 								}`}
 							>
 								<span
+									aria-hidden="true"
 									className={`inline-block size-1.5 rounded-full ${
 										syncStatus === "error"
 											? "bg-destructive"
@@ -4015,20 +4082,21 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				</header>
 
 				{error ? (
-					<div className="mx-4 mt-2 border border-destructive/30 bg-destructive/10 rounded-lg px-3 py-2 text-[0.8rem] text-destructive">
+					<div className="mx-4 mt-3 flex items-center gap-2 border border-destructive/30 bg-destructive/10 rounded-xl px-3 py-2 font-[family-name:var(--font-cutive)] text-[0.62rem] uppercase tracking-[0.06em] text-destructive">
+						<AlertTriangle className="size-3.5 shrink-0" />
 						{error}
 					</div>
 				) : null}
 				{isLoading ? (
-					<div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-[0.78rem] text-muted-foreground">
+					<div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-border/60 bg-card/60 px-3 py-2 font-[family-name:var(--font-cutive)] text-[0.62rem] uppercase tracking-[0.06em] text-muted-foreground">
 						<RefreshCw className="size-3.5 shrink-0 animate-spin opacity-50" />
-						Loading events...
+						Loading events…
 					</div>
 				) : null}
 				{!isLoading && !error && visibleEventCount === 0 ? (
-					<div className="mx-4 mt-2 flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-3 py-2 text-[0.78rem] text-muted-foreground">
+					<div className="mx-4 mt-3 flex items-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/40 px-3 py-2 font-[family-name:var(--font-cutive)] text-[0.62rem] uppercase tracking-[0.06em] text-muted-foreground">
 						<RefreshCw className="size-3.5 shrink-0 opacity-50" />
-						No events loaded. Click sync to fetch from Google.
+						No events loaded… Click sync to fetch from Google.
 					</div>
 				) : null}
 

@@ -3,6 +3,7 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
+import { ensureCategoryOwnership } from "../categories/shared";
 import { ensureHoursSetOwnership, getDefaultHoursSet } from "../hours/shared";
 import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
 
@@ -11,16 +12,6 @@ const habitFrequencyValidator = v.union(
 	v.literal("weekly"),
 	v.literal("biweekly"),
 	v.literal("monthly"),
-);
-
-const habitCategoryValidator = v.union(
-	v.literal("health"),
-	v.literal("fitness"),
-	v.literal("learning"),
-	v.literal("mindfulness"),
-	v.literal("productivity"),
-	v.literal("social"),
-	v.literal("other"),
 );
 
 const habitPriorityValidator = v.union(
@@ -62,7 +53,7 @@ const habitCreateInputValidator = v.object({
 	title: v.string(),
 	description: v.optional(v.string()),
 	priority: v.optional(habitPriorityValidator),
-	category: habitCategoryValidator,
+	categoryId: v.id("taskCategories"),
 	recurrenceRule: v.optional(v.string()),
 	recoveryPolicy: v.optional(habitRecoveryPolicyValidator),
 	frequency: v.optional(habitFrequencyValidator),
@@ -97,7 +88,7 @@ const habitUpdatePatchValidator = v.object({
 	title: v.optional(v.string()),
 	description: v.optional(v.union(v.string(), v.null())),
 	priority: v.optional(v.union(habitPriorityValidator, v.null())),
-	category: v.optional(habitCategoryValidator),
+	categoryId: v.optional(v.id("taskCategories")),
 	recurrenceRule: v.optional(v.union(v.string(), v.null())),
 	recoveryPolicy: v.optional(v.union(habitRecoveryPolicyValidator, v.null())),
 	frequency: v.optional(v.union(habitFrequencyValidator, v.null())),
@@ -129,19 +120,11 @@ const habitUpdatePatchValidator = v.object({
 });
 
 type HabitFrequency = "daily" | "weekly" | "biweekly" | "monthly";
-type HabitCategory =
-	| "health"
-	| "fitness"
-	| "learning"
-	| "mindfulness"
-	| "productivity"
-	| "social"
-	| "other";
 type HabitCreateInput = {
 	title: string;
 	description?: string;
 	priority?: "low" | "medium" | "high" | "critical";
-	category: HabitCategory;
+	categoryId: Id<"taskCategories">;
 	recurrenceRule?: string;
 	recoveryPolicy?: "skip" | "recover";
 	frequency?: HabitFrequency;
@@ -175,7 +158,7 @@ type HabitUpdatePatch = {
 	title?: string;
 	description?: string | null;
 	priority?: "low" | "medium" | "high" | "critical" | null;
-	category?: HabitCategory;
+	categoryId?: Id<"taskCategories">;
 	recurrenceRule?: string | null;
 	recoveryPolicy?: "skip" | "recover" | null;
 	frequency?: HabitFrequency | null;
@@ -279,6 +262,9 @@ export const updateHabit = mutation({
 		if (args.patch.hoursSetId !== undefined && args.patch.hoursSetId !== null) {
 			await resolveHoursSetForHabit(ctx, ctx.userId, args.patch.hoursSetId);
 		}
+		if (args.patch.categoryId) {
+			await ensureCategoryOwnership(ctx, args.patch.categoryId, ctx.userId);
+		}
 		await ctx.db.patch(args.id, nextPatch as Partial<typeof habit>);
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId: ctx.userId,
@@ -347,12 +333,13 @@ export const internalCreateHabitForUserWithOperation = internalMutation({
 		}
 
 		const hoursSetId = await resolveHoursSetForHabit(ctx, args.userId, args.input.hoursSetId);
+		await ensureCategoryOwnership(ctx, args.input.categoryId, args.userId);
 		const insertedId = await ctx.db.insert("habits", {
 			userId: args.userId,
 			title: args.input.title,
 			description: args.input.description,
 			priority: args.input.priority ?? "medium",
-			category: args.input.category,
+			categoryId: args.input.categoryId,
 			recurrenceRule:
 				args.input.recurrenceRule ?? recurrenceFromLegacyFrequency(args.input.frequency),
 			recoveryPolicy: args.input.recoveryPolicy ?? "skip",

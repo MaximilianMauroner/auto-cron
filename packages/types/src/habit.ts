@@ -7,17 +7,6 @@ export type HabitPriority = (typeof habitPriorities)[number];
 export const habitRecoveryPolicies = ["skip", "recover"] as const;
 export type HabitRecoveryPolicy = (typeof habitRecoveryPolicies)[number];
 
-export const habitCategories = [
-	"health",
-	"fitness",
-	"learning",
-	"mindfulness",
-	"productivity",
-	"social",
-	"other",
-] as const;
-export type HabitCategory = (typeof habitCategories)[number];
-
 export const habitVisibilityPreferences = ["default", "public", "private"] as const;
 export type HabitVisibilityPreference = (typeof habitVisibilityPreferences)[number];
 
@@ -37,7 +26,7 @@ export type HabitDTO = {
 	title: string;
 	description?: string;
 	priority?: HabitPriority;
-	category: HabitCategory;
+	categoryId: string;
 	recurrenceRule?: string;
 	recoveryPolicy?: HabitRecoveryPolicy;
 	frequency?: HabitFrequency;
@@ -66,13 +55,14 @@ export type HabitDTO = {
 	dependencyNote?: string;
 	publicDescription?: string;
 	isActive: boolean;
+	effectiveColor?: string;
 };
 
 export type HabitCreateInput = {
 	title: string;
 	description?: string;
 	priority?: HabitPriority;
-	category: HabitCategory;
+	categoryId: string;
 	recurrenceRule?: string;
 	recoveryPolicy?: HabitRecoveryPolicy;
 	frequency?: HabitFrequency;
@@ -107,7 +97,7 @@ export type HabitUpdateInput = {
 	title?: string;
 	description?: string;
 	priority?: HabitPriority;
-	category?: HabitCategory;
+	categoryId?: string;
 	recurrenceRule?: string;
 	recoveryPolicy?: HabitRecoveryPolicy;
 	frequency?: HabitFrequency;

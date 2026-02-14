@@ -79,16 +79,18 @@ export function AsideTaskCard({ task, onEditTask }: AsideTaskCardProps) {
 						<CollapsibleTrigger asChild>
 							<button
 								type="button"
-								className="w-full rounded-lg border border-border/70 bg-background/70 p-2.5 text-left transition-colors hover:bg-background/95 data-[state=open]:rounded-b-none data-[state=open]:border-b-0"
+								className="w-full rounded-lg border border-border/60 bg-background/70 p-2.5 text-left transition-colors hover:bg-background/95 data-[state=open]:rounded-b-none data-[state=open]:border-b-0"
 							>
 								<div className="flex items-start gap-2">
 									<span
 										className="mt-1 size-2 shrink-0 rounded-full"
-										style={{ backgroundColor: task.color ?? "#f59e0b" }}
+										style={{ backgroundColor: task.effectiveColor ?? task.color ?? "#f59e0b" }}
 									/>
 									<div className="min-w-0 flex-1">
-										<p className="truncate text-[0.76rem] font-medium">{task.title}</p>
-										<div className="mt-1 flex items-center gap-2 text-[0.68rem] text-muted-foreground">
+										<p className="font-[family-name:var(--font-outfit)] truncate text-[0.76rem] font-medium">
+											{task.title}
+										</p>
+										<div className="mt-1 flex items-center gap-2 font-[family-name:var(--font-cutive)] text-[0.68rem] text-muted-foreground">
 											<span className="inline-flex items-center gap-0.5">
 												<Clock3 className="size-3" />
 												{formatDurationCompact(task.estimatedMinutes)}
@@ -105,7 +107,9 @@ export function AsideTaskCard({ task, onEditTask }: AsideTaskCardProps) {
 										</div>
 									</div>
 									<div className="flex items-center gap-1">
-										<Badge className={`${priorityClass[task.priority]} text-[0.6rem] px-1.5 py-0`}>
+										<Badge
+											className={`${priorityClass[task.priority]} font-[family-name:var(--font-cutive)] text-[0.6rem] px-1.5 py-0`}
+										>
 											{priorityLabels[task.priority]}
 										</Badge>
 										<ChevronDown
@@ -116,7 +120,7 @@ export function AsideTaskCard({ task, onEditTask }: AsideTaskCardProps) {
 							</button>
 						</CollapsibleTrigger>
 						<CollapsibleContent>
-							<div className="rounded-b-lg border border-t-0 border-border/70 bg-background/70 px-2.5 pb-2.5">
+							<div className="rounded-b-lg border border-t-0 border-border/60 bg-background/70 px-2.5 pb-2.5">
 								<TaskScheduleView
 									events={events}
 									isLoading={eventsQuery.isPending}
@@ -153,7 +157,7 @@ export function AsideTaskCard({ task, onEditTask }: AsideTaskCardProps) {
 								onClick={() => handleStatusChange(s)}
 								disabled={task.status === s}
 							>
-								{task.status === s ? "• " : ""}
+								{task.status === s ? "\u2022 " : ""}
 								{statusLabels[s]}
 							</ContextMenuItem>
 						))}

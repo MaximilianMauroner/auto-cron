@@ -17,7 +17,6 @@ import {
 	SidebarGroup,
 	SidebarGroupContent,
 	SidebarGroupLabel,
-	SidebarHeader,
 	SidebarMenu,
 	SidebarMenuButton,
 	SidebarMenuItem,
@@ -43,7 +42,6 @@ import {
 	UserCircle,
 } from "lucide-react";
 import { useTheme } from "next-themes";
-import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -156,24 +154,11 @@ export function AppSidebar() {
 
 	return (
 		<Sidebar collapsible="icon">
-			<SidebarHeader className="px-4 py-4">
-				<div className="flex items-center gap-2">
-					<Image
-						src="/logo.png"
-						alt="Auto Cron logo"
-						width={20}
-						height={20}
-						className="size-5 rounded-sm"
-						priority
-					/>
-					<h2 className="text-[0.85rem] font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-						Auto Cron
-					</h2>
-				</div>
-			</SidebarHeader>
 			<SidebarContent className="flex flex-col overflow-hidden">
 				<SidebarGroup className="gap-0.5 p-1">
-					<SidebarGroupLabel>Navigation</SidebarGroupLabel>
+					<SidebarGroupLabel className="font-[family-name:var(--font-cutive)]">
+						Navigation
+					</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
 							{navItems.map((item) => (
@@ -181,7 +166,9 @@ export function AppSidebar() {
 									<SidebarMenuButton asChild isActive={pathname === item.href} tooltip={item.title}>
 										<Link href={item.href} className="relative flex w-full items-center gap-2.5">
 											<item.icon className="size-3.5 shrink-0" />
-											<span className="text-[0.76rem] font-medium">{item.title}</span>
+											<span className="font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium">
+												{item.title}
+											</span>
 										</Link>
 									</SidebarMenuButton>
 								</SidebarMenuItem>
@@ -190,7 +177,9 @@ export function AppSidebar() {
 					</SidebarGroupContent>
 				</SidebarGroup>
 				<SidebarGroup className="gap-0.5 p-1">
-					<SidebarGroupLabel>Quick Actions</SidebarGroupLabel>
+					<SidebarGroupLabel className="font-[family-name:var(--font-cutive)]">
+						Quick Actions
+					</SidebarGroupLabel>
 					<SidebarGroupContent>
 						<SidebarMenu>
 							<SidebarMenuItem>
@@ -200,7 +189,9 @@ export function AppSidebar() {
 										className="relative flex w-full items-center gap-2.5"
 									>
 										<Clock3 className="size-3.5 shrink-0" />
-										<span className="text-[0.76rem] font-medium">Hours settings</span>
+										<span className="font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium">
+											Hours settings
+										</span>
 									</Link>
 								</SidebarMenuButton>
 							</SidebarMenuItem>
@@ -209,18 +200,22 @@ export function AppSidebar() {
 				</SidebarGroup>
 				{isCalendarRoute ? (
 					<SidebarGroup className="mt-auto gap-2 p-1">
-						<SidebarGroupLabel>Scheduling</SidebarGroupLabel>
-						<div className="rounded-lg border border-sidebar-border bg-sidebar-accent p-2 group-data-[collapsible=icon]:hidden">
-							<div className="px-1 pb-1 text-[0.62rem] uppercase tracking-[0.1em] text-muted-foreground">
+						<SidebarGroupLabel className="font-[family-name:var(--font-cutive)]">
+							Scheduling
+						</SidebarGroupLabel>
+						<div className="rounded-lg border border-sidebar-border/60 bg-sidebar-accent p-2 group-data-[collapsible=icon]:hidden">
+							<div className="font-[family-name:var(--font-cutive)] px-1 pb-1 text-[0.62rem] uppercase tracking-[0.1em] text-muted-foreground">
 								Google Calendars
 							</div>
 							{email ? (
-								<div className="px-1 pb-1 text-[0.72rem] text-muted-foreground/85">{email}</div>
+								<div className="font-[family-name:var(--font-outfit)] px-1 pb-1 text-[0.72rem] text-muted-foreground/85">
+									{email}
+								</div>
 							) : null}
 							<div className="grid gap-0.5">
 								{isGoogleCalendarsLoading ? (
 									<div className="rounded-md px-1.5 py-1 text-[0.74rem] text-muted-foreground/80">
-										Loading calendars...
+										Loading calendars…
 									</div>
 								) : (
 									orderedCalendars.map((calendar) => (
@@ -238,10 +233,12 @@ export function AppSidebar() {
 														style={{ backgroundColor: calendar.color }}
 													/>
 												)}
-												<span className="truncate">{calendar.name}</span>
+												<span className="font-[family-name:var(--font-outfit)] truncate">
+													{calendar.name}
+												</span>
 											</div>
 											{calendar.isDefault ? (
-												<span className="ml-2 shrink-0 text-[0.66rem] text-muted-foreground">
+												<span className="font-[family-name:var(--font-cutive)] ml-2 shrink-0 text-[0.66rem] text-muted-foreground">
 													Default
 												</span>
 											) : null}
@@ -253,7 +250,7 @@ export function AppSidebar() {
 									disabled
 									aria-label="Add calendar account (coming soon)"
 									title="Add calendar account (coming soon)"
-									className="mt-1 inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-left text-[0.72rem] text-muted-foreground/70 disabled:cursor-not-allowed"
+									className="mt-1 inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-left font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground/70 disabled:cursor-not-allowed"
 								>
 									<Plus className="size-3.5" />
 									Add calendar account
@@ -278,8 +275,12 @@ export function AppSidebar() {
 										<AvatarFallback className="rounded-lg text-xs">{initials}</AvatarFallback>
 									</Avatar>
 									<div className="grid flex-1 text-left text-sm leading-tight">
-										<span className="truncate font-medium">{displayName}</span>
-										<span className="truncate text-xs text-muted-foreground">{email}</span>
+										<span className="font-[family-name:var(--font-outfit)] truncate font-medium">
+											{displayName}
+										</span>
+										<span className="font-[family-name:var(--font-cutive)] truncate text-[0.66rem] tracking-[0.02em] text-muted-foreground">
+											{email}
+										</span>
 									</div>
 									<ChevronsUpDown className="ml-auto size-4" />
 								</SidebarMenuButton>
@@ -297,8 +298,12 @@ export function AppSidebar() {
 											<AvatarFallback className="rounded-lg text-xs">{initials}</AvatarFallback>
 										</Avatar>
 										<div className="grid flex-1 text-left text-sm leading-tight">
-											<span className="truncate font-medium">{displayName}</span>
-											<span className="truncate text-xs text-muted-foreground">{email}</span>
+											<span className="font-[family-name:var(--font-outfit)] truncate font-medium">
+												{displayName}
+											</span>
+											<span className="font-[family-name:var(--font-cutive)] truncate text-[0.66rem] tracking-[0.02em] text-muted-foreground">
+												{email}
+											</span>
 										</div>
 									</div>
 								</DropdownMenuLabel>

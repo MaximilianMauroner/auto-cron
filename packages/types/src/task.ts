@@ -46,6 +46,8 @@ export type TaskDTO = {
 	visibilityPreference?: TaskVisibilityPreference;
 	preferredCalendarId?: string;
 	color?: string;
+	categoryId?: string;
+	effectiveColor?: string;
 };
 
 export type TaskCreateInput = {
@@ -68,6 +70,7 @@ export type TaskCreateInput = {
 	visibilityPreference?: TaskVisibilityPreference;
 	preferredCalendarId?: string;
 	color?: string;
+	categoryId?: string;
 };
 
 export type TaskUpdateInput = {
@@ -93,6 +96,7 @@ export type TaskUpdateInput = {
 	visibilityPreference?: TaskVisibilityPreference;
 	preferredCalendarId?: string;
 	color?: string;
+	categoryId?: string;
 };
 
 export type TaskReorderInput = {

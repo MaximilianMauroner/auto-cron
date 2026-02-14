@@ -31,6 +31,34 @@ const ensureDefined = <T>(value: T | undefined, label: string): T => {
 	return value;
 };
 
+const bootstrapAndGetDefaultCategoryId = async (
+	testConvex: ReturnType<typeof createTestConvex>,
+	userId: string,
+) => {
+	await testConvex.mutation(internal.hours.mutations.internalBootstrapHoursSetsForUser, {
+		userId,
+	});
+	const categoryId = await testConvex.run(async (ctx) => {
+		const existing = await ctx.db
+			.query("taskCategories")
+			.withIndex("by_userId_isDefault", (q) => q.eq("userId", userId).eq("isDefault", true))
+			.first();
+		if (existing) return existing._id;
+		const now = Date.now();
+		return ctx.db.insert("taskCategories", {
+			userId,
+			name: "Personal",
+			color: "#f59e0b",
+			isSystem: true,
+			isDefault: true,
+			sortOrder: 0,
+			createdAt: now,
+			updatedAt: now,
+		});
+	});
+	return categoryId;
+};
+
 const latestRun = async (user: ReturnType<ReturnType<typeof createTestConvex>["withIdentity"]>) => {
 	return user.query(api.scheduling.queries.getLatestRun, {});
 };
@@ -110,13 +138,20 @@ const seedScheduledHabitBlock = async (
 		habitTitle,
 		start,
 		end,
-	}: { habitRequestId: string; habitTitle: string; start: number; end: number },
+		categoryId,
+	}: {
+		habitRequestId: string;
+		habitTitle: string;
+		start: number;
+		end: number;
+		categoryId: Id<"taskCategories">;
+	},
 ) => {
 	const habitId = await user.action(api.habits.actions.createHabit, {
 		requestId: habitRequestId,
 		input: {
 			title: habitTitle,
-			category: "health",
+			categoryId,
 			frequency: "weekly",
 			durationMinutes: Math.max(15, Math.round((end - start) / (60 * 1000))),
 		},
@@ -678,12 +713,13 @@ describe("scheduling run queueing", () => {
 		test("habit create/update/toggle/delete paths all enqueue habit_change runs", async () => {
 			const testConvex = createTestConvex();
 			const user = testConvex.withIdentity({ subject: "user-habit-trigger" });
+			const categoryId = await bootstrapAndGetDefaultCategoryId(testConvex, "user-habit-trigger");
 
 			const habitId = await user.action(api.habits.actions.createHabit, {
 				requestId: "habit-trigger-create",
 				input: {
 					title: "Habit trigger",
-					category: "health",
+					categoryId,
 					frequency: "weekly",
 					durationMinutes: 30,
 				},
@@ -845,12 +881,14 @@ describe("scheduling run queueing", () => {
 			const userId = "user-overlap-habit-event";
 			const user = testConvex.withIdentity({ subject: userId });
 			const now = Date.now();
+			const categoryId = await bootstrapAndGetDefaultCategoryId(testConvex, userId);
 
 			const habitId = await seedScheduledHabitBlock(testConvex, user, userId, {
 				habitRequestId: "overlap-habit-create",
 				habitTitle: "Overlap habit",
 				start: now + 30 * 60 * 1000,
 				end: now + 90 * 60 * 1000,
+				categoryId,
 			});
 			await settleAllActiveRuns(testConvex, user);
 

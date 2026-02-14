@@ -3,28 +3,36 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
+import { GOOGLE_CALENDAR_COLORS, ensureDefaultCategories } from "../categories/shared";
 import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
 import {
 	type HourWindow,
 	anytimeWindows,
 	assertValidWindows,
+	dateFormatValidator,
+	defaultHabitQuickCreateSettings,
 	defaultSchedulingDowntimeMinutes,
 	defaultSchedulingStepMinutes,
 	defaultTaskQuickCreateSettings,
 	ensureHoursSetOwnership,
 	getDefaultHoursSet,
+	habitFrequencyValidator,
+	habitRecoveryPolicyValidator,
 	hourWindowValidator,
 	isValidTimeZone,
+	normalizeDateFormat,
 	normalizeSchedulingDowntimeMinutes,
 	normalizeSchedulingStepMinutes,
 	normalizeTimeFormatPreference,
 	normalizeTimeZone,
+	normalizeWeekStartsOn,
 	schedulingStepMinutesValidator,
 	taskCreationStatusValidator,
 	taskPriorityValidator,
 	taskSchedulingModeValidator,
 	taskVisibilityPreferenceValidator,
 	timeFormatPreferenceValidator,
+	weekStartsOnValidator,
 } from "./shared";
 
 const CURRENT_SCHEDULING_MODEL_VERSION = 1;
@@ -52,7 +60,6 @@ type SeedTaskTemplate = {
 type SeedHabitTemplate = {
 	title: string;
 	description: string;
-	category: "health" | "fitness" | "learning" | "mindfulness" | "productivity" | "social" | "other";
 	priority?: "low" | "medium" | "high" | "critical";
 	recurrenceRule: string;
 	frequency?: "daily" | "weekly" | "biweekly" | "monthly";
@@ -128,7 +135,6 @@ const DEFAULT_SEED_HABITS: SeedHabitTemplate[] = [
 	{
 		title: "Daily planning",
 		description: "Set the day's top outcomes before starting execution.",
-		category: "productivity",
 		priority: "high",
 		recurrenceRule: WEEKDAY_RECURRENCE_RULE,
 		frequency: "daily",
@@ -141,7 +147,6 @@ const DEFAULT_SEED_HABITS: SeedHabitTemplate[] = [
 	{
 		title: "Focus block",
 		description: "Protect uninterrupted time for high-cognitive work.",
-		category: "productivity",
 		priority: "high",
 		recurrenceRule: WEEKDAY_RECURRENCE_RULE,
 		frequency: "daily",
@@ -154,7 +159,6 @@ const DEFAULT_SEED_HABITS: SeedHabitTemplate[] = [
 	{
 		title: "Lunch break",
 		description: "Take a real mid-day break to sustain afternoon energy.",
-		category: "health",
 		priority: "medium",
 		recurrenceRule: WEEKDAY_RECURRENCE_RULE,
 		frequency: "daily",
@@ -167,7 +171,6 @@ const DEFAULT_SEED_HABITS: SeedHabitTemplate[] = [
 	{
 		title: "Movement break",
 		description: "Stand up, stretch, or walk to reduce sedentary load.",
-		category: "health",
 		priority: "medium",
 		recurrenceRule: "RRULE:FREQ=DAILY",
 		frequency: "daily",
@@ -179,7 +182,6 @@ const DEFAULT_SEED_HABITS: SeedHabitTemplate[] = [
 	{
 		title: "Wrap-up and shutdown",
 		description: "Review progress, close loops, and prep handoff notes.",
-		category: "productivity",
 		priority: "medium",
 		recurrenceRule: WEEKDAY_RECURRENCE_RULE,
 		frequency: "daily",
@@ -192,7 +194,6 @@ const DEFAULT_SEED_HABITS: SeedHabitTemplate[] = [
 	{
 		title: "Weekly review",
 		description: "Assess wins, blockers, and priorities for the next week.",
-		category: "learning",
 		priority: "high",
 		recurrenceRule: "RRULE:FREQ=WEEKLY;BYDAY=FR",
 		frequency: "weekly",
@@ -444,6 +445,74 @@ const sanitizeHabitPriority = (
 	if (priority === "low" || priority === "medium" || priority === "high") return priority;
 	if (priority === "critical" || priority === "blocker") return "critical";
 	return "medium";
+};
+
+type HabitQuickCreateSettingsShape = {
+	habitQuickCreatePriority?: string;
+	habitQuickCreateDurationMinutes?: number;
+	habitQuickCreateFrequency?: string;
+	habitQuickCreateRecoveryPolicy?: string;
+	habitQuickCreateVisibilityPreference?: string;
+	habitQuickCreateColor?: string;
+};
+
+type NormalizedHabitQuickCreateDefaults = {
+	habitQuickCreatePriority: "low" | "medium" | "high" | "critical" | "blocker";
+	habitQuickCreateDurationMinutes: number;
+	habitQuickCreateFrequency: "daily" | "weekly" | "biweekly" | "monthly";
+	habitQuickCreateRecoveryPolicy: "skip" | "recover";
+	habitQuickCreateVisibilityPreference: "default" | "private";
+	habitQuickCreateColor: string;
+};
+
+const normalizeHabitQuickCreateDefaults = (
+	settings: HabitQuickCreateSettingsShape | null,
+): NormalizedHabitQuickCreateDefaults => {
+	const priority =
+		settings?.habitQuickCreatePriority === "low" ||
+		settings?.habitQuickCreatePriority === "medium" ||
+		settings?.habitQuickCreatePriority === "high" ||
+		settings?.habitQuickCreatePriority === "critical" ||
+		settings?.habitQuickCreatePriority === "blocker"
+			? settings.habitQuickCreatePriority
+			: defaultHabitQuickCreateSettings.priority;
+
+	const durationCandidate = Number.isFinite(settings?.habitQuickCreateDurationMinutes)
+		? (settings?.habitQuickCreateDurationMinutes ?? defaultHabitQuickCreateSettings.durationMinutes)
+		: defaultHabitQuickCreateSettings.durationMinutes;
+	const durationMinutes = Math.max(5, Math.round(durationCandidate));
+
+	const frequency =
+		settings?.habitQuickCreateFrequency === "daily" ||
+		settings?.habitQuickCreateFrequency === "weekly" ||
+		settings?.habitQuickCreateFrequency === "biweekly" ||
+		settings?.habitQuickCreateFrequency === "monthly"
+			? settings.habitQuickCreateFrequency
+			: defaultHabitQuickCreateSettings.frequency;
+
+	const recoveryPolicy =
+		settings?.habitQuickCreateRecoveryPolicy === "skip" ||
+		settings?.habitQuickCreateRecoveryPolicy === "recover"
+			? settings.habitQuickCreateRecoveryPolicy
+			: defaultHabitQuickCreateSettings.recoveryPolicy;
+
+	const visibilityPreference =
+		settings?.habitQuickCreateVisibilityPreference === "default" ||
+		settings?.habitQuickCreateVisibilityPreference === "private"
+			? settings.habitQuickCreateVisibilityPreference
+			: defaultHabitQuickCreateSettings.visibilityPreference;
+
+	const colorRaw = settings?.habitQuickCreateColor?.trim();
+	const color = colorRaw && colorRaw.length > 0 ? colorRaw : defaultHabitQuickCreateSettings.color;
+
+	return {
+		habitQuickCreatePriority: priority,
+		habitQuickCreateDurationMinutes: durationMinutes,
+		habitQuickCreateFrequency: frequency,
+		habitQuickCreateRecoveryPolicy: recoveryPolicy,
+		habitQuickCreateVisibilityPreference: visibilityPreference,
+		habitQuickCreateColor: color,
+	};
 };
 
 const recurrenceFromLegacyFrequency = (frequency: string | undefined) => {
@@ -704,9 +773,172 @@ export const setSchedulingStepMinutes = mutation({
 	}),
 });
 
+export const setSchedulingHorizonDays = mutation({
+	args: {
+		days: v.number(),
+	},
+	returns: v.number(),
+	handler: withMutationAuth(async (ctx, args: { days: number }): Promise<number> => {
+		await ensureSettingsForUser(ctx, ctx.userId);
+		const settings = await ctx.db
+			.query("userSettings")
+			.withIndex("by_userId", (q) => q.eq("userId", ctx.userId))
+			.unique();
+		const normalizedDays = Math.max(7, Math.min(365, Math.round(args.days)));
+		if (!settings) {
+			await ctx.db.insert("userSettings", {
+				userId: ctx.userId,
+				timezone: normalizeTimeZone(undefined),
+				timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
+				defaultTaskSchedulingMode: "fastest",
+				...normalizeTaskQuickCreateDefaults(null),
+				schedulingHorizonDays: normalizedDays,
+				schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
+				schedulingStepMinutes: defaultSchedulingStepMinutes,
+				weekStartsOn: 1,
+				dateFormat: "MM/DD/YYYY",
+				googleRefreshToken: undefined,
+				googleSyncToken: undefined,
+				googleCalendarSyncTokens: [],
+				googleConnectedCalendars: [],
+			});
+		} else {
+			await ctx.db.patch(settings._id, {
+				schedulingHorizonDays: normalizedDays,
+			});
+		}
+		return normalizedDays;
+	}),
+});
+
+export const setWeekStartsOn = mutation({
+	args: {
+		day: weekStartsOnValidator,
+	},
+	returns: weekStartsOnValidator,
+	handler: withMutationAuth(
+		async (ctx, args: { day: 0 | 1 | 2 | 3 | 4 | 5 | 6 }): Promise<0 | 1 | 2 | 3 | 4 | 5 | 6> => {
+			await ensureSettingsForUser(ctx, ctx.userId);
+			const settings = await ctx.db
+				.query("userSettings")
+				.withIndex("by_userId", (q) => q.eq("userId", ctx.userId))
+				.unique();
+			const normalizedDay = normalizeWeekStartsOn(args.day) as 0 | 1 | 2 | 3 | 4 | 5 | 6;
+			if (!settings) {
+				await ctx.db.insert("userSettings", {
+					userId: ctx.userId,
+					timezone: normalizeTimeZone(undefined),
+					timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
+					defaultTaskSchedulingMode: "fastest",
+					...normalizeTaskQuickCreateDefaults(null),
+					schedulingHorizonDays: 75,
+					schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
+					schedulingStepMinutes: defaultSchedulingStepMinutes,
+					weekStartsOn: normalizedDay,
+					dateFormat: "MM/DD/YYYY",
+					googleRefreshToken: undefined,
+					googleSyncToken: undefined,
+					googleCalendarSyncTokens: [],
+					googleConnectedCalendars: [],
+				});
+			} else {
+				await ctx.db.patch(settings._id, {
+					weekStartsOn: normalizedDay,
+				});
+			}
+			return normalizedDay;
+		},
+	),
+});
+
+export const setDateFormat = mutation({
+	args: {
+		format: dateFormatValidator,
+	},
+	returns: dateFormatValidator,
+	handler: withMutationAuth(
+		async (
+			ctx,
+			args: { format: "MM/DD/YYYY" | "DD/MM/YYYY" | "YYYY-MM-DD" },
+		): Promise<"MM/DD/YYYY" | "DD/MM/YYYY" | "YYYY-MM-DD"> => {
+			await ensureSettingsForUser(ctx, ctx.userId);
+			const settings = await ctx.db
+				.query("userSettings")
+				.withIndex("by_userId", (q) => q.eq("userId", ctx.userId))
+				.unique();
+			const normalizedFormat = normalizeDateFormat(args.format) as
+				| "MM/DD/YYYY"
+				| "DD/MM/YYYY"
+				| "YYYY-MM-DD";
+			if (!settings) {
+				await ctx.db.insert("userSettings", {
+					userId: ctx.userId,
+					timezone: normalizeTimeZone(undefined),
+					timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
+					defaultTaskSchedulingMode: "fastest",
+					...normalizeTaskQuickCreateDefaults(null),
+					schedulingHorizonDays: 75,
+					schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
+					schedulingStepMinutes: defaultSchedulingStepMinutes,
+					weekStartsOn: 1,
+					dateFormat: normalizedFormat,
+					googleRefreshToken: undefined,
+					googleSyncToken: undefined,
+					googleCalendarSyncTokens: [],
+					googleConnectedCalendars: [],
+				});
+			} else {
+				await ctx.db.patch(settings._id, {
+					dateFormat: normalizedFormat,
+				});
+			}
+			return normalizedFormat;
+		},
+	),
+});
+
 const calendarDisplayPreferencesValidator = v.object({
 	timezone: v.string(),
 	timeFormatPreference: timeFormatPreferenceValidator,
+});
+
+export const setTimeFormatPreference = mutation({
+	args: {
+		timeFormatPreference: timeFormatPreferenceValidator,
+	},
+	returns: timeFormatPreferenceValidator,
+	handler: withMutationAuth(
+		async (ctx, args: { timeFormatPreference: "12h" | "24h" }): Promise<"12h" | "24h"> => {
+			await ensureSettingsForUser(ctx, ctx.userId);
+			const settings = await ctx.db
+				.query("userSettings")
+				.withIndex("by_userId", (q) => q.eq("userId", ctx.userId))
+				.unique();
+			if (!settings) {
+				await ctx.db.insert("userSettings", {
+					userId: ctx.userId,
+					timezone: normalizeTimeZone(undefined),
+					timeFormatPreference: args.timeFormatPreference,
+					defaultTaskSchedulingMode: "fastest",
+					...normalizeTaskQuickCreateDefaults(null),
+					schedulingHorizonDays: 75,
+					schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
+					schedulingStepMinutes: defaultSchedulingStepMinutes,
+					weekStartsOn: 1,
+					dateFormat: "MM/DD/YYYY",
+					googleRefreshToken: undefined,
+					googleSyncToken: undefined,
+					googleCalendarSyncTokens: [],
+					googleConnectedCalendars: [],
+				});
+			} else {
+				await ctx.db.patch(settings._id, {
+					timeFormatPreference: args.timeFormatPreference,
+				});
+			}
+			return args.timeFormatPreference;
+		},
+	),
 });
 
 export const setCalendarDisplayPreferences = mutation({
@@ -886,6 +1118,97 @@ export const setTaskQuickCreateDefaults = mutation({
 				sendToUpNext: normalizedDefaults.taskQuickCreateSendToUpNext,
 				visibilityPreference: normalizedDefaults.taskQuickCreateVisibilityPreference,
 				color: normalizedDefaults.taskQuickCreateColor,
+			};
+		},
+	),
+});
+
+const habitQuickCreateDefaultsInputValidator = v.object({
+	priority: taskPriorityValidator,
+	durationMinutes: v.number(),
+	frequency: habitFrequencyValidator,
+	recoveryPolicy: habitRecoveryPolicyValidator,
+	visibilityPreference: taskVisibilityPreferenceValidator,
+	color: v.string(),
+});
+
+const habitQuickCreateDefaultsReturnValidator = v.object({
+	priority: taskPriorityValidator,
+	durationMinutes: v.number(),
+	frequency: habitFrequencyValidator,
+	recoveryPolicy: habitRecoveryPolicyValidator,
+	visibilityPreference: taskVisibilityPreferenceValidator,
+	color: v.string(),
+});
+
+export const setHabitQuickCreateDefaults = mutation({
+	args: {
+		defaults: habitQuickCreateDefaultsInputValidator,
+	},
+	returns: habitQuickCreateDefaultsReturnValidator,
+	handler: withMutationAuth(
+		async (
+			ctx,
+			args: {
+				defaults: {
+					priority: "low" | "medium" | "high" | "critical" | "blocker";
+					durationMinutes: number;
+					frequency: "daily" | "weekly" | "biweekly" | "monthly";
+					recoveryPolicy: "skip" | "recover";
+					visibilityPreference: "default" | "private";
+					color: string;
+				};
+			},
+		): Promise<{
+			priority: "low" | "medium" | "high" | "critical" | "blocker";
+			durationMinutes: number;
+			frequency: "daily" | "weekly" | "biweekly" | "monthly";
+			recoveryPolicy: "skip" | "recover";
+			visibilityPreference: "default" | "private";
+			color: string;
+		}> => {
+			await ensureSettingsForUser(ctx, ctx.userId);
+			const settings = await ctx.db
+				.query("userSettings")
+				.withIndex("by_userId", (q) => q.eq("userId", ctx.userId))
+				.unique();
+
+			const normalizedDefaults = normalizeHabitQuickCreateDefaults({
+				habitQuickCreatePriority: args.defaults.priority,
+				habitQuickCreateDurationMinutes: args.defaults.durationMinutes,
+				habitQuickCreateFrequency: args.defaults.frequency,
+				habitQuickCreateRecoveryPolicy: args.defaults.recoveryPolicy,
+				habitQuickCreateVisibilityPreference: args.defaults.visibilityPreference,
+				habitQuickCreateColor: args.defaults.color,
+			});
+
+			if (!settings) {
+				await ctx.db.insert("userSettings", {
+					userId: ctx.userId,
+					timezone: normalizeTimeZone(undefined),
+					timeFormatPreference: normalizedTimeFormatPreferenceFromSettings(null),
+					defaultTaskSchedulingMode: "fastest",
+					...normalizeTaskQuickCreateDefaults(null),
+					...normalizedDefaults,
+					schedulingHorizonDays: 75,
+					schedulingDowntimeMinutes: defaultSchedulingDowntimeMinutes,
+					schedulingStepMinutes: defaultSchedulingStepMinutes,
+					googleRefreshToken: undefined,
+					googleSyncToken: undefined,
+					googleCalendarSyncTokens: [],
+					googleConnectedCalendars: [],
+				});
+			} else {
+				await ctx.db.patch(settings._id, normalizedDefaults);
+			}
+
+			return {
+				priority: normalizedDefaults.habitQuickCreatePriority,
+				durationMinutes: normalizedDefaults.habitQuickCreateDurationMinutes,
+				frequency: normalizedDefaults.habitQuickCreateFrequency,
+				recoveryPolicy: normalizedDefaults.habitQuickCreateRecoveryPolicy,
+				visibilityPreference: normalizedDefaults.habitQuickCreateVisibilityPreference,
+				color: normalizedDefaults.habitQuickCreateColor,
 			};
 		},
 	),
@@ -1197,6 +1520,10 @@ export const internalBootstrapDefaultPlannerDataForUser = internalMutation({
 		createdHabits: number;
 	}> => {
 		const result = await bootstrapHoursSetsForUser(ctx, args.userId);
+
+		// Ensure default categories exist for the user
+		const { personalId } = await ensureDefaultCategories(ctx, args.userId);
+
 		const existingTasks = await ctx.db
 			.query("tasks")
 			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
@@ -1249,6 +1576,7 @@ export const internalBootstrapDefaultPlannerDataForUser = internalMutation({
 				visibilityPreference: "default",
 				preferredCalendarId: "primary",
 				color: template.color,
+				categoryId: personalId,
 			});
 			taskTitleKeys.add(titleKey);
 			createdTasks += 1;
@@ -1263,7 +1591,7 @@ export const internalBootstrapDefaultPlannerDataForUser = internalMutation({
 				title: template.title,
 				description: template.description,
 				priority: template.priority ?? "medium",
-				category: template.category,
+				categoryId: personalId,
 				recurrenceRule: template.recurrenceRule,
 				recoveryPolicy: "skip",
 				frequency: template.frequency,

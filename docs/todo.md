@@ -74,7 +74,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Install Convex component: `@convex-dev/workos-authkit`
 - [x] Add Convex auth wrappers + structured unauthorized errors (`UNAUTHORIZED`)
 - [x] Add Convex auth hardening tests (`convex-test` + `vitest` + edge-runtime)
-- [~] Install Convex components: `@convex-dev/crons` done; `@convex-dev/workpool`, `@convex-dev/workflow`, `@convex-dev/action-retrier`, and `@convex-dev/rate-limiter` pending
+- [~] Install Convex components: `@convex-dev/crons` done; `@convex-dev/workpool`, `@convex-dev/workflow`, `@convex-dev/action-retrier`, and `@convex-dev/rate-limiter` pending (https://www.convex.dev/components/rate-limiter)
 
 ### Cross-cutting UX + performance
 
@@ -115,7 +115,7 @@ Legend: [x] implemented · [~] partially implemented · [ ] not started
 - [x] Respect existing calendar events (busy status)
 - [x] Place habits from RRULE recurrence with preference penalties + recovery/skip policies
 - [x] Trigger system: auto-reschedule on task create/update/delete, on habit change, on calendar event change
-- [ ] Rate-limit rescheduling triggers (max 1 per 30s per user via `@convex-dev/rate-limiter`)
+- [ ] Rate-limit rescheduling triggers (max 1 per 30s per user via `@convex-dev/rate-limiter`; docs: https://www.convex.dev/components/rate-limiter)
 - [ ] Use `@convex-dev/workpool` for priority-based job queue
 - [ ] Use `@convex-dev/workflow` for durable multi-step scheduling pipeline
 - [x] Apply scheduling results as mutations to `calendarEvents` table

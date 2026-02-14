@@ -2,18 +2,25 @@ import { v } from "convex/values";
 import { query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
 import {
+	dateFormatValidator,
+	defaultHabitQuickCreateSettings,
 	defaultTaskQuickCreateSettings,
+	habitFrequencyValidator,
+	habitRecoveryPolicyValidator,
 	hoursSetValidator,
 	isValidTimeZone,
+	normalizeDateFormat,
 	normalizeSchedulingDowntimeMinutes,
 	normalizeSchedulingStepMinutes,
 	normalizeTimeFormatPreference,
+	normalizeWeekStartsOn,
 	schedulingStepMinutesValidator,
 	taskCreationStatusValidator,
 	taskPriorityValidator,
 	taskSchedulingModeValidator,
 	taskVisibilityPreferenceValidator,
 	timeFormatPreferenceValidator,
+	weekStartsOnValidator,
 } from "./shared";
 
 const sanitizeTaskSchedulingMode = (
@@ -147,6 +154,80 @@ const sanitizeTaskQuickCreateDefaults = (
 	};
 };
 
+const habitQuickCreateDefaultsValidator = v.object({
+	priority: taskPriorityValidator,
+	durationMinutes: v.number(),
+	frequency: habitFrequencyValidator,
+	recoveryPolicy: habitRecoveryPolicyValidator,
+	visibilityPreference: taskVisibilityPreferenceValidator,
+	color: v.string(),
+});
+
+type HabitQuickCreateDefaults = {
+	priority: "low" | "medium" | "high" | "critical" | "blocker";
+	durationMinutes: number;
+	frequency: "daily" | "weekly" | "biweekly" | "monthly";
+	recoveryPolicy: "skip" | "recover";
+	visibilityPreference: "default" | "private";
+	color: string;
+};
+
+const sanitizeHabitQuickCreateDefaults = (
+	settings: {
+		habitQuickCreatePriority?: string;
+		habitQuickCreateDurationMinutes?: number;
+		habitQuickCreateFrequency?: string;
+		habitQuickCreateRecoveryPolicy?: string;
+		habitQuickCreateVisibilityPreference?: string;
+		habitQuickCreateColor?: string;
+	} | null,
+): HabitQuickCreateDefaults => {
+	const priority =
+		settings?.habitQuickCreatePriority === "low" ||
+		settings?.habitQuickCreatePriority === "medium" ||
+		settings?.habitQuickCreatePriority === "high" ||
+		settings?.habitQuickCreatePriority === "critical" ||
+		settings?.habitQuickCreatePriority === "blocker"
+			? settings.habitQuickCreatePriority
+			: defaultHabitQuickCreateSettings.priority;
+
+	const durationMinutes = Math.max(
+		5,
+		Number.isFinite(settings?.habitQuickCreateDurationMinutes)
+			? (settings?.habitQuickCreateDurationMinutes ??
+					defaultHabitQuickCreateSettings.durationMinutes)
+			: defaultHabitQuickCreateSettings.durationMinutes,
+	);
+
+	const frequency =
+		settings?.habitQuickCreateFrequency === "daily" ||
+		settings?.habitQuickCreateFrequency === "weekly" ||
+		settings?.habitQuickCreateFrequency === "biweekly" ||
+		settings?.habitQuickCreateFrequency === "monthly"
+			? settings.habitQuickCreateFrequency
+			: defaultHabitQuickCreateSettings.frequency;
+
+	const recoveryPolicy =
+		settings?.habitQuickCreateRecoveryPolicy === "skip" ||
+		settings?.habitQuickCreateRecoveryPolicy === "recover"
+			? settings.habitQuickCreateRecoveryPolicy
+			: defaultHabitQuickCreateSettings.recoveryPolicy;
+
+	const visibilityPreference =
+		settings?.habitQuickCreateVisibilityPreference === "default" ||
+		settings?.habitQuickCreateVisibilityPreference === "private"
+			? settings.habitQuickCreateVisibilityPreference
+			: defaultHabitQuickCreateSettings.visibilityPreference;
+
+	const color =
+		typeof settings?.habitQuickCreateColor === "string" &&
+		settings.habitQuickCreateColor.trim().length > 0
+			? settings.habitQuickCreateColor
+			: defaultHabitQuickCreateSettings.color;
+
+	return { priority, durationMinutes, frequency, recoveryPolicy, visibilityPreference, color };
+};
+
 export const listHoursSets = query({
 	args: {},
 	returns: v.array(hoursSetValidator),
@@ -171,6 +252,11 @@ export const getTaskSchedulingDefaults = query({
 		schedulingDowntimeMinutes: v.number(),
 		schedulingStepMinutes: schedulingStepMinutesValidator,
 		taskQuickCreateDefaults: taskQuickCreateDefaultsValidator,
+		habitQuickCreateDefaults: habitQuickCreateDefaultsValidator,
+		schedulingHorizonDays: v.number(),
+		weekStartsOn: weekStartsOnValidator,
+		dateFormat: dateFormatValidator,
+		timeFormatPreference: v.union(v.literal("12h"), v.literal("24h")),
 	}),
 	handler: withQueryAuth(async (ctx) => {
 		const settings = await ctx.db
@@ -184,6 +270,15 @@ export const getTaskSchedulingDefaults = query({
 			),
 			schedulingStepMinutes: normalizeSchedulingStepMinutes(settings?.schedulingStepMinutes),
 			taskQuickCreateDefaults: sanitizeTaskQuickCreateDefaults(settings),
+			habitQuickCreateDefaults: sanitizeHabitQuickCreateDefaults(settings),
+			schedulingHorizonDays: settings?.schedulingHorizonDays ?? 75,
+			weekStartsOn: normalizeWeekStartsOn(settings?.weekStartsOn) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+			dateFormat: normalizeDateFormat(settings?.dateFormat) as
+				| "MM/DD/YYYY"
+				| "DD/MM/YYYY"
+				| "YYYY-MM-DD",
+			timeFormatPreference: (normalizeTimeFormatPreference(settings?.timeFormatPreference) ??
+				"12h") as "12h" | "24h",
 		};
 	}),
 });

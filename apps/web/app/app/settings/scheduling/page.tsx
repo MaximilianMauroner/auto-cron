@@ -1,7 +1,8 @@
 "use client";
 
+import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ColorPalette } from "@/components/ui/color-palette";
 import { DurationInput } from "@/components/ui/duration-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -15,36 +16,45 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
 import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duration";
+import { cn } from "@/lib/utils";
+import type { HabitFrequency, HabitRecoveryPolicy } from "@auto-cron/types";
 import type { Priority, TaskSchedulingMode, TaskVisibilityPreference } from "@auto-cron/types";
-import { Save, SlidersHorizontal } from "lucide-react";
+import { Check, ListChecks, Repeat, Save, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../../../../../convex/_generated/api";
 
-const schedulingModeLabels: Record<TaskSchedulingMode, string> = {
-	fastest: "Fastest",
-	balanced: "Balanced",
-	packed: "Packed",
-};
-
-const schedulingModeDescriptions: Record<TaskSchedulingMode, string> = {
-	fastest: "Schedules tasks as early as possible to finish soonest before due time.",
-	balanced: "Balances earlier completion with stability and preference adherence.",
-	packed: "Packs work later in the horizon while preserving hard constraints.",
-};
+const schedulingModes: { mode: TaskSchedulingMode; label: string; description: string }[] = [
+	{
+		mode: "fastest",
+		label: "Fastest",
+		description: "Places tasks as early as possible to finish before due time.",
+	},
+	{
+		mode: "balanced",
+		label: "Balanced",
+		description: "Balances completion speed with stability and preferences.",
+	},
+	{
+		mode: "packed",
+		label: "Packed",
+		description: "Packs work later in the horizon while keeping hard constraints.",
+	},
+];
 
 const priorityOptions: Priority[] = ["low", "medium", "high", "critical", "blocker"];
-const taskColors = [
-	"#f59e0b",
-	"#ef4444",
-	"#22c55e",
-	"#0ea5e9",
-	"#6366f1",
-	"#a855f7",
-	"#ec4899",
-	"#14b8a6",
-] as const;
+const frequencyOptions: { value: HabitFrequency; label: string }[] = [
+	{ value: "daily", label: "Daily" },
+	{ value: "weekly", label: "Weekly" },
+	{ value: "biweekly", label: "Bi-weekly" },
+	{ value: "monthly", label: "Monthly" },
+];
+const recoveryPolicyOptions: { value: HabitRecoveryPolicy; label: string }[] = [
+	{ value: "skip", label: "Skip missed" },
+	{ value: "recover", label: "Recover missed" },
+];
+const stepOptions = [15, 30, 60] as const;
 
-type QuickDefaultsFormState = {
+type TaskDefaultsFormState = {
 	priority: Priority;
 	status: "backlog" | "queued";
 	estimatedMinutes: string;
@@ -57,9 +67,19 @@ type QuickDefaultsFormState = {
 	visibilityPreference: TaskVisibilityPreference;
 	color: string;
 };
+
+type HabitDefaultsFormState = {
+	priority: Priority;
+	durationMinutes: string;
+	frequency: HabitFrequency;
+	recoveryPolicy: HabitRecoveryPolicy;
+	visibilityPreference: TaskVisibilityPreference;
+	color: string;
+};
+
 type SchedulingStepMinutes = 15 | 30 | 60;
 
-const toQuickDefaultsForm = (defaults: {
+const toTaskDefaultsForm = (defaults: {
 	priority: Priority;
 	status: "backlog" | "queued";
 	estimatedMinutes: number;
@@ -71,7 +91,7 @@ const toQuickDefaultsForm = (defaults: {
 	sendToUpNext: boolean;
 	visibilityPreference: TaskVisibilityPreference;
 	color: string;
-}): QuickDefaultsFormState => ({
+}): TaskDefaultsFormState => ({
 	priority: defaults.priority,
 	status: defaults.status,
 	estimatedMinutes: formatDurationFromMinutes(defaults.estimatedMinutes),
@@ -85,9 +105,26 @@ const toQuickDefaultsForm = (defaults: {
 	color: defaults.color,
 });
 
+const toHabitDefaultsForm = (defaults: {
+	priority: Priority;
+	durationMinutes: number;
+	frequency: HabitFrequency;
+	recoveryPolicy: HabitRecoveryPolicy;
+	visibilityPreference: TaskVisibilityPreference;
+	color: string;
+}): HabitDefaultsFormState => ({
+	priority: defaults.priority,
+	durationMinutes: formatDurationFromMinutes(defaults.durationMinutes),
+	frequency: defaults.frequency,
+	recoveryPolicy: defaults.recoveryPolicy,
+	visibilityPreference: defaults.visibilityPreference,
+	color: defaults.color,
+});
+
 export default function SchedulingSettingsPage() {
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
-	const [quickDefaultsSaved, setQuickDefaultsSaved] = useState(false);
+	const [taskDefaultsSaved, setTaskDefaultsSaved] = useState(false);
+	const [habitDefaultsSaved, setHabitDefaultsSaved] = useState(false);
 	const [downtimeSaved, setDowntimeSaved] = useState(false);
 	const [stepSaved, setStepSaved] = useState(false);
 
@@ -105,8 +142,8 @@ export default function SchedulingSettingsPage() {
 		schedulingDefaultsQuery.data?.schedulingStepMinutes ?? 15,
 	);
 
-	const [quickDefaultsForm, setQuickDefaultsForm] = useState<QuickDefaultsFormState>(
-		toQuickDefaultsForm(
+	const [taskForm, setTaskForm] = useState<TaskDefaultsFormState>(
+		toTaskDefaultsForm(
 			schedulingDefaultsQuery.data?.taskQuickCreateDefaults ?? {
 				priority: "medium",
 				status: "backlog",
@@ -123,10 +160,28 @@ export default function SchedulingSettingsPage() {
 		),
 	);
 
+	const [habitForm, setHabitForm] = useState<HabitDefaultsFormState>(
+		toHabitDefaultsForm(
+			schedulingDefaultsQuery.data?.habitQuickCreateDefaults ?? {
+				priority: "medium",
+				durationMinutes: 30,
+				frequency: "daily",
+				recoveryPolicy: "skip",
+				visibilityPreference: "private",
+				color: "#22c55e",
+			},
+		),
+	);
+
 	useEffect(() => {
 		if (!schedulingDefaultsQuery.data?.taskQuickCreateDefaults) return;
-		setQuickDefaultsForm(toQuickDefaultsForm(schedulingDefaultsQuery.data.taskQuickCreateDefaults));
+		setTaskForm(toTaskDefaultsForm(schedulingDefaultsQuery.data.taskQuickCreateDefaults));
 	}, [schedulingDefaultsQuery.data?.taskQuickCreateDefaults]);
+
+	useEffect(() => {
+		if (!schedulingDefaultsQuery.data?.habitQuickCreateDefaults) return;
+		setHabitForm(toHabitDefaultsForm(schedulingDefaultsQuery.data.habitQuickCreateDefaults));
+	}, [schedulingDefaultsQuery.data?.habitQuickCreateDefaults]);
 
 	useEffect(() => {
 		if (schedulingDefaultsQuery.data?.schedulingDowntimeMinutes === undefined) return;
@@ -145,8 +200,10 @@ export default function SchedulingSettingsPage() {
 	const { mutate: persistSchedulingStepMinutes, isPending: isSavingStep } = useMutationWithStatus(
 		api.hours.mutations.setSchedulingStepMinutes,
 	);
-	const { mutate: setTaskQuickCreateDefaults, isPending: isSavingQuickDefaults } =
+	const { mutate: setTaskQuickCreateDefaults, isPending: isSavingTaskDefaults } =
 		useMutationWithStatus(api.hours.mutations.setTaskQuickCreateDefaults);
+	const { mutate: setHabitQuickCreateDefaults, isPending: isSavingHabitDefaults } =
+		useMutationWithStatus(api.hours.mutations.setHabitQuickCreateDefaults);
 
 	const onChangeTaskSchedulingMode = async (mode: TaskSchedulingMode) => {
 		setErrorMessage(null);
@@ -157,15 +214,15 @@ export default function SchedulingSettingsPage() {
 		}
 	};
 
-	const onSaveQuickDefaults = async () => {
+	const onSaveTaskDefaults = async () => {
 		setErrorMessage(null);
-		setQuickDefaultsSaved(false);
+		setTaskDefaultsSaved(false);
 
-		const estimatedMinutes = parseDurationToMinutes(quickDefaultsForm.estimatedMinutes);
-		const minChunkMinutes = parseDurationToMinutes(quickDefaultsForm.minChunkMinutes);
-		const maxChunkMinutes = parseDurationToMinutes(quickDefaultsForm.maxChunkMinutes);
-		const restMinutes = parseDurationToMinutes(quickDefaultsForm.restMinutes);
-		const travelMinutes = parseDurationToMinutes(quickDefaultsForm.travelMinutes);
+		const estimatedMinutes = parseDurationToMinutes(taskForm.estimatedMinutes);
+		const minChunkMinutes = parseDurationToMinutes(taskForm.minChunkMinutes);
+		const maxChunkMinutes = parseDurationToMinutes(taskForm.maxChunkMinutes);
+		const restMinutes = parseDurationToMinutes(taskForm.restMinutes);
+		const travelMinutes = parseDurationToMinutes(taskForm.travelMinutes);
 
 		if (
 			estimatedMinutes === null ||
@@ -180,7 +237,7 @@ export default function SchedulingSettingsPage() {
 			travelMinutes < 0
 		) {
 			setErrorMessage(
-				"Quick-create durations are invalid. Ensure values are valid and max chunk >= min chunk.",
+				"Task durations are invalid. Ensure values are valid and max chunk >= min chunk.",
 			);
 			return;
 		}
@@ -188,22 +245,49 @@ export default function SchedulingSettingsPage() {
 		try {
 			await setTaskQuickCreateDefaults({
 				defaults: {
-					priority: quickDefaultsForm.priority,
-					status: quickDefaultsForm.status,
+					priority: taskForm.priority,
+					status: taskForm.status,
 					estimatedMinutes,
-					splitAllowed: quickDefaultsForm.splitAllowed,
+					splitAllowed: taskForm.splitAllowed,
 					minChunkMinutes,
 					maxChunkMinutes,
 					restMinutes,
 					travelMinutes,
-					sendToUpNext: quickDefaultsForm.sendToUpNext,
-					visibilityPreference: quickDefaultsForm.visibilityPreference,
-					color: quickDefaultsForm.color,
+					sendToUpNext: taskForm.sendToUpNext,
+					visibilityPreference: taskForm.visibilityPreference,
+					color: taskForm.color,
 				},
 			});
-			setQuickDefaultsSaved(true);
+			setTaskDefaultsSaved(true);
 		} catch (error) {
-			setErrorMessage(error instanceof Error ? error.message : "Could not update quick defaults.");
+			setErrorMessage(error instanceof Error ? error.message : "Could not update task defaults.");
+		}
+	};
+
+	const onSaveHabitDefaults = async () => {
+		setErrorMessage(null);
+		setHabitDefaultsSaved(false);
+
+		const durationMinutes = parseDurationToMinutes(habitForm.durationMinutes);
+		if (durationMinutes === null || durationMinutes <= 0) {
+			setErrorMessage("Habit duration must be a positive value.");
+			return;
+		}
+
+		try {
+			await setHabitQuickCreateDefaults({
+				defaults: {
+					priority: habitForm.priority,
+					durationMinutes,
+					frequency: habitForm.frequency,
+					recoveryPolicy: habitForm.recoveryPolicy,
+					visibilityPreference: habitForm.visibilityPreference,
+					color: habitForm.color,
+				},
+			});
+			setHabitDefaultsSaved(true);
+		} catch (error) {
+			setErrorMessage(error instanceof Error ? error.message : "Could not update habit defaults.");
 		}
 	};
 
@@ -224,13 +308,12 @@ export default function SchedulingSettingsPage() {
 		}
 	};
 
-	const onSaveStepMinutes = async () => {
+	const onSaveStepMinutes = async (step: SchedulingStepMinutes) => {
 		setErrorMessage(null);
 		setStepSaved(false);
+		setSchedulingStepMinutesDraft(step);
 		try {
-			const savedStep = await persistSchedulingStepMinutes({
-				minutes: schedulingStepMinutes,
-			});
+			const savedStep = await persistSchedulingStepMinutes({ minutes: step });
 			setSchedulingStepMinutesDraft(savedStep);
 			setStepSaved(true);
 		} catch (error) {
@@ -239,152 +322,157 @@ export default function SchedulingSettingsPage() {
 	};
 
 	return (
-		<div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-			<div className="space-y-4">
-				<Card className="border-border/70 bg-card/70">
-					<CardHeader>
-						<CardDescription className="text-xs uppercase tracking-[0.14em]">Tasks</CardDescription>
-						<CardTitle className="flex items-center gap-2 text-xl">
-							<SlidersHorizontal className="size-4 text-primary" />
-							Default Scheduling Mode
-						</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-4">
-						<Select
-							value={defaultTaskSchedulingMode}
-							onValueChange={(value) =>
-								void onChangeTaskSchedulingMode(value as TaskSchedulingMode)
-							}
-							disabled={isSavingMode}
-						>
-							<SelectTrigger>
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent>
-								{Object.entries(schedulingModeLabels).map(([mode, label]) => (
-									<SelectItem key={mode} value={mode}>
-										{label}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
-						<p className="text-sm text-muted-foreground">
-							{defaultTaskSchedulingMode
-								? schedulingModeDescriptions[defaultTaskSchedulingMode]
-								: "Choose how tasks should be placed by default."}
-						</p>
-						<div className="space-y-2 border-t border-border/60 pt-3">
-							<Label htmlFor="downtime-minutes">Downtime between scheduled blocks</Label>
-							<div className="flex items-center gap-2">
-								<Input
-									id="downtime-minutes"
-									type="number"
-									min={0}
-									step={1}
-									value={downtimeMinutes}
-									onChange={(event) => setDowntimeMinutes(event.target.value)}
-									className="max-w-[140px]"
-								/>
-								<span className="text-xs text-muted-foreground">minutes</span>
-								<Button
-									variant="outline"
-									size="sm"
-									className="gap-1.5"
-									disabled={isSavingDowntime}
-									onClick={() => void onSaveDowntime()}
-								>
-									<Save className="size-3.5" />
-									{isSavingDowntime ? "Saving..." : "Save"}
-								</Button>
-							</div>
-							<p className="text-xs text-muted-foreground">
-								Adds buffer time between scheduled tasks and habits.
-							</p>
-							{downtimeSaved ? (
-								<p className="text-sm text-emerald-600 dark:text-emerald-300">Downtime saved.</p>
-							) : null}
-						</div>
-						<div className="space-y-2 border-t border-border/60 pt-3">
-							<Label htmlFor="scheduling-step-minutes">Global calendar time step</Label>
-							<div className="flex items-center gap-2">
-								<Select
-									value={String(schedulingStepMinutes)}
-									onValueChange={(value) => {
-										setSchedulingStepMinutesDraft(
-											Number.parseInt(value, 10) as SchedulingStepMinutes,
-										);
-										setStepSaved(false);
-									}}
-								>
-									<SelectTrigger id="scheduling-step-minutes" className="max-w-[160px]">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										<SelectItem value="15">15 minutes</SelectItem>
-										<SelectItem value="30">30 minutes</SelectItem>
-										<SelectItem value="60">60 minutes</SelectItem>
-									</SelectContent>
-								</Select>
-								<Button
-									variant="outline"
-									size="sm"
-									className="gap-1.5"
-									disabled={isSavingStep}
-									onClick={() => void onSaveStepMinutes()}
-								>
-									<Save className="size-3.5" />
-									{isSavingStep ? "Saving..." : "Save"}
-								</Button>
-							</div>
-							<p className="text-xs text-muted-foreground">
-								Controls drag, resize, and time input snapping in Calendar and Hours settings.
-							</p>
-							{stepSaved ? (
-								<p className="text-sm text-emerald-600 dark:text-emerald-300">Time step saved.</p>
-							) : null}
-						</div>
-					</CardContent>
-				</Card>
+		<>
+			<SettingsSectionHeader
+				sectionNumber="02"
+				sectionLabel="Scheduling"
+				title="Scheduling Engine"
+				description="Configure how the scheduler places work, and set defaults for new tasks and habits."
+			/>
 
-				<Card className="border-border/70 bg-card/70">
-					<CardHeader>
-						<CardDescription className="text-xs uppercase tracking-[0.14em]">
-							Task creation
-						</CardDescription>
-						<CardTitle className="text-xl">Quick Create Defaults</CardTitle>
-					</CardHeader>
-					<CardContent className="space-y-4">
-						<div className="grid gap-3 md:grid-cols-2">
+			<div className="space-y-4">
+				{/* ── Engine: Mode selector ── */}
+				<div className="rounded-xl border border-border/60 p-5">
+					<div className="mb-4 flex items-center gap-2.5">
+						<Zap className="size-4 text-muted-foreground/60" />
+						<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+							Scheduling mode
+						</p>
+					</div>
+
+					<div className="space-y-1.5">
+						{schedulingModes.map(({ mode, label, description }) => {
+							const isActive = defaultTaskSchedulingMode === mode;
+							return (
+								<button
+									key={mode}
+									type="button"
+									onClick={() => void onChangeTaskSchedulingMode(mode)}
+									disabled={isSavingMode}
+									className={cn(
+										"group flex w-full items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors",
+										isActive
+											? "border-primary/40 bg-primary/5"
+											: "border-border/50 hover:border-border/80 hover:bg-muted/20",
+									)}
+								>
+									<div
+										className={cn(
+											"flex size-5 shrink-0 items-center justify-center rounded-full border transition-colors",
+											isActive
+												? "border-primary bg-primary text-primary-foreground"
+												: "border-border/60 bg-background",
+										)}
+									>
+										{isActive ? <Check className="size-3" /> : null}
+									</div>
+									<div className="min-w-0 flex-1">
+										<p className="text-sm font-medium">{label}</p>
+										<p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+									</div>
+								</button>
+							);
+						})}
+					</div>
+
+					{/* Step + Downtime */}
+					<div className="mt-5 border-t border-border/40 pt-4">
+						<div className="grid gap-4 sm:grid-cols-2">
 							<div className="space-y-2">
-								<Label>Default priority</Label>
+								<Label className="text-xs">Calendar time step</Label>
+								<div className="flex items-center gap-1.5">
+									{stepOptions.map((step) => (
+										<button
+											key={step}
+											type="button"
+											onClick={() => void onSaveStepMinutes(step)}
+											disabled={isSavingStep}
+											className={cn(
+												"h-8 min-w-[52px] rounded-md border px-3 text-xs font-medium transition-colors",
+												schedulingStepMinutes === step
+													? "border-primary/40 bg-primary/10 text-primary"
+													: "border-border/60 bg-background text-muted-foreground/60 hover:border-border hover:text-muted-foreground",
+											)}
+										>
+											{step}m
+										</button>
+									))}
+								</div>
+								{stepSaved ? <p className="text-[11px] text-accent">Saved.</p> : null}
+							</div>
+							<div className="space-y-2">
+								<Label htmlFor="downtime-minutes" className="text-xs">
+									Downtime between blocks
+								</Label>
+								<div className="flex items-center gap-2">
+									<Input
+										id="downtime-minutes"
+										type="number"
+										min={0}
+										step={1}
+										value={downtimeMinutes}
+										onChange={(event) => setDowntimeMinutes(event.target.value)}
+										className="w-20"
+									/>
+									<span className="text-[11px] text-muted-foreground">min</span>
+									<Button
+										variant="outline"
+										size="sm"
+										className="ml-auto h-8 gap-1 px-2 text-xs"
+										disabled={isSavingDowntime}
+										onClick={() => void onSaveDowntime()}
+									>
+										<Save className="size-3" />
+										{isSavingDowntime ? "..." : "Save"}
+									</Button>
+								</div>
+								{downtimeSaved ? <p className="text-[11px] text-accent">Saved.</p> : null}
+							</div>
+						</div>
+					</div>
+				</div>
+
+				{/* ── Task defaults ── */}
+				<div
+					className="overflow-hidden rounded-xl border border-border/60"
+					style={{ borderLeftColor: taskForm.color, borderLeftWidth: 3 }}
+				>
+					<div className="p-5">
+						<div className="mb-4 flex items-center gap-2.5">
+							<ListChecks className="size-4 text-muted-foreground/60" />
+							<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+								Task defaults
+							</p>
+						</div>
+
+						<div className="grid gap-3 sm:grid-cols-2">
+							<div className="space-y-1.5">
+								<Label className="text-xs">Priority</Label>
 								<Select
-									value={quickDefaultsForm.priority}
+									value={taskForm.priority}
 									onValueChange={(priority) =>
-										setQuickDefaultsForm((current) => ({
-											...current,
-											priority: priority as Priority,
-										}))
+										setTaskForm((c) => ({ ...c, priority: priority as Priority }))
 									}
 								>
 									<SelectTrigger>
 										<SelectValue />
 									</SelectTrigger>
 									<SelectContent>
-										{priorityOptions.map((priority) => (
-											<SelectItem key={priority} value={priority}>
-												{priority}
+										{priorityOptions.map((p) => (
+											<SelectItem key={p} value={p}>
+												{p}
 											</SelectItem>
 										))}
 									</SelectContent>
 								</Select>
 							</div>
-							<div className="space-y-2">
-								<Label>Default status</Label>
+							<div className="space-y-1.5">
+								<Label className="text-xs">Status</Label>
 								<Select
-									value={quickDefaultsForm.status}
+									value={taskForm.status}
 									onValueChange={(status) =>
-										setQuickDefaultsForm((current) => ({
-											...current,
+										setTaskForm((c) => ({
+											...c,
 											status: status as "backlog" | "queued",
 										}))
 									}
@@ -400,182 +488,290 @@ export default function SchedulingSettingsPage() {
 							</div>
 						</div>
 
-						<div className="grid gap-3 md:grid-cols-3">
-							<div className="space-y-2">
-								<Label>Time needed</Label>
+						<div className="mt-3 grid gap-3 sm:grid-cols-3">
+							<div className="space-y-1.5">
+								<Label className="text-xs">Time needed</Label>
 								<DurationInput
-									value={quickDefaultsForm.estimatedMinutes}
-									onChange={(estimatedMinutes) =>
-										setQuickDefaultsForm((current) => ({ ...current, estimatedMinutes }))
-									}
+									value={taskForm.estimatedMinutes}
+									onChange={(estimatedMinutes) => setTaskForm((c) => ({ ...c, estimatedMinutes }))}
 								/>
 							</div>
-							<div className="space-y-2">
-								<Label>Min chunk</Label>
+							<div className="space-y-1.5">
+								<Label className="text-xs">Min chunk</Label>
 								<DurationInput
-									value={quickDefaultsForm.minChunkMinutes}
-									onChange={(minChunkMinutes) =>
-										setQuickDefaultsForm((current) => ({ ...current, minChunkMinutes }))
-									}
-									className={
-										!quickDefaultsForm.splitAllowed ? "pointer-events-none opacity-60" : ""
-									}
+									value={taskForm.minChunkMinutes}
+									onChange={(minChunkMinutes) => setTaskForm((c) => ({ ...c, minChunkMinutes }))}
+									className={!taskForm.splitAllowed ? "pointer-events-none opacity-60" : ""}
 								/>
 							</div>
-							<div className="space-y-2">
-								<Label>Max chunk</Label>
+							<div className="space-y-1.5">
+								<Label className="text-xs">Max chunk</Label>
 								<DurationInput
-									value={quickDefaultsForm.maxChunkMinutes}
-									onChange={(maxChunkMinutes) =>
-										setQuickDefaultsForm((current) => ({ ...current, maxChunkMinutes }))
-									}
-									className={
-										!quickDefaultsForm.splitAllowed ? "pointer-events-none opacity-60" : ""
-									}
+									value={taskForm.maxChunkMinutes}
+									onChange={(maxChunkMinutes) => setTaskForm((c) => ({ ...c, maxChunkMinutes }))}
+									className={!taskForm.splitAllowed ? "pointer-events-none opacity-60" : ""}
 								/>
-							</div>
-						</div>
-						<div className="grid gap-3 md:grid-cols-2">
-							<div className="space-y-2">
-								<Label>Rest time</Label>
-								<DurationInput
-									value={quickDefaultsForm.restMinutes}
-									onChange={(restMinutes) =>
-										setQuickDefaultsForm((current) => ({ ...current, restMinutes }))
-									}
-								/>
-								<p className="text-xs text-muted-foreground">
-									Extra buffer applied around this task type when scheduling.
-								</p>
-							</div>
-							<div className="space-y-2">
-								<Label>Travel duration (each side)</Label>
-								<DurationInput
-									value={quickDefaultsForm.travelMinutes}
-									onChange={(travelMinutes) =>
-										setQuickDefaultsForm((current) => ({ ...current, travelMinutes }))
-									}
-								/>
-								<p className="text-xs text-muted-foreground">
-									For tasks with a location, adds Travel blocks before and after.
-								</p>
 							</div>
 						</div>
 
-						<div className="space-y-2">
-							<Label>Default color</Label>
-							<div className="flex flex-wrap gap-2 rounded-lg border border-border p-2">
-								{taskColors.map((color) => (
-									<button
-										key={color}
-										type="button"
-										onClick={() => setQuickDefaultsForm((current) => ({ ...current, color }))}
-										className={`size-6 rounded-full border transition-transform hover:scale-105 ${
-											quickDefaultsForm.color === color
-												? "border-foreground ring-2 ring-foreground/20"
-												: "border-border"
-										}`}
-										style={{ backgroundColor: color }}
-										aria-label={`Select ${color}`}
-									/>
-								))}
+						<div className="mt-3 grid gap-3 sm:grid-cols-2">
+							<div className="space-y-1.5">
+								<Label className="text-xs">Rest time</Label>
+								<DurationInput
+									value={taskForm.restMinutes}
+									onChange={(restMinutes) => setTaskForm((c) => ({ ...c, restMinutes }))}
+								/>
+							</div>
+							<div className="space-y-1.5">
+								<Label className="text-xs">Travel (each side)</Label>
+								<DurationInput
+									value={taskForm.travelMinutes}
+									onChange={(travelMinutes) => setTaskForm((c) => ({ ...c, travelMinutes }))}
+								/>
 							</div>
 						</div>
 
-						<div className="grid gap-2">
-							<div className="flex items-center justify-between rounded-lg border border-border/70 px-3 py-2">
+						<div className="mt-4 space-y-1.5">
+							<Label className="text-xs">Color</Label>
+							<ColorPalette
+								value={taskForm.color}
+								onChange={(color) => setTaskForm((c) => ({ ...c, color }))}
+							/>
+						</div>
+
+						{/* Toggles */}
+						<div className="mt-5 space-y-3 border-t border-border/40 pt-4">
+							<div className="flex items-center justify-between">
 								<div>
-									<p className="text-sm font-medium">Split tasks by default</p>
-									<p className="text-xs text-muted-foreground">
-										Allow scheduler chunking automatically.
+									<p className="text-xs font-medium">Split tasks</p>
+									<p className="text-[11px] text-muted-foreground">
+										Allow scheduler to chunk automatically
 									</p>
 								</div>
 								<Switch
-									checked={quickDefaultsForm.splitAllowed}
-									onCheckedChange={(splitAllowed) =>
-										setQuickDefaultsForm((current) => ({ ...current, splitAllowed }))
-									}
+									checked={taskForm.splitAllowed}
+									onCheckedChange={(splitAllowed) => setTaskForm((c) => ({ ...c, splitAllowed }))}
 								/>
 							</div>
-							<div className="flex items-center justify-between rounded-lg border border-border/70 px-3 py-2">
+							<div className="flex items-center justify-between">
 								<div>
-									<p className="text-sm font-medium">Send new tasks to Up Next</p>
-									<p className="text-xs text-muted-foreground">
-										Queue items immediately on creation.
+									<p className="text-xs font-medium">Send to Up Next</p>
+									<p className="text-[11px] text-muted-foreground">
+										Queue items immediately on creation
 									</p>
 								</div>
 								<Switch
-									checked={quickDefaultsForm.sendToUpNext}
-									onCheckedChange={(sendToUpNext) =>
-										setQuickDefaultsForm((current) => ({ ...current, sendToUpNext }))
-									}
+									checked={taskForm.sendToUpNext}
+									onCheckedChange={(sendToUpNext) => setTaskForm((c) => ({ ...c, sendToUpNext }))}
 								/>
 							</div>
-							<div className="flex items-center justify-between rounded-lg border border-border/70 px-3 py-2">
+							<div className="flex items-center justify-between">
 								<div>
-									<p className="text-sm font-medium">Private visibility by default</p>
-									<p className="text-xs text-muted-foreground">
-										Private events hide task details in connected calendars.
+									<p className="text-xs font-medium">Private visibility</p>
+									<p className="text-[11px] text-muted-foreground">
+										Hide details in connected calendars
 									</p>
 								</div>
 								<Switch
-									checked={quickDefaultsForm.visibilityPreference === "private"}
+									checked={taskForm.visibilityPreference === "private"}
 									onCheckedChange={(isPrivate) =>
-										setQuickDefaultsForm((current) => ({
-											...current,
+										setTaskForm((c) => ({
+											...c,
 											visibilityPreference: isPrivate ? "private" : "default",
 										}))
 									}
 								/>
 							</div>
 						</div>
+					</div>
 
-						<div className="flex items-center justify-between">
-							<p className="text-xs text-muted-foreground">
-								These defaults are account-level and power the quick create dialog in Tasks.
-							</p>
+					{/* Save footer */}
+					<div className="flex items-center justify-between border-t border-border/40 bg-muted/5 px-5 py-3">
+						<p className="text-[11px] text-muted-foreground">Applied when quick-creating tasks</p>
+						<div className="flex items-center gap-2">
+							{taskDefaultsSaved ? <p className="text-[11px] text-accent">Saved.</p> : null}
 							<Button
-								variant="outline"
 								size="sm"
-								className="gap-1.5"
-								disabled={isSavingQuickDefaults}
-								onClick={() => void onSaveQuickDefaults()}
+								className="h-8 gap-1.5 px-3 text-xs"
+								disabled={isSavingTaskDefaults}
+								onClick={() => void onSaveTaskDefaults()}
 							>
-								<Save className="size-3.5" />
-								{isSavingQuickDefaults ? "Saving..." : "Save defaults"}
+								<Save className="size-3" />
+								{isSavingTaskDefaults ? "Saving..." : "Save defaults"}
 							</Button>
 						</div>
-						{quickDefaultsSaved ? (
-							<p className="text-sm text-emerald-600 dark:text-emerald-300">
-								Quick defaults saved.
-							</p>
-						) : null}
-					</CardContent>
-				</Card>
-			</div>
-
-			<Card className="border-border/70 bg-card/70">
-				<CardHeader className="pb-2">
-					<CardDescription className="text-xs uppercase tracking-[0.14em]">
-						Reference
-					</CardDescription>
-					<CardTitle className="text-lg">How it works</CardTitle>
-				</CardHeader>
-				<CardContent className="space-y-2 text-sm text-muted-foreground">
-					<p>Scheduling mode is global and applies when a task uses "default" mode.</p>
-					<p>Downtime inserts a configurable buffer between scheduled blocks.</p>
-					<p>Time step controls global calendar snapping (15, 30, or 60 minute increments).</p>
-					<p>Rest and travel defaults are applied to newly created tasks and can be overridden.</p>
-					<p>Quick create defaults are account-specific and loaded each time you open New task.</p>
-					<p>Advanced task fields are still available in the task dialog when needed.</p>
-				</CardContent>
-			</Card>
-
-			{errorMessage ? (
-				<div className="lg:col-span-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
-					{errorMessage}
+					</div>
 				</div>
-			) : null}
-		</div>
+
+				{/* ── Habit defaults ── */}
+				<div
+					className="overflow-hidden rounded-xl border border-border/60"
+					style={{ borderLeftColor: habitForm.color, borderLeftWidth: 3 }}
+				>
+					<div className="p-5">
+						<div className="mb-4 flex items-center gap-2.5">
+							<Repeat className="size-4 text-muted-foreground/60" />
+							<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
+								Habit defaults
+							</p>
+						</div>
+
+						<div className="grid gap-3 sm:grid-cols-2">
+							<div className="space-y-1.5">
+								<Label className="text-xs">Priority</Label>
+								<Select
+									value={habitForm.priority}
+									onValueChange={(priority) =>
+										setHabitForm((c) => ({
+											...c,
+											priority: priority as Priority,
+										}))
+									}
+								>
+									<SelectTrigger>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										{priorityOptions.map((p) => (
+											<SelectItem key={p} value={p}>
+												{p}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+							<div className="space-y-1.5">
+								<Label className="text-xs">Duration</Label>
+								<DurationInput
+									value={habitForm.durationMinutes}
+									onChange={(durationMinutes) => setHabitForm((c) => ({ ...c, durationMinutes }))}
+								/>
+							</div>
+						</div>
+
+						<div className="mt-3 grid gap-3 sm:grid-cols-2">
+							<div className="space-y-1.5">
+								<Label className="text-xs">Frequency</Label>
+								<Select
+									value={habitForm.frequency}
+									onValueChange={(frequency) =>
+										setHabitForm((c) => ({
+											...c,
+											frequency: frequency as HabitFrequency,
+										}))
+									}
+								>
+									<SelectTrigger>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										{frequencyOptions.map((opt) => (
+											<SelectItem key={opt.value} value={opt.value}>
+												{opt.label}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+							<div className="space-y-1.5">
+								<Label className="text-xs">Recovery policy</Label>
+								<Select
+									value={habitForm.recoveryPolicy}
+									onValueChange={(policy) =>
+										setHabitForm((c) => ({
+											...c,
+											recoveryPolicy: policy as HabitRecoveryPolicy,
+										}))
+									}
+								>
+									<SelectTrigger>
+										<SelectValue />
+									</SelectTrigger>
+									<SelectContent>
+										{recoveryPolicyOptions.map((opt) => (
+											<SelectItem key={opt.value} value={opt.value}>
+												{opt.label}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</div>
+						</div>
+
+						<div className="mt-4 space-y-1.5">
+							<Label className="text-xs">Color</Label>
+							<ColorPalette
+								value={habitForm.color}
+								onChange={(color) => setHabitForm((c) => ({ ...c, color }))}
+							/>
+						</div>
+
+						{/* Toggles */}
+						<div className="mt-5 border-t border-border/40 pt-4">
+							<div className="flex items-center justify-between">
+								<div>
+									<p className="text-xs font-medium">Private visibility</p>
+									<p className="text-[11px] text-muted-foreground">
+										Hide details in connected calendars
+									</p>
+								</div>
+								<Switch
+									checked={habitForm.visibilityPreference === "private"}
+									onCheckedChange={(isPrivate) =>
+										setHabitForm((c) => ({
+											...c,
+											visibilityPreference: isPrivate ? "private" : "default",
+										}))
+									}
+								/>
+							</div>
+						</div>
+					</div>
+
+					{/* Save footer */}
+					<div className="flex items-center justify-between border-t border-border/40 bg-muted/5 px-5 py-3">
+						<p className="text-[11px] text-muted-foreground">Applied when quick-creating habits</p>
+						<div className="flex items-center gap-2">
+							{habitDefaultsSaved ? <p className="text-[11px] text-accent">Saved.</p> : null}
+							<Button
+								size="sm"
+								className="h-8 gap-1.5 px-3 text-xs"
+								disabled={isSavingHabitDefaults}
+								onClick={() => void onSaveHabitDefaults()}
+							>
+								<Save className="size-3" />
+								{isSavingHabitDefaults ? "Saving..." : "Save defaults"}
+							</Button>
+						</div>
+					</div>
+				</div>
+
+				{/* Reference */}
+				<details className="rounded-xl border border-border/60">
+					<summary className="cursor-pointer px-5 py-3 text-xs font-medium text-muted-foreground">
+						How it works
+					</summary>
+					<div className="space-y-1.5 border-t border-border/40 px-5 py-3 text-[11px] text-muted-foreground">
+						<p>Scheduling mode applies when a task uses "default" mode.</p>
+						<p>Downtime inserts buffer between scheduled blocks.</p>
+						<p>Time step controls calendar snapping (15, 30, or 60 min).</p>
+						<p>
+							Task defaults load each time you quick-create a task. Rest and travel can be
+							overridden per task.
+						</p>
+						<p>
+							Habit defaults load each time you quick-create a habit. Recovery policy controls
+							whether missed sessions are rescheduled.
+						</p>
+					</div>
+				</details>
+
+				{errorMessage ? (
+					<div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+						{errorMessage}
+					</div>
+				) : null}
+			</div>
+		</>
 	);
 }

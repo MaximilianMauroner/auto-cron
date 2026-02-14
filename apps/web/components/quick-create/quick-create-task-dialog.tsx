@@ -1,6 +1,7 @@
 "use client";
 
 import PaywallDialog from "@/components/autumn/paywall-dialog";
+import { CategoryPicker } from "@/components/category-picker";
 import { Button } from "@/components/ui/button";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 import { DurationInput } from "@/components/ui/duration-input";
@@ -19,9 +20,10 @@ import { useActionWithStatus, useAuthenticatedQueryWithStatus } from "@/hooks/us
 import { getConvexErrorPayload } from "@/lib/convex-errors";
 import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duration";
 import type { Priority, TaskVisibilityPreference } from "@auto-cron/types";
-import { Rocket } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 type TaskQuickCreateDefaults = {
 	priority: Priority;
@@ -83,6 +85,7 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 	const [deadline, setDeadline] = useState("");
 	const [priority, setPriority] = useState<Priority>("medium");
 	const [sendToUpNext, setSendToUpNext] = useState(false);
+	const [categoryId, setCategoryId] = useState<string>("");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [paywallOpen, setPaywallOpen] = useState(false);
 
@@ -94,6 +97,10 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 		() => schedulingDefaultsQuery.data?.taskQuickCreateDefaults ?? fallbackDefaults,
 		[schedulingDefaultsQuery.data?.taskQuickCreateDefaults],
 	);
+	const defaultCategoryQuery = useAuthenticatedQueryWithStatus(
+		api.categories.queries.getDefaultCategory,
+		{},
+	);
 
 	const { execute: createTask, isPending } = useActionWithStatus(api.tasks.actions.createTask);
 
@@ -104,8 +111,9 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 		setDeadline("");
 		setPriority(defaults.priority);
 		setSendToUpNext(defaults.sendToUpNext);
+		setCategoryId(defaultCategoryQuery.data?._id ?? "");
 		setErrorMessage(null);
-	}, [open, defaults]);
+	}, [open, defaults, defaultCategoryQuery.data]);
 
 	const onSubmit = async () => {
 		const parsed = parseDurationToMinutes(estimatedMinutes);
@@ -131,6 +139,7 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 					travelMinutes: defaults.travelMinutes,
 					visibilityPreference: defaults.visibilityPreference,
 					color: defaults.color,
+					categoryId: categoryId ? (categoryId as Id<"taskCategories">) : undefined,
 				},
 			});
 			onOpenChange(false);
@@ -149,15 +158,23 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 		<>
 			<Sheet open={open} onOpenChange={onOpenChange}>
 				<SheetContent side="right" className="w-80 p-0 sm:max-w-md" showCloseButton={false}>
-					<SheetHeader className="border-b border-border/70 px-5 py-4">
-						<SheetTitle className="flex items-center gap-2 text-lg">
-							<Rocket className="size-4 text-primary" />
-							Quick create task
+					{/* ── Header ── */}
+					<SheetHeader className="border-b border-border/60 px-6 py-5">
+						<p className="font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+							01 / New task
+						</p>
+						<SheetTitle className="mt-1 font-[family-name:var(--font-outfit)] text-xl font-semibold tracking-tight">
+							Quick create
 						</SheetTitle>
 					</SheetHeader>
-					<div className="space-y-4 px-5 py-4">
-						<div className="space-y-1.5">
-							<Label htmlFor="qc-task-title" className="text-xs uppercase tracking-[0.1em]">
+
+					<div className="flex flex-col gap-0 px-6">
+						{/* ── Task name ── */}
+						<div className="py-5">
+							<Label
+								htmlFor="qc-task-title"
+								className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70"
+							>
 								Task name
 							</Label>
 							<Input
@@ -173,69 +190,123 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 									void onSubmit();
 								}}
 								placeholder="What needs to get done?"
+								className="mt-2 border-0 border-b border-border/50 bg-transparent px-0 font-[family-name:var(--font-outfit)] text-[0.9rem] font-medium shadow-none ring-0 transition-colors placeholder:text-muted-foreground/40 focus-visible:border-accent focus-visible:ring-0"
 								autoFocus
 							/>
 						</div>
-						<div className="grid grid-cols-2 gap-3">
-							<div className="space-y-1.5">
-								<Label className="text-xs uppercase tracking-[0.1em]">Time needed</Label>
-								<DurationInput
-									value={estimatedMinutes}
-									onChange={setEstimatedMinutes}
-									placeholder="e.g. 30 mins"
-								/>
-							</div>
-							<div className="space-y-1.5">
-								<Label className="text-xs uppercase tracking-[0.1em]">Due date</Label>
-								<DateTimePicker value={deadline} onChange={setDeadline} placeholder="No deadline" />
-							</div>
-						</div>
-						<div className="grid grid-cols-2 gap-3">
-							<div className="space-y-1.5">
-								<Label htmlFor="qc-task-priority" className="text-xs uppercase tracking-[0.1em]">
-									Priority
-								</Label>
-								<Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
-									<SelectTrigger id="qc-task-priority">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{(["low", "medium", "high", "critical", "blocker"] as const).map((p) => (
-											<SelectItem key={p} value={p}>
-												{priorityLabels[p]}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</div>
-							<div className="flex items-end pb-1">
-								<div className="flex items-center gap-2">
-									<Switch
-										id="qc-task-upnext"
-										checked={sendToUpNext}
-										onCheckedChange={setSendToUpNext}
-									/>
-									<Label htmlFor="qc-task-upnext" className="text-sm">
-										Send to Up Next
+
+						<div className="h-px bg-border/40" />
+
+						{/* ── Timing ── */}
+						<div className="space-y-3 py-5">
+							<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+								Timing
+							</p>
+							<div className="grid grid-cols-2 gap-3">
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Duration
 									</Label>
+									<DurationInput
+										value={estimatedMinutes}
+										onChange={setEstimatedMinutes}
+										placeholder="e.g. 30m"
+									/>
+								</div>
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Deadline
+									</Label>
+									<DateTimePicker value={deadline} onChange={setDeadline} placeholder="None" />
 								</div>
 							</div>
 						</div>
+
+						<div className="h-px bg-border/40" />
+
+						{/* ── Classification ── */}
+						<div className="space-y-3 py-5">
+							<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+								Classification
+							</p>
+							<div className="grid grid-cols-2 gap-3">
+								<div className="space-y-1.5">
+									<Label
+										htmlFor="qc-task-priority"
+										className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+									>
+										Priority
+									</Label>
+									<Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
+										<SelectTrigger id="qc-task-priority">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											{(["low", "medium", "high", "critical", "blocker"] as const).map((p) => (
+												<SelectItem key={p} value={p}>
+													{priorityLabels[p]}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Category
+									</Label>
+									<CategoryPicker value={categoryId} onValueChange={setCategoryId} />
+								</div>
+							</div>
+						</div>
+
+						<div className="h-px bg-border/40" />
+
+						{/* ── Options ── */}
+						<div className="py-5">
+							<div className="flex items-center justify-between">
+								<div>
+									<p className="font-[family-name:var(--font-outfit)] text-[0.8rem] font-medium">
+										Send to Up Next
+									</p>
+									<p className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.1em] text-muted-foreground/50">
+										Queue immediately
+									</p>
+								</div>
+								<Switch
+									id="qc-task-upnext"
+									checked={sendToUpNext}
+									onCheckedChange={setSendToUpNext}
+								/>
+							</div>
+						</div>
+
+						{/* ── Error ── */}
 						{errorMessage ? (
-							<p className="text-xs text-rose-600 dark:text-rose-400">{errorMessage}</p>
+							<div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+								<p className="font-[family-name:var(--font-cutive)] text-[0.66rem] uppercase tracking-[0.05em] text-destructive">
+									{errorMessage}
+								</p>
+							</div>
 						) : null}
 					</div>
-					<SheetFooter className="border-t border-border/70 px-5 py-3">
-						<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+
+					{/* ── Footer ── */}
+					<SheetFooter className="mt-auto flex-row items-center gap-2 border-t border-border/60 px-6 py-4">
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={() => onOpenChange(false)}
+							className="font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium tracking-[0.02em] text-muted-foreground hover:text-foreground"
+						>
 							Cancel
 						</Button>
 						<Button
 							onClick={() => void onSubmit()}
 							disabled={isPending}
-							className="gap-1.5 bg-accent text-accent-foreground shadow-[0_2px_8px_-2px_rgba(252,163,17,0.2)] hover:bg-accent/90"
+							className="gap-2 bg-accent font-[family-name:var(--font-outfit)] text-[0.76rem] font-bold uppercase tracking-[0.1em] text-accent-foreground shadow-[0_2px_12px_-3px_rgba(252,163,17,0.3)] transition-all hover:bg-accent/90 hover:shadow-[0_4px_16px_-3px_rgba(252,163,17,0.4)]"
 						>
-							<Rocket className="size-3.5" />
-							{isPending ? "Creating..." : "Create task"}
+							{isPending ? "Creating…" : "Create"}
+							<ArrowRight className="size-3.5" />
 						</Button>
 					</SheetFooter>
 				</SheetContent>

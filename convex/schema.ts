@@ -32,6 +32,24 @@ export default defineSchema({
 			v.union(v.literal("default"), v.literal("private")),
 		),
 		taskQuickCreateColor: v.optional(v.string()),
+		habitQuickCreatePriority: v.optional(
+			v.union(
+				v.literal("low"),
+				v.literal("medium"),
+				v.literal("high"),
+				v.literal("critical"),
+				v.literal("blocker"),
+			),
+		),
+		habitQuickCreateDurationMinutes: v.optional(v.number()),
+		habitQuickCreateFrequency: v.optional(
+			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly")),
+		),
+		habitQuickCreateRecoveryPolicy: v.optional(v.union(v.literal("skip"), v.literal("recover"))),
+		habitQuickCreateVisibilityPreference: v.optional(
+			v.union(v.literal("default"), v.literal("private")),
+		),
+		habitQuickCreateColor: v.optional(v.string()),
 		googleRefreshToken: v.optional(v.string()),
 		googleSyncToken: v.optional(v.string()),
 		googleCalendarSyncTokens: v.optional(
@@ -64,11 +82,41 @@ export default defineSchema({
 		schedulingHorizonDays: v.number(), // default: 75
 		schedulingDowntimeMinutes: v.optional(v.number()),
 		schedulingStepMinutes: v.optional(v.union(v.literal(15), v.literal(30), v.literal(60))),
+		weekStartsOn: v.optional(
+			v.union(
+				v.literal(0),
+				v.literal(1),
+				v.literal(2),
+				v.literal(3),
+				v.literal(4),
+				v.literal(5),
+				v.literal(6),
+			),
+		),
+		dateFormat: v.optional(
+			v.union(v.literal("MM/DD/YYYY"), v.literal("DD/MM/YYYY"), v.literal("YYYY-MM-DD")),
+		),
 		schedulingModelVersion: v.optional(v.number()),
 		hoursBootstrapped: v.optional(v.boolean()),
 	})
 		.index("by_userId", ["userId"])
 		.index("by_googleRefreshToken_userId", ["googleRefreshToken", "userId"]),
+
+	taskCategories: defineTable({
+		userId: v.string(),
+		name: v.string(),
+		description: v.optional(v.string()),
+		color: v.string(),
+		isSystem: v.boolean(),
+		isDefault: v.boolean(),
+		sortOrder: v.number(),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_userId", ["userId"])
+		.index("by_userId_isSystem", ["userId", "isSystem"])
+		.index("by_userId_isDefault", ["userId", "isDefault"])
+		.index("by_userId_name", ["userId", "name"]),
 
 	tasks: defineTable({
 		userId: v.string(),
@@ -109,15 +157,12 @@ export default defineSchema({
 		visibilityPreference: v.optional(v.union(v.literal("default"), v.literal("private"))),
 		preferredCalendarId: v.optional(v.string()),
 		color: v.optional(v.string()),
-		// Deprecated: task-level pinning replaced by per-event pinning on calendarEvents.
-		// Kept temporarily for schema compatibility with existing documents.
-		// Run stripLegacyPinnedFields migration, then remove these two lines.
-		pinnedStart: v.optional(v.number()),
-		pinnedEnd: v.optional(v.number()),
+		categoryId: v.optional(v.id("taskCategories")),
 	})
 		.index("by_userId", ["userId"])
 		.index("by_userId_status", ["userId", "status"])
-		.index("by_userId_hoursSetId", ["userId", "hoursSetId"]),
+		.index("by_userId_hoursSetId", ["userId", "hoursSetId"])
+		.index("by_userId_categoryId", ["userId", "categoryId"]),
 
 	habits: defineTable({
 		userId: v.string(),
@@ -132,15 +177,7 @@ export default defineSchema({
 				v.literal("blocker"),
 			),
 		),
-		category: v.union(
-			v.literal("health"),
-			v.literal("fitness"),
-			v.literal("learning"),
-			v.literal("mindfulness"),
-			v.literal("productivity"),
-			v.literal("social"),
-			v.literal("other"),
-		),
+		categoryId: v.id("taskCategories"),
 		recurrenceRule: v.optional(v.string()),
 		recoveryPolicy: v.optional(v.union(v.literal("skip"), v.literal("recover"))),
 		frequency: v.optional(
@@ -179,7 +216,8 @@ export default defineSchema({
 		isActive: v.boolean(),
 	})
 		.index("by_userId", ["userId"])
-		.index("by_userId_hoursSetId", ["userId", "hoursSetId"]),
+		.index("by_userId_hoursSetId", ["userId", "hoursSetId"])
+		.index("by_userId_categoryId", ["userId", "categoryId"]),
 
 	hoursSets: defineTable({
 		userId: v.string(),

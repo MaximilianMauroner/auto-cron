@@ -1,11 +1,10 @@
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
+import { shouldDispatchBackgroundWork } from "../runtime";
 import { DEBOUNCE_WINDOW_MS } from "./constants";
 import { isRunNewer } from "./run_order";
 import type { TriggeredBy } from "./types";
-
-const isTestRuntime = () => process.env.NODE_ENV === "test" || process.env.VITEST === "true";
 
 export const enqueueSchedulingRunFromMutation = async (
 	ctx: MutationCtx,
@@ -78,7 +77,7 @@ export const enqueueSchedulingRunFromMutation = async (
 		habitsScheduled: 0,
 	});
 
-	if (!isTestRuntime()) {
+	if (shouldDispatchBackgroundWork()) {
 		await ctx.scheduler.runAfter(0, internal.scheduling.actions.runForUser, {
 			runId,
 			userId,

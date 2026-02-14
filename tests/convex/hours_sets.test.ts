@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { api } from "../../convex/_generated/api";
+import { api, internal } from "../../convex/_generated/api";
 import { createTestConvex } from "./_setup";
 
 type ErrorWithData = {
@@ -25,6 +25,34 @@ const extractErrorCode = (error: unknown): string | undefined => {
 
 const expectErrorCode = async (promise: Promise<unknown>, code: string) => {
 	await expect(promise).rejects.toSatisfy((error: unknown) => extractErrorCode(error) === code);
+};
+
+const bootstrapAndGetDefaultCategoryId = async (
+	testConvex: ReturnType<typeof createTestConvex>,
+	userId: string,
+) => {
+	await testConvex.mutation(internal.hours.mutations.internalBootstrapHoursSetsForUser, {
+		userId,
+	});
+	const categoryId = await testConvex.run(async (ctx) => {
+		const existing = await ctx.db
+			.query("taskCategories")
+			.withIndex("by_userId_isDefault", (q) => q.eq("userId", userId).eq("isDefault", true))
+			.first();
+		if (existing) return existing._id;
+		const now = Date.now();
+		return ctx.db.insert("taskCategories", {
+			userId,
+			name: "Personal",
+			color: "#f59e0b",
+			isSystem: true,
+			isDefault: true,
+			sortOrder: 0,
+			createdAt: now,
+			updatedAt: now,
+		});
+	});
+	return categoryId;
 };
 
 describe("hours sets", () => {
@@ -124,11 +152,12 @@ describe("hours sets", () => {
 				hoursSetId: customSetId,
 			},
 		});
+		const categoryId = await bootstrapAndGetDefaultCategoryId(testConvex, "hours_delete_reassign");
 		await user.action(api.habits.actions.createHabit, {
 			requestId: "hours-delete-habit",
 			input: {
 				title: "Habit on custom set",
-				category: "learning",
+				categoryId,
 				frequency: "weekly",
 				durationMinutes: 45,
 				hoursSetId: customSetId,

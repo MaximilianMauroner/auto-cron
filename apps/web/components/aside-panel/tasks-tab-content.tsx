@@ -41,24 +41,26 @@ export function TasksTabContent() {
 						value={search}
 						onChange={(e) => setSearch(e.target.value)}
 						placeholder="Search Tasks..."
-						className="h-8 pl-8 text-[0.76rem]"
+						className="h-8 pl-8 font-[family-name:var(--font-outfit)] text-[0.76rem]"
 					/>
 				</div>
 
 				{tasksQuery.isPending ? (
-					<div className="text-[0.76rem] text-muted-foreground">Loading tasks...</div>
+					<div className="font-[family-name:var(--font-cutive)] text-[0.76rem] text-muted-foreground">
+						Loading tasks...
+					</div>
 				) : tasks.length === 0 ? (
-					<div className="rounded-lg border border-dashed border-border p-4 text-center text-[0.76rem] text-muted-foreground">
+					<div className="font-[family-name:var(--font-cutive)] rounded-xl border border-dashed border-border/60 p-4 text-center text-[0.76rem] text-muted-foreground">
 						No tasks yet. Create your first task on the Tasks page.
 					</div>
 				) : (
 					<>
 						{upNextTasks.length > 0 ? (
 							<div className="space-y-2">
-								<div className="text-[0.68rem] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+								<div className="font-[family-name:var(--font-cutive)] text-[0.68rem] font-medium uppercase tracking-[0.12em] text-muted-foreground">
 									Up Next
 								</div>
-								<div className="space-y-1.5 rounded-lg border border-dashed border-border p-2">
+								<div className="space-y-1.5 rounded-lg border border-dashed border-border/60 p-2">
 									{upNextTasks.map((task) => (
 										<AsideTaskCard key={task._id} task={task} onEditTask={setEditingTaskId} />
 									))}
@@ -68,7 +70,7 @@ export function TasksTabContent() {
 
 						{otherTasks.length > 0 ? (
 							<div className="space-y-2">
-								<div className="text-[0.68rem] font-medium uppercase tracking-[0.1em] text-muted-foreground">
+								<div className="font-[family-name:var(--font-cutive)] text-[0.68rem] font-medium uppercase tracking-[0.12em] text-muted-foreground">
 									All Tasks
 								</div>
 								<div className="space-y-1.5">
@@ -81,7 +83,7 @@ export function TasksTabContent() {
 
 						{filteredTasks.length === 0 && search ? (
 							<div className="text-center text-[0.76rem] text-muted-foreground">
-								No tasks match "{search}"
+								No tasks match &ldquo;{search}&rdquo;
 							</div>
 						) : null}
 					</>

@@ -13,6 +13,7 @@ import {
 	normalizeTimeZone,
 } from "../hours/shared";
 import type { RecurrenceEditScope } from "../providers/calendar/types";
+import { shouldDispatchBackgroundWork } from "../runtime";
 import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
 
 const MINUTE_MS = 60 * 1000;
@@ -299,8 +300,6 @@ const watchChannelStatusValidator = v.union(
 	v.literal("stopped"),
 );
 
-const isTestRuntime = () => process.env.NODE_ENV === "test" || process.env.VITEST === "true";
-
 export const enqueueGoogleSyncRun = internalMutation({
 	args: {
 		userId: v.string(),
@@ -335,7 +334,7 @@ export const enqueueGoogleSyncRun = internalMutation({
 			startedAt: Date.now(),
 		});
 
-		if (!isTestRuntime()) {
+		if (shouldDispatchBackgroundWork()) {
 			await ctx.scheduler.runAfter(0, internal.calendar.actions.syncFromGoogleForUser, {
 				runId,
 				userId: args.userId,

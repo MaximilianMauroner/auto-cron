@@ -38,6 +38,24 @@ export const defaultTaskQuickCreateSettings = {
 	color: "#f59e0b",
 } as const;
 
+export const habitFrequencyValidator = v.union(
+	v.literal("daily"),
+	v.literal("weekly"),
+	v.literal("biweekly"),
+	v.literal("monthly"),
+);
+
+export const habitRecoveryPolicyValidator = v.union(v.literal("skip"), v.literal("recover"));
+
+export const defaultHabitQuickCreateSettings = {
+	priority: "medium",
+	durationMinutes: 30,
+	frequency: "daily",
+	recoveryPolicy: "skip",
+	visibilityPreference: "private",
+	color: "#22c55e",
+} as const;
+
 export const defaultSchedulingDowntimeMinutes = 0;
 const maxSchedulingDowntimeMinutes = 24 * 60;
 export const schedulingStepMinutesOptions = [15, 30, 60] as const;
@@ -81,6 +99,36 @@ export const normalizeTimeZone = (value: string | undefined) => {
 export const normalizeTimeFormatPreference = (value: string | undefined): "12h" | "24h" | null => {
 	if (value === "12h" || value === "24h") return value;
 	return null;
+};
+
+// Week starts on (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+export const weekStartsOnValidator = v.union(
+	v.literal(0),
+	v.literal(1),
+	v.literal(2),
+	v.literal(3),
+	v.literal(4),
+	v.literal(5),
+	v.literal(6),
+);
+export const defaultWeekStartsOn = 1; // Monday
+export const normalizeWeekStartsOn = (value: number | undefined): number => {
+	if (!Number.isFinite(value)) return defaultWeekStartsOn;
+	const day = Math.round(value ?? defaultWeekStartsOn);
+	if (day >= 0 && day <= 6) return day;
+	return defaultWeekStartsOn;
+};
+
+// Date format preferences
+export const dateFormatValidator = v.union(
+	v.literal("MM/DD/YYYY"),
+	v.literal("DD/MM/YYYY"),
+	v.literal("YYYY-MM-DD"),
+);
+export const defaultDateFormat = "MM/DD/YYYY";
+export const normalizeDateFormat = (value: string | undefined): string => {
+	if (value === "MM/DD/YYYY" || value === "DD/MM/YYYY" || value === "YYYY-MM-DD") return value;
+	return defaultDateFormat;
 };
 
 export const hourWindowDayValidator = v.union(

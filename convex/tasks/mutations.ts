@@ -3,6 +3,7 @@ import type { Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
+import { ensureCategoryOwnership, ensureDefaultCategories } from "../categories/shared";
 import {
 	ensureHoursSetOwnership,
 	getDefaultHoursSet,
@@ -47,6 +48,7 @@ const taskCreateInputValidator = v.object({
 	visibilityPreference: v.optional(taskVisibilityPreferenceValidator),
 	preferredCalendarId: v.optional(v.string()),
 	color: v.optional(v.string()),
+	categoryId: v.optional(v.id("taskCategories")),
 });
 
 const taskUpdatePatchValidator = v.object({
@@ -73,6 +75,7 @@ const taskUpdatePatchValidator = v.object({
 	visibilityPreference: v.optional(v.union(taskVisibilityPreferenceValidator, v.null())),
 	preferredCalendarId: v.optional(v.union(v.string(), v.null())),
 	color: v.optional(v.union(v.string(), v.null())),
+	categoryId: v.optional(v.id("taskCategories")),
 });
 
 type TaskStatus = "backlog" | "queued" | "scheduled" | "in_progress" | "done";
@@ -97,6 +100,7 @@ type TaskCreateInput = {
 	visibilityPreference?: "default" | "private";
 	preferredCalendarId?: string;
 	color?: string;
+	categoryId?: Id<"taskCategories">;
 };
 type TaskUpdatePatch = {
 	title?: string;
@@ -122,6 +126,7 @@ type TaskUpdatePatch = {
 	visibilityPreference?: "default" | "private" | null;
 	preferredCalendarId?: string | null;
 	color?: string | null;
+	categoryId?: Id<"taskCategories">;
 };
 type UpdateTaskArgs = {
 	id: Id<"tasks">;
@@ -230,6 +235,9 @@ export const updateTask = mutation({
 		if (args.patch.hoursSetId !== undefined && args.patch.hoursSetId !== null) {
 			await resolveHoursSetForTask(ctx, ctx.userId, args.patch.hoursSetId);
 		}
+		if (args.patch.categoryId) {
+			await ensureCategoryOwnership(ctx, args.patch.categoryId, ctx.userId);
+		}
 
 		if (args.patch.status !== undefined && args.patch.completedAt === undefined) {
 			if (args.patch.status === "done") {
@@ -324,6 +332,12 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 		const restMinutes = normalizeOptionalNonNegativeMinutes(args.input.restMinutes);
 		const travelMinutes = normalizeOptionalNonNegativeMinutes(args.input.travelMinutes);
 		const location = args.input.location?.trim();
+		// Ensure default categories exist, then resolve categoryId
+		const { personalId: defaultCategoryId } = await ensureDefaultCategories(ctx, args.userId);
+		const categoryId = args.input.categoryId ?? defaultCategoryId;
+
+		await ensureCategoryOwnership(ctx, categoryId, args.userId);
+
 		const insertedId = await ctx.db.insert("tasks", {
 			userId: args.userId,
 			title: args.input.title,
@@ -349,6 +363,7 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 			visibilityPreference: args.input.visibilityPreference,
 			preferredCalendarId: args.input.preferredCalendarId,
 			color: args.input.color,
+			categoryId,
 		});
 
 		if (reservation) {
@@ -376,30 +391,6 @@ export const internalCreateTaskForUserWithOperation = internalMutation({
 		});
 
 		return insertedId;
-	},
-});
-
-/**
- * Migration: strip deprecated pinnedStart/pinnedEnd fields from task documents.
- * Run once via the Convex dashboard, then remove pinnedStart/pinnedEnd from schema.ts.
- */
-export const stripLegacyPinnedFields = internalMutation({
-	args: {},
-	returns: v.object({ patched: v.number() }),
-	handler: async (ctx): Promise<{ patched: number }> => {
-		const tasks = await ctx.db.query("tasks").collect();
-		let patched = 0;
-		for (const task of tasks) {
-			const doc = task as Record<string, unknown>;
-			if (doc.pinnedStart !== undefined || doc.pinnedEnd !== undefined) {
-				await ctx.db.patch(task._id, {
-					pinnedStart: undefined,
-					pinnedEnd: undefined,
-				});
-				patched++;
-			}
-		}
-		return { patched };
 	},
 });
 

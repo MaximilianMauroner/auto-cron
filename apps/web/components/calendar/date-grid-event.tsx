@@ -129,8 +129,9 @@ function DateGridEventComponent({ calendarEvent, timeZone, hour12 }: DateGridEve
 		<ContextMenu>
 			<ContextMenuTrigger asChild>
 				<div
+					data-event-id={calendarEvent.id ? String(calendarEvent.id) : undefined}
 					className={cn(
-						"group relative inline-flex items-center gap-1 max-w-full rounded-[5px] h-full w-full pl-2 pr-1.5 py-0.5 overflow-hidden cursor-grab active:cursor-grabbing transition-[filter] duration-200 hover:brightness-[1.12]",
+						"group relative inline-flex items-center gap-1 max-w-full rounded-[6px] h-full w-full pl-2 pr-1.5 py-0.5 overflow-hidden cursor-grab active:cursor-grabbing transition-[filter,box-shadow] duration-200 hover:brightness-[1.12]",
 						isFree && "outline outline-1 outline-dashed -outline-offset-1",
 					)}
 					style={{
@@ -149,7 +150,7 @@ function DateGridEventComponent({ calendarEvent, timeZone, hour12 }: DateGridEve
 				>
 					<button
 						type="button"
-						className="absolute top-0.5 right-0.5 hidden h-4 w-4 items-center justify-center rounded-sm border border-black/20 bg-black/35 text-white/85 backdrop-blur-sm transition hover:bg-black/55 group-hover:flex"
+						className="absolute top-0.5 right-0.5 hidden h-4 w-4 items-center justify-center rounded-sm border border-white/10 bg-black/30 text-white/80 backdrop-blur-sm transition hover:bg-black/55 group-hover:flex"
 						onClick={(event) => {
 							event.stopPropagation();
 							openEditFromEvent(calendarEvent.id);
@@ -162,13 +163,13 @@ function DateGridEventComponent({ calendarEvent, timeZone, hour12 }: DateGridEve
 					{calendarEvent.isRecurring ? <Repeat className="size-2 shrink-0 opacity-40" /> : null}
 					<span
 						className={cn(
-							"truncate text-[0.7rem] font-semibold tracking-tight",
+							"truncate font-[family-name:var(--font-outfit)] text-[0.68rem] font-semibold tracking-tight",
 							isFree && "opacity-60",
 						)}
 					>
 						{sanitizeDenseTitle(calendarEvent.title)}
 					</span>
-					<span className="text-[0.6rem] opacity-40 shrink-0">
+					<span className="font-[family-name:var(--font-cutive)] text-[0.52rem] tracking-[0.02em] opacity-40 shrink-0">
 						{formatTime(calendarEvent.start, timeZone, hour12)}
 					</span>
 				</div>

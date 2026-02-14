@@ -67,9 +67,20 @@ function EventRow({
 		void deleteEvent({ id: event._id as Id<"calendarEvents"> });
 	};
 
+	const handleNavigate = () => {
+		if (typeof window === "undefined") return;
+		window.dispatchEvent(
+			new CustomEvent("calendar:navigate-to-event", {
+				detail: { eventId: event._id, start: event.start },
+			}),
+		);
+	};
+
 	return (
-		<div
-			className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-[0.7rem] transition-colors hover:bg-accent/30 ${muted ? "opacity-60" : ""}`}
+		<button
+			type="button"
+			onClick={handleNavigate}
+			className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[0.7rem] cursor-pointer transition-colors hover:bg-accent/30 ${muted ? "opacity-60" : ""}`}
 		>
 			{isPinned && isTaskEvent ? <Pin className="size-3 shrink-0 text-amber-600" /> : null}
 			<span className="w-[3.2rem] shrink-0 font-medium tabular-nums">{dateStr}</span>
@@ -79,44 +90,47 @@ function EventRow({
 			<span className="shrink-0 text-[0.62rem] text-muted-foreground/70 tabular-nums">
 				{duration}
 			</span>
-			<DropdownMenu>
-				<DropdownMenuTrigger asChild>
-					<Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground/50">
-						<MoreVertical className="size-3" />
-					</Button>
-				</DropdownMenuTrigger>
-				<DropdownMenuContent align="end" className="w-40">
-					{onViewDetails ? (
-						<DropdownMenuItem onClick={() => onViewDetails(event._id)}>
-							View details
+			{/* biome-ignore lint/a11y/useKeyWithClickEvents: stop propagation only */}
+			<div onClick={(e) => e.stopPropagation()}>
+				<DropdownMenu>
+					<DropdownMenuTrigger asChild>
+						<Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-muted-foreground/50">
+							<MoreVertical className="size-3" />
+						</Button>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" className="w-40">
+						{onViewDetails ? (
+							<DropdownMenuItem onClick={() => onViewDetails(event._id)}>
+								View details
+							</DropdownMenuItem>
+						) : null}
+						{isTaskEvent ? (
+							<>
+								{isPinned ? (
+									<DropdownMenuItem onClick={handleUnpin}>
+										<PinOff className="mr-2 size-3.5" />
+										Unpin
+									</DropdownMenuItem>
+								) : (
+									<DropdownMenuItem onClick={handlePin}>
+										<Pin className="mr-2 size-3.5" />
+										Pin to time
+									</DropdownMenuItem>
+								)}
+								<DropdownMenuSeparator />
+							</>
+						) : null}
+						<DropdownMenuItem
+							onClick={handleDeleteEvent}
+							className="text-destructive focus:text-destructive"
+						>
+							<Trash2 className="mr-2 size-3.5" />
+							Delete event
 						</DropdownMenuItem>
-					) : null}
-					{isTaskEvent ? (
-						<>
-							{isPinned ? (
-								<DropdownMenuItem onClick={handleUnpin}>
-									<PinOff className="mr-2 size-3.5" />
-									Unpin
-								</DropdownMenuItem>
-							) : (
-								<DropdownMenuItem onClick={handlePin}>
-									<Pin className="mr-2 size-3.5" />
-									Pin to time
-								</DropdownMenuItem>
-							)}
-							<DropdownMenuSeparator />
-						</>
-					) : null}
-					<DropdownMenuItem
-						onClick={handleDeleteEvent}
-						className="text-destructive focus:text-destructive"
-					>
-						<Trash2 className="mr-2 size-3.5" />
-						Delete event
-					</DropdownMenuItem>
-				</DropdownMenuContent>
-			</DropdownMenu>
-		</div>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</div>
+		</button>
 	);
 }
 

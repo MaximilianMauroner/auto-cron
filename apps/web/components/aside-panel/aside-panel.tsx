@@ -9,7 +9,11 @@ export function AsidePanel({ children }: { children: React.ReactNode }) {
 	if (isMobile) {
 		return (
 			<Sheet open={open} onOpenChange={setOpen}>
-				<SheetContent side="right" className="w-80 p-0" showCloseButton={false}>
+				<SheetContent
+					side="right"
+					className="w-80 border-border/80 bg-card/95 p-0"
+					showCloseButton={false}
+				>
 					<div className="flex h-full flex-col overflow-hidden">{children}</div>
 				</SheetContent>
 			</Sheet>
@@ -18,7 +22,7 @@ export function AsidePanel({ children }: { children: React.ReactNode }) {
 
 	return (
 		<aside
-			className={`border-l border-border bg-card transition-[width] duration-200 ease-in-out overflow-hidden shrink-0 ${
+			className={`border-l border-border/60 bg-card/95 transition-[width] duration-200 ease-in-out overflow-hidden shrink-0 ${
 				open ? "w-80" : "w-0"
 			}`}
 		>

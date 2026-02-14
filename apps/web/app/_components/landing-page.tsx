@@ -1,29 +1,7 @@
 "use client";
 
-import { Bebas_Neue, Cutive_Mono, Outfit } from "next/font/google";
 import Image from "next/image";
 import { useCallback, useEffect, useRef } from "react";
-
-const bebasNeue = Bebas_Neue({
-	subsets: ["latin"],
-	weight: ["400"],
-	variable: "--font-bebas",
-	display: "swap",
-});
-
-const outfit = Outfit({
-	subsets: ["latin"],
-	variable: "--font-outfit",
-	weight: ["300", "400", "500", "600", "700", "800"],
-	display: "swap",
-});
-
-const cutiveMono = Cutive_Mono({
-	subsets: ["latin"],
-	weight: ["400"],
-	variable: "--font-cutive",
-	display: "swap",
-});
 
 const FEATURES = [
 	{
@@ -183,9 +161,7 @@ export function LandingPage({ logoHref = "/" }: LandingPageProps) {
 	}, [revealCallback]);
 
 	return (
-		<div
-			className={`${bebasNeue.variable} ${outfit.variable} ${cutiveMono.variable} bg-lp-parchment text-lp-navy font-[family-name:var(--font-outfit)] text-base leading-[1.65] antialiased overflow-x-hidden`}
-		>
+		<div className="bg-lp-parchment text-lp-navy font-[family-name:var(--font-outfit)] text-base leading-[1.65] antialiased overflow-x-hidden">
 			{/* SVG Grain */}
 			<svg
 				className="fixed inset-0 w-full h-full pointer-events-none z-[9998] opacity-[0.032]"

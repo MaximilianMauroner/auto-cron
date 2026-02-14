@@ -1,6 +1,7 @@
 "use client";
 
 import PaywallDialog from "@/components/autumn/paywall-dialog";
+import { CategoryPicker } from "@/components/category-picker";
 import { Button } from "@/components/ui/button";
 import { DurationInput } from "@/components/ui/duration-input";
 import { Input } from "@/components/ui/input";
@@ -13,23 +14,14 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { useActionWithStatus } from "@/hooks/use-convex-status";
+import { useActionWithStatus, useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import { getConvexErrorPayload } from "@/lib/convex-errors";
 import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duration";
-import type { HabitCategory, HabitFrequency, HabitPriority } from "@auto-cron/types";
-import { Repeat2 } from "lucide-react";
+import type { HabitFrequency, HabitPriority } from "@auto-cron/types";
+import { ArrowRight } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
-
-const categoryLabels: Record<HabitCategory, string> = {
-	health: "Health",
-	fitness: "Fitness",
-	learning: "Learning",
-	mindfulness: "Mindfulness",
-	productivity: "Productivity",
-	social: "Social",
-	other: "Other",
-};
+import type { Id } from "../../../../convex/_generated/dataModel";
 
 const frequencyLabels: Record<HabitFrequency, string> = {
 	daily: "Daily",
@@ -75,28 +67,36 @@ type QuickCreateHabitDialogProps = {
 export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitDialogProps) {
 	const [title, setTitle] = useState("");
 	const [durationMinutes, setDurationMinutes] = useState("");
-	const [category, setCategory] = useState<HabitCategory>("productivity");
+	const [categoryId, setCategoryId] = useState<string>("");
 	const [frequency, setFrequency] = useState<HabitFrequency>("weekly");
 	const [priority, setPriority] = useState<HabitPriority>("medium");
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [paywallOpen, setPaywallOpen] = useState(false);
 
 	const { execute: createHabit, isPending } = useActionWithStatus(api.habits.actions.createHabit);
+	const defaultCategoryQuery = useAuthenticatedQueryWithStatus(
+		api.categories.queries.getDefaultCategory,
+		{},
+	);
 
 	useEffect(() => {
 		if (!open) return;
 		setTitle("");
 		setDurationMinutes(formatDurationFromMinutes(30));
-		setCategory("productivity");
+		setCategoryId(defaultCategoryQuery.data?._id ?? "");
 		setFrequency("weekly");
 		setPriority("medium");
 		setErrorMessage(null);
-	}, [open]);
+	}, [open, defaultCategoryQuery.data]);
 
 	const onSubmit = async () => {
 		const parsed = parseDurationToMinutes(durationMinutes);
 		if (!title.trim() || parsed === null || parsed <= 0) {
 			setErrorMessage("Please provide a title and valid duration.");
+			return;
+		}
+		if (!categoryId) {
+			setErrorMessage("Please select a category.");
 			return;
 		}
 		setErrorMessage(null);
@@ -105,7 +105,7 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 				requestId: createRequestId(),
 				input: {
 					title: title.trim(),
-					category,
+					categoryId: categoryId as Id<"taskCategories">,
 					frequency,
 					recurrenceRule: recurrenceFromFrequency(frequency),
 					priority,
@@ -132,15 +132,23 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 		<>
 			<Sheet open={open} onOpenChange={onOpenChange}>
 				<SheetContent side="right" className="w-80 p-0 sm:max-w-md" showCloseButton={false}>
-					<SheetHeader className="border-b border-border/70 px-5 py-4">
-						<SheetTitle className="flex items-center gap-2 text-lg">
-							<Repeat2 className="size-4 text-primary" />
-							Quick create habit
+					{/* ── Header ── */}
+					<SheetHeader className="border-b border-border/60 px-6 py-5">
+						<p className="font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+							01 / New habit
+						</p>
+						<SheetTitle className="mt-1 font-[family-name:var(--font-outfit)] text-xl font-semibold tracking-tight">
+							Quick create
 						</SheetTitle>
 					</SheetHeader>
-					<div className="space-y-4 px-5 py-4">
-						<div className="space-y-1.5">
-							<Label htmlFor="qc-habit-title" className="text-xs uppercase tracking-[0.1em]">
+
+					<div className="flex flex-col gap-0 px-6">
+						{/* ── Habit name ── */}
+						<div className="py-5">
+							<Label
+								htmlFor="qc-habit-title"
+								className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70"
+							>
 								Habit name
 							</Label>
 							<Input
@@ -156,97 +164,119 @@ export function QuickCreateHabitDialog({ open, onOpenChange }: QuickCreateHabitD
 									void onSubmit();
 								}}
 								placeholder="What habit to build?"
+								className="mt-2 border-0 border-b border-border/50 bg-transparent px-0 font-[family-name:var(--font-outfit)] text-[0.9rem] font-medium shadow-none ring-0 transition-colors placeholder:text-muted-foreground/40 focus-visible:border-accent focus-visible:ring-0"
 								autoFocus
 							/>
 						</div>
-						<div className="grid grid-cols-2 gap-3">
-							<div className="space-y-1.5">
-								<Label className="text-xs uppercase tracking-[0.1em]">Duration</Label>
-								<DurationInput
-									value={durationMinutes}
-									onChange={setDurationMinutes}
-									placeholder="e.g. 30 mins"
-								/>
-							</div>
-							<div className="space-y-1.5">
-								<Label htmlFor="qc-habit-frequency" className="text-xs uppercase tracking-[0.1em]">
-									Frequency
-								</Label>
-								<Select value={frequency} onValueChange={(v) => setFrequency(v as HabitFrequency)}>
-									<SelectTrigger id="qc-habit-frequency">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{(["daily", "weekly", "biweekly", "monthly"] as const).map((f) => (
-											<SelectItem key={f} value={f}>
-												{frequencyLabels[f]}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</div>
-						</div>
-						<div className="grid grid-cols-2 gap-3">
-							<div className="space-y-1.5">
-								<Label htmlFor="qc-habit-category" className="text-xs uppercase tracking-[0.1em]">
-									Category
-								</Label>
-								<Select value={category} onValueChange={(v) => setCategory(v as HabitCategory)}>
-									<SelectTrigger id="qc-habit-category">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{(
-											[
-												"health",
-												"fitness",
-												"learning",
-												"mindfulness",
-												"productivity",
-												"social",
-												"other",
-											] as const
-										).map((c) => (
-											<SelectItem key={c} value={c}>
-												{categoryLabels[c]}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</div>
-							<div className="space-y-1.5">
-								<Label htmlFor="qc-habit-priority" className="text-xs uppercase tracking-[0.1em]">
-									Priority
-								</Label>
-								<Select value={priority} onValueChange={(v) => setPriority(v as HabitPriority)}>
-									<SelectTrigger id="qc-habit-priority">
-										<SelectValue />
-									</SelectTrigger>
-									<SelectContent>
-										{(["low", "medium", "high", "critical"] as const).map((p) => (
-											<SelectItem key={p} value={p}>
-												{priorityLabels[p]}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
+
+						<div className="h-px bg-border/40" />
+
+						{/* ── Timing ── */}
+						<div className="space-y-3 py-5">
+							<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+								Timing
+							</p>
+							<div className="grid grid-cols-2 gap-3">
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Duration
+									</Label>
+									<DurationInput
+										value={durationMinutes}
+										onChange={setDurationMinutes}
+										placeholder="e.g. 30m"
+									/>
+								</div>
+								<div className="space-y-1.5">
+									<Label
+										htmlFor="qc-habit-frequency"
+										className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+									>
+										Frequency
+									</Label>
+									<Select
+										value={frequency}
+										onValueChange={(v) => setFrequency(v as HabitFrequency)}
+									>
+										<SelectTrigger id="qc-habit-frequency">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											{(["daily", "weekly", "biweekly", "monthly"] as const).map((f) => (
+												<SelectItem key={f} value={f}>
+													{frequencyLabels[f]}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
 							</div>
 						</div>
+
+						<div className="h-px bg-border/40" />
+
+						{/* ── Classification ── */}
+						<div className="space-y-3 py-5">
+							<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
+								Classification
+							</p>
+							<div className="grid grid-cols-2 gap-3">
+								<div className="space-y-1.5">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										Category
+									</Label>
+									<CategoryPicker value={categoryId} onValueChange={setCategoryId} />
+								</div>
+								<div className="space-y-1.5">
+									<Label
+										htmlFor="qc-habit-priority"
+										className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+									>
+										Priority
+									</Label>
+									<Select value={priority} onValueChange={(v) => setPriority(v as HabitPriority)}>
+										<SelectTrigger id="qc-habit-priority">
+											<SelectValue />
+										</SelectTrigger>
+										<SelectContent>
+											{(["low", "medium", "high", "critical"] as const).map((p) => (
+												<SelectItem key={p} value={p}>
+													{priorityLabels[p]}
+												</SelectItem>
+											))}
+										</SelectContent>
+									</Select>
+								</div>
+							</div>
+						</div>
+
+						{/* ── Error ── */}
 						{errorMessage ? (
-							<p className="text-xs text-rose-600 dark:text-rose-400">{errorMessage}</p>
+							<div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+								<p className="font-[family-name:var(--font-cutive)] text-[0.66rem] uppercase tracking-[0.05em] text-destructive">
+									{errorMessage}
+								</p>
+							</div>
 						) : null}
 					</div>
-					<SheetFooter className="border-t border-border/70 px-5 py-3">
-						<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+
+					{/* ── Footer ── */}
+					<SheetFooter className="mt-auto flex-row items-center gap-2 border-t border-border/60 px-6 py-4">
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={() => onOpenChange(false)}
+							className="font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium tracking-[0.02em] text-muted-foreground hover:text-foreground"
+						>
 							Cancel
 						</Button>
 						<Button
 							onClick={() => void onSubmit()}
 							disabled={isPending}
-							className="gap-1.5 bg-accent text-accent-foreground shadow-[0_2px_8px_-2px_rgba(252,163,17,0.2)] hover:bg-accent/90"
+							className="gap-2 bg-accent font-[family-name:var(--font-outfit)] text-[0.76rem] font-bold uppercase tracking-[0.1em] text-accent-foreground shadow-[0_2px_12px_-3px_rgba(252,163,17,0.3)] transition-all hover:bg-accent/90 hover:shadow-[0_4px_16px_-3px_rgba(252,163,17,0.4)]"
 						>
-							<Repeat2 className="size-3.5" />
-							{isPending ? "Creating..." : "Create habit"}
+							{isPending ? "Creating…" : "Create"}
+							<ArrowRight className="size-3.5" />
 						</Button>
 					</SheetFooter>
 				</SheetContent>
