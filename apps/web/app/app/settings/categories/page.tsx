@@ -186,7 +186,7 @@ export default function SettingsCategoriesPage() {
 						<FolderOpen className="size-8 text-muted-foreground/40" />
 					</div>
 					<p className="text-sm font-medium text-muted-foreground">No categories yet</p>
-					<p className="mt-1 text-xs text-muted-foreground/60">
+					<p className="mt-1 text-xs text-muted-foreground/80">
 						Create one to start organizing your tasks
 					</p>
 					<Button
@@ -243,7 +243,7 @@ export default function SettingsCategoriesPage() {
 									type="button"
 									onClick={() => openEdit(cat)}
 									disabled={isBusy}
-									className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
+									className="rounded-md p-1.5 text-muted-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground"
 								>
 									<Pencil className="size-3.5" />
 								</button>
@@ -252,7 +252,7 @@ export default function SettingsCategoriesPage() {
 										type="button"
 										onClick={() => void handleSetDefault(cat._id)}
 										disabled={isBusy}
-										className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-foreground"
+										className="rounded-md p-1.5 text-muted-foreground/80 transition-colors hover:bg-muted/60 hover:text-foreground"
 										title="Set as default"
 									>
 										<Star className="size-3.5" />
@@ -263,7 +263,7 @@ export default function SettingsCategoriesPage() {
 										type="button"
 										onClick={() => setDeleteConfirm(cat._id)}
 										disabled={isBusy}
-										className="rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
+										className="rounded-md p-1.5 text-muted-foreground/80 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/30 dark:hover:text-rose-400"
 									>
 										<Trash2 className="size-3.5" />
 									</button>

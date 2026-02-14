@@ -35,6 +35,7 @@ type SidebarContextProps = {
 	setOpenMobile: (open: boolean) => void;
 	isMobile: boolean;
 	toggleSidebar: () => void;
+	resizable: boolean;
 };
 
 const SidebarContext = React.createContext<SidebarContextProps | null>(null);
@@ -52,6 +53,7 @@ function SidebarProvider({
 	defaultOpen = true,
 	open: openProp,
 	onOpenChange: setOpenProp,
+	resizable = false,
 	className,
 	style,
 	children,
@@ -60,6 +62,7 @@ function SidebarProvider({
 	defaultOpen?: boolean;
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
+	resizable?: boolean;
 }) {
 	const isMobile = useIsMobile();
 	const [openMobile, setOpenMobile] = React.useState(false);
@@ -114,8 +117,9 @@ function SidebarProvider({
 			openMobile,
 			setOpenMobile,
 			toggleSidebar,
+			resizable,
 		}),
-		[state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar],
+		[state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar, resizable],
 	);
 
 	return (
@@ -155,7 +159,26 @@ function Sidebar({
 	variant?: "sidebar" | "floating" | "inset";
 	collapsible?: "offcanvas" | "icon" | "none";
 }) {
-	const { isMobile, state, openMobile, setOpenMobile } = useSidebar();
+	const { isMobile, state, openMobile, setOpenMobile, resizable } = useSidebar();
+
+	if (resizable && !isMobile) {
+		return (
+			<div
+				data-slot="sidebar"
+				data-sidebar="sidebar"
+				data-state={state}
+				data-variant={variant}
+				data-side={side}
+				className={cn(
+					"bg-sidebar text-sidebar-foreground flex h-full w-full flex-col overflow-hidden",
+					className,
+				)}
+				{...props}
+			>
+				{children}
+			</div>
+		);
+	}
 
 	if (collapsible === "none") {
 		return (

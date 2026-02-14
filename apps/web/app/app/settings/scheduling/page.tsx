@@ -334,7 +334,7 @@ export default function SchedulingSettingsPage() {
 				{/* ── Engine: Mode selector ── */}
 				<div className="rounded-xl border border-border/60 p-5">
 					<div className="mb-4 flex items-center gap-2.5">
-						<Zap className="size-4 text-muted-foreground/60" />
+						<Zap className="size-4 text-muted-foreground/80" />
 						<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
 							Scheduling mode
 						</p>
@@ -391,7 +391,7 @@ export default function SchedulingSettingsPage() {
 												"h-8 min-w-[52px] rounded-md border px-3 text-xs font-medium transition-colors",
 												schedulingStepMinutes === step
 													? "border-primary/40 bg-primary/10 text-primary"
-													: "border-border/60 bg-background text-muted-foreground/60 hover:border-border hover:text-muted-foreground",
+													: "border-border/60 bg-background text-muted-foreground/80 hover:border-border hover:text-muted-foreground",
 											)}
 										>
 											{step}m
@@ -439,7 +439,7 @@ export default function SchedulingSettingsPage() {
 				>
 					<div className="p-5">
 						<div className="mb-4 flex items-center gap-2.5">
-							<ListChecks className="size-4 text-muted-foreground/60" />
+							<ListChecks className="size-4 text-muted-foreground/80" />
 							<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
 								Task defaults
 							</p>
@@ -610,7 +610,7 @@ export default function SchedulingSettingsPage() {
 				>
 					<div className="p-5">
 						<div className="mb-4 flex items-center gap-2.5">
-							<Repeat className="size-4 text-muted-foreground/60" />
+							<Repeat className="size-4 text-muted-foreground/80" />
 							<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
 								Habit defaults
 							</p>

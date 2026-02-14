@@ -212,6 +212,12 @@ export function LandingPage({ logoHref = "/" }: LandingPageProps) {
 										{item}
 									</a>
 								))}
+								<a
+									href="/sign-in"
+									className="font-[family-name:var(--font-outfit)] text-[11px] font-medium tracking-[0.04em] text-lp-navy/60 hover:text-lp-navy transition-colors"
+								>
+									Log in
+								</a>
 								<a href="#cta" className="lp-btn-gold !py-2.5 !px-7 !text-[11px]">
 									Get Started
 								</a>
@@ -775,9 +781,9 @@ export function LandingPage({ logoHref = "/" }: LandingPageProps) {
 								<a href="/sign-in" className="lp-btn-gold !text-sm !py-[18px] !px-14">
 									Start Free
 								</a>
-								<span className="font-[family-name:var(--font-cutive)] text-[11px] tracking-[0.12em] uppercase text-lp-parchment opacity-25">
-									Setup in 2 minutes
-								</span>
+								<a href="/sign-in" className="lp-btn-outline !text-sm !py-[18px] !px-10">
+									Log in
+								</a>
 							</div>
 						</div>
 					</div>

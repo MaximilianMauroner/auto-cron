@@ -11,12 +11,15 @@ const recencyScore = (event: Doc<"calendarEvents">) =>
 	Math.max(event.lastSyncedAt ?? 0, event.updatedAt ?? 0, event._creationTime ?? 0);
 
 const buildDedupeKey = (event: Doc<"calendarEvents">) => {
-	if (event.seriesId && event.occurrenceStart !== undefined) {
+	if (event.seriesId && event.occurrenceStart !== undefined && event.recurringEventId) {
 		return `series:${event.seriesId}:${event.occurrenceStart}`;
 	}
 	if (event.googleEventId) {
 		const occurrenceTs = normalizeToMinute(event.originalStartTime ?? event.start);
 		return `google:${event.calendarId ?? "primary"}:${event.googleEventId}:${occurrenceTs}`;
+	}
+	if (event.seriesId && event.occurrenceStart !== undefined) {
+		return `series:${event.seriesId}:${event.occurrenceStart}`;
 	}
 	return `fallback:${event.source}:${event.sourceId ?? "none"}:${event.start}:${event.end}:${event.title ?? "untitled"}`;
 };

@@ -208,7 +208,7 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 								<div className="space-y-1.5">
 									<Label
 										htmlFor="task-edit-title"
-										className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+										className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 									>
 										Title
 									</Label>
@@ -224,7 +224,7 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 									/>
 								</div>
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Description
 									</Label>
 									<Textarea
@@ -246,7 +246,7 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 								</p>
 								<div className="grid grid-cols-2 gap-3">
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Status
 										</Label>
 										<Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)}>
@@ -265,7 +265,7 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 										</Select>
 									</div>
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Priority
 										</Label>
 										<Select value={priority} onValueChange={(v) => setPriority(v as Priority)}>
@@ -284,13 +284,13 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 								</div>
 								<div className="grid grid-cols-2 gap-3">
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Category
 										</Label>
 										<CategoryPicker value={categoryId} onValueChange={setCategoryId} />
 									</div>
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Color
 										</Label>
 										<ColorPaletteDropdown value={color} onChange={setColor} />
@@ -307,7 +307,7 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 								</p>
 								<div className="grid grid-cols-2 gap-3">
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Duration
 										</Label>
 										<DurationInput
@@ -317,7 +317,7 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 										/>
 									</div>
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Location
 										</Label>
 										<Input
@@ -329,13 +329,13 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 									</div>
 								</div>
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Deadline
 									</Label>
 									<DateTimePicker value={deadline} onChange={setDeadline} placeholder="None" />
 								</div>
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Schedule after
 									</Label>
 									<DateTimePicker
@@ -367,7 +367,7 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 														{formatDurationCompact(scheduledMinutes)} /{" "}
 														{formatDurationCompact(total)}
 													</span>
-													<span className="font-[family-name:var(--font-cutive)] text-[0.62rem] text-muted-foreground/60">
+													<span className="font-[family-name:var(--font-cutive)] text-[0.62rem] text-muted-foreground/80">
 														{remaining > 0
 															? `${formatDurationCompact(remaining)} left`
 															: "Fully scheduled"}
@@ -459,7 +459,7 @@ export function TaskEditSheet({ taskId, onOpenChange }: TaskEditSheetProps) {
 										type="button"
 										variant="ghost"
 										size="icon"
-										className="mr-auto size-8 text-muted-foreground/60 hover:text-foreground"
+										className="mr-auto size-8 text-muted-foreground/80 hover:text-foreground"
 									>
 										<MoreVertical className="size-4" />
 										<span className="sr-only">More actions</span>

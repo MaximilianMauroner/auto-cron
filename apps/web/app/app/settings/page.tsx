@@ -279,7 +279,7 @@ export default function GeneralSettingsPage() {
 		{
 			key: "timezone",
 			label: "Timezone",
-			icon: <Globe className="size-4 text-muted-foreground/60" />,
+			icon: <Globe className="size-4 text-muted-foreground/80" />,
 			displayValue: timezone,
 			editor: (
 				<Popover
@@ -330,7 +330,7 @@ export default function GeneralSettingsPage() {
 		{
 			key: "horizon",
 			label: "Scheduling window",
-			icon: <Hash className="size-4 text-muted-foreground/60" />,
+			icon: <Hash className="size-4 text-muted-foreground/80" />,
 			displayValue: formatHorizon(schedulingHorizonWeeks),
 			editor:
 				filteredHorizonOptions.length <= 1 ? (
@@ -372,7 +372,7 @@ export default function GeneralSettingsPage() {
 		{
 			key: "weekStart",
 			label: "Start of week",
-			icon: <Hash className="size-4 text-muted-foreground/60" />,
+			icon: <Hash className="size-4 text-muted-foreground/80" />,
 			displayValue: weekDayLabels[weekStartsOn] ?? "Monday",
 			editor: (
 				<Select
@@ -399,7 +399,7 @@ export default function GeneralSettingsPage() {
 		{
 			key: "dateFormat",
 			label: "Date format",
-			icon: <Hash className="size-4 text-muted-foreground/60" />,
+			icon: <Hash className="size-4 text-muted-foreground/80" />,
 			displayValue: dateFormatExamples[dateFormat] ?? dateFormat,
 			editor: (
 				<Select
@@ -426,7 +426,7 @@ export default function GeneralSettingsPage() {
 		{
 			key: "timeFormat",
 			label: "Time format",
-			icon: <Hash className="size-4 text-muted-foreground/60" />,
+			icon: <Hash className="size-4 text-muted-foreground/80" />,
 			displayValue: timeFormatExamples[timeFormatPreference] ?? timeFormatPreference,
 			editor: (
 				<Select

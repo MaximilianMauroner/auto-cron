@@ -547,7 +547,7 @@ export default function SettingsHoursPage() {
 							<Clock3 className="size-8 text-muted-foreground/40" />
 						</div>
 						<p className="text-sm font-medium text-muted-foreground">No hours sets</p>
-						<p className="mt-1 text-xs text-muted-foreground/60">
+						<p className="mt-1 text-xs text-muted-foreground/80">
 							Create one to define your working schedule
 						</p>
 						<Button
@@ -578,7 +578,7 @@ export default function SettingsHoursPage() {
 											: "border-border/50 hover:border-border/80 hover:bg-muted/20",
 									)}
 								>
-									<Clock3 className="size-3.5 shrink-0 text-muted-foreground/60" />
+									<Clock3 className="size-3.5 shrink-0 text-muted-foreground/80" />
 									<div className="min-w-0 flex-1">
 										<div className="flex items-center gap-2">
 											<p className="truncate text-sm font-medium">{hoursSet.name}</p>

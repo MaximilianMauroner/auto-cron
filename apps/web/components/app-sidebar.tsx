@@ -146,7 +146,7 @@ export function AppSidebar() {
 		if (isSigningOut) return;
 		setIsSigningOut(true);
 		try {
-			await signOut({ returnTo: "/sign-in" });
+			await signOut({ returnTo: "/" });
 		} finally {
 			setIsSigningOut(false);
 		}

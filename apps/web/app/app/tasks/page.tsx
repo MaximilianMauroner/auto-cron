@@ -2,6 +2,7 @@
 
 import PaywallDialog from "@/components/autumn/paywall-dialog";
 import { CategoryPicker } from "@/components/category-picker";
+import { QuickCreateTaskDialog } from "@/components/quick-create/quick-create-task-dialog";
 import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
 import {
 	Accordion,
@@ -768,20 +769,7 @@ export default function TasksPage() {
 				)}
 			</div>
 
-			<TaskDialog
-				open={isCreateOpen}
-				onOpenChange={setIsCreateOpen}
-				title="Create task"
-				compactCreate
-				value={createForm}
-				onChange={setCreateForm}
-				onSubmit={onCreateTask}
-				submitLabel={isCreatingTask ? "Creating..." : "Create task"}
-				busy={busy}
-				calendars={editableGoogleCalendars}
-				hoursSets={hoursSets}
-				defaultTaskSchedulingMode={defaultTaskSchedulingMode}
-			/>
+			<QuickCreateTaskDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} />
 
 			<TaskDialog
 				open={isEditOpen}
@@ -1019,7 +1007,7 @@ function TaskDialog({
 							<div className="space-y-1.5">
 								<Label
 									htmlFor="quick-task-name"
-									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 								>
 									Task name
 								</Label>
@@ -1034,7 +1022,7 @@ function TaskDialog({
 							<div className="space-y-1.5">
 								<Label
 									htmlFor="quick-task-location"
-									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 								>
 									Location (optional)
 								</Label>
@@ -1051,7 +1039,7 @@ function TaskDialog({
 
 							<div className="grid gap-4 md:grid-cols-2">
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Time needed
 									</Label>
 									<DurationInput
@@ -1060,7 +1048,7 @@ function TaskDialog({
 									/>
 								</div>
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Due date
 									</Label>
 									<DateTimePicker
@@ -1074,7 +1062,7 @@ function TaskDialog({
 
 							<div className="grid gap-4 md:grid-cols-2">
 								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 										Priority
 									</Label>
 									<Select
@@ -1145,7 +1133,7 @@ function TaskDialog({
 									<div className="space-y-1.5">
 										<Label
 											htmlFor="task-name"
-											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 										>
 											Task name
 										</Label>
@@ -1161,7 +1149,7 @@ function TaskDialog({
 									<div className="h-px bg-border/30" />
 
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Category
 										</Label>
 										<CategoryPicker
@@ -1171,7 +1159,7 @@ function TaskDialog({
 									</div>
 									<div className="grid gap-4 md:grid-cols-3">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Color
 											</Label>
 											<div className="flex flex-wrap gap-2 rounded-lg border border-border/40 p-2">
@@ -1193,7 +1181,7 @@ function TaskDialog({
 											</div>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Hours
 											</Label>
 											<Select
@@ -1214,7 +1202,7 @@ function TaskDialog({
 											</Select>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Calendar
 											</Label>
 											<Select
@@ -1242,7 +1230,7 @@ function TaskDialog({
 									<div className="space-y-1.5">
 										<Label
 											htmlFor="task-notes"
-											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 										>
 											Notes
 										</Label>
@@ -1257,7 +1245,7 @@ function TaskDialog({
 									<div className="space-y-1.5">
 										<Label
 											htmlFor="task-location"
-											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60"
+											className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
 										>
 											Location
 										</Label>
@@ -1296,7 +1284,7 @@ function TaskDialog({
 								<AccordionContent className="space-y-5 pb-5">
 									<div className="grid gap-4 md:grid-cols-2">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Priority
 											</Label>
 											<Select
@@ -1318,7 +1306,7 @@ function TaskDialog({
 											</Select>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Status
 											</Label>
 											<Select
@@ -1342,7 +1330,7 @@ function TaskDialog({
 									</div>
 
 									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 											Scheduling mode
 										</Label>
 										<Select
@@ -1377,7 +1365,7 @@ function TaskDialog({
 
 									<div className="grid gap-4 md:grid-cols-[1fr_auto]">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Time needed
 											</Label>
 											<div className="flex items-center gap-2 rounded-lg border border-border/40 px-3 py-2">
@@ -1425,7 +1413,7 @@ function TaskDialog({
 
 									<div className="grid gap-4 md:grid-cols-2">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Min chunk
 											</Label>
 											<DurationInput
@@ -1435,7 +1423,7 @@ function TaskDialog({
 											/>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Max chunk
 											</Label>
 											<DurationInput
@@ -1447,7 +1435,7 @@ function TaskDialog({
 									</div>
 									<div className="grid gap-4 md:grid-cols-2">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Rest time
 											</Label>
 											<DurationInput
@@ -1456,7 +1444,7 @@ function TaskDialog({
 											/>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Travel duration (each side)
 											</Label>
 											<DurationInput
@@ -1474,7 +1462,7 @@ function TaskDialog({
 
 									<div className="grid gap-4 md:grid-cols-2">
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Schedule after
 											</Label>
 											<DateTimePicker
@@ -1485,7 +1473,7 @@ function TaskDialog({
 											/>
 										</div>
 										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/60">
+											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
 												Due date
 											</Label>
 											<DateTimePicker
