@@ -249,40 +249,11 @@ export const applySchedulingBlocks = internalMutation({
 			const unpinnedExisting = existingGroup.filter((e) => !e.pinned);
 			const pairCount = Math.min(unpinnedExisting.length, blocks.length);
 
-			console.log("[scheduling:apply]", {
-				groupKey: key,
-				existingCount: existingGroup.length,
-				pinnedCount: pinnedExisting.length,
-				unpinnedCount: unpinnedExisting.length,
-				blocksCount: blocks.length,
-				pairCount,
-				existing: existingGroup.map((e) => ({
-					id: String(e._id),
-					start: e.start,
-					end: e.end,
-					pinned: e.pinned,
-					googleEventId: e.googleEventId,
-					calendarId: e.calendarId,
-					source: e.source,
-				})),
-			});
-
 			for (let index = 0; index < pairCount; index += 1) {
 				const block = blocks[index];
 				const current = unpinnedExisting[index];
 				if (!block || !current) continue;
 				const resolvedBlockColor = resolveBlockColor(block, resolvedTravelColor);
-				console.log("[scheduling:apply] patch", {
-					eventId: String(current._id),
-					oldStart: current.start,
-					oldEnd: current.end,
-					newStart: block.start,
-					newEnd: block.end,
-					blockCalendarId: block.calendarId,
-					currentCalendarId: current.calendarId,
-					resolvedCalendarId: block.calendarId ?? current.calendarId,
-					googleEventId: current.googleEventId,
-				});
 				await ctx.db.patch(current._id, {
 					title: block.title,
 					start: block.start,

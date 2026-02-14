@@ -141,23 +141,27 @@ const normalizeOptionalNonNegativeMinutes = (value: number | null | undefined) =
 	return Math.round(value);
 };
 
+const isTaskOrTravelSourceId = (sourceId: string | undefined, taskId: string): boolean => {
+	if (typeof sourceId !== "string") return false;
+	if (sourceId === taskId) return true;
+	// Match both legacy format (${taskId}:travel:) and current format (task:${taskId}:travel:)
+	if (sourceId.startsWith(`${taskId}:travel:`)) return true;
+	if (sourceId.startsWith(`task:${taskId}:travel:`)) return true;
+	return false;
+};
+
 const clearPinnedTaskCalendarEvents = async (
 	ctx: MutationCtx,
 	userId: string,
 	taskId: Id<"tasks">,
 ) => {
 	const taskSourceId = String(taskId);
-	const taskTravelSourcePrefix = `${taskSourceId}:travel:`;
 	const events = await ctx.db
 		.query("calendarEvents")
-		.withIndex("by_userId", (q) => q.eq("userId", userId))
+		.withIndex("by_userId_source_sourceId", (q) => q.eq("userId", userId).eq("source", "task"))
 		.collect();
 	const matchingPinnedEvents = events.filter(
-		(event) =>
-			event.source === "task" &&
-			event.pinned === true &&
-			typeof event.sourceId === "string" &&
-			(event.sourceId === taskSourceId || event.sourceId.startsWith(taskTravelSourcePrefix)),
+		(event) => event.pinned === true && isTaskOrTravelSourceId(event.sourceId, taskSourceId),
 	);
 	if (matchingPinnedEvents.length === 0) {
 		return;

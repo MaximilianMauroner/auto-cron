@@ -749,22 +749,23 @@ export const setSchedulingHorizonWeeks = mutation({
 	}),
 });
 
-export const updateActiveProduct = mutation({
+export const internalUpdateActiveProduct = internalMutation({
 	args: {
+		userId: v.string(),
 		productId: v.string(),
 	},
 	returns: v.string(),
-	handler: withMutationAuth(async (ctx, args: { productId: string }): Promise<string> => {
+	handler: async (ctx, args: { userId: string; productId: string }): Promise<string> => {
 		if (!isValidProductId(args.productId)) {
 			throw new ConvexError({
 				code: "INVALID_PRODUCT",
 				message: "Unknown product ID.",
 			});
 		}
-		await ensureSettingsForUser(ctx, ctx.userId);
+		await ensureSettingsForUser(ctx, args.userId);
 		const settings = await ctx.db
 			.query("userSettings")
-			.withIndex("by_userId", (q) => q.eq("userId", ctx.userId))
+			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
 			.unique();
 		if (settings) {
 			const maxWeeks = getMaxHorizonWeeks(args.productId);
@@ -776,11 +777,11 @@ export const updateActiveProduct = mutation({
 			});
 		}
 		await enqueueSchedulingRunFromMutation(ctx, {
-			userId: ctx.userId,
+			userId: args.userId,
 			triggeredBy: "hours_change",
 		});
 		return args.productId;
-	}),
+	},
 });
 
 export const setWeekStartsOn = mutation({

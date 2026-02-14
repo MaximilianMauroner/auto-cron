@@ -14,36 +14,13 @@ import {
 } from "@/components/ui/context-menu";
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
 import { formatDurationCompact } from "@/lib/duration";
-import type { CalendarEventDTO, Priority, TaskDTO, TaskStatus } from "@auto-cron/types";
-
-const priorityLabels: Record<Priority, string> = {
-	low: "Low",
-	medium: "Medium",
-	high: "High",
-	critical: "Critical",
-	blocker: "Blocker",
-};
+import { priorityClass, priorityLabels, statusLabels } from "@/lib/scheduling-constants";
+import type { CalendarEventDTO, TaskDTO, TaskStatus } from "@auto-cron/types";
 import { Check, ChevronDown, CircleDot, Clock3, Pencil, Pin, PinOff, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { TaskScheduleView } from "./task-schedule-view";
-
-export const priorityClass: Record<Priority, string> = {
-	low: "bg-emerald-500/15 text-emerald-700 border-emerald-500/25",
-	medium: "bg-sky-500/15 text-sky-700 border-sky-500/25",
-	high: "bg-amber-500/15 text-amber-700 border-amber-500/25",
-	critical: "bg-orange-500/15 text-orange-700 border-orange-500/25",
-	blocker: "bg-rose-500/15 text-rose-700 border-rose-500/25",
-};
-
-const statusLabels: Record<TaskStatus, string> = {
-	backlog: "Backlog",
-	queued: "Up Next",
-	scheduled: "Scheduled",
-	in_progress: "In Progress",
-	done: "Done",
-};
 
 type AsideTaskCardProps = {
 	task: TaskDTO;

@@ -32,6 +32,7 @@ import {
 	ChevronsUpDown,
 	Clock3,
 	CreditCard,
+	Layers,
 	LogOut,
 	Moon,
 	Plus,
@@ -51,6 +52,7 @@ const navItems = [
 	{ title: "Calendar", href: "/app/calendar", icon: Calendar },
 	{ title: "Tasks", href: "/app/tasks", icon: CheckSquare },
 	{ title: "Habits", href: "/app/habits", icon: Repeat },
+	{ title: "Priorities", href: "/app/priorities", icon: Layers },
 ];
 
 type GoogleCalendarListItem = {

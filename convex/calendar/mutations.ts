@@ -245,10 +245,21 @@ const findProtectedFingerprintMatches = async (
 	const matchCalendarIds = new Set(
 		resolveMatchCalendarIds(event.calendarId, primaryCalendarAliases),
 	);
-	const candidates = await ctx.db
-		.query("calendarEvents")
-		.withIndex("by_userId_start", (q) => q.eq("userId", userId).eq("start", event.start))
-		.collect();
+	const [taskCandidates, habitCandidates] = await Promise.all([
+		ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_start_source", (q) =>
+				q.eq("userId", userId).eq("start", event.start).eq("source", "task"),
+			)
+			.collect(),
+		ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_start_source", (q) =>
+				q.eq("userId", userId).eq("start", event.start).eq("source", "habit"),
+			)
+			.collect(),
+	]);
+	const candidates = [...taskCandidates, ...habitCandidates];
 	return candidates.filter((candidate) => {
 		if (!isProtectedSourceEvent(candidate)) return false;
 		if (candidate.end !== event.end) return false;
