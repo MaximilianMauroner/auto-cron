@@ -141,34 +141,55 @@ const normalizeOptionalNonNegativeMinutes = (value: number | null | undefined) =
 	return Math.round(value);
 };
 
-const isTaskOrTravelSourceId = (sourceId: string | undefined, taskId: string): boolean => {
-	if (typeof sourceId !== "string") return false;
-	if (sourceId === taskId) return true;
-	// Match both legacy format (${taskId}:travel:) and current format (task:${taskId}:travel:)
-	if (sourceId.startsWith(`${taskId}:travel:`)) return true;
-	if (sourceId.startsWith(`task:${taskId}:travel:`)) return true;
-	return false;
-};
-
 const clearPinnedTaskCalendarEvents = async (
 	ctx: MutationCtx,
 	userId: string,
 	taskId: Id<"tasks">,
 ) => {
 	const taskSourceId = String(taskId);
-	const events = await ctx.db
-		.query("calendarEvents")
-		.withIndex("by_userId_source_sourceId", (q) => q.eq("userId", userId).eq("source", "task"))
-		.collect();
-	const matchingPinnedEvents = events.filter(
-		(event) => event.pinned === true && isTaskOrTravelSourceId(event.sourceId, taskSourceId),
+	const travelPrefix = `task:${taskSourceId}:travel:`;
+	const legacyTravelPrefix = `${taskSourceId}:travel:`;
+	// Use targeted index queries instead of loading all task-source events:
+	// 1. Main task event (exact sourceId match)
+	// 2. Travel blocks with current format (task:${id}:travel:...)
+	// 3. Travel blocks with legacy format (${id}:travel:...)
+	const [mainEvents, travelEvents, legacyTravelEvents] = await Promise.all([
+		ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_source_sourceId", (q) =>
+				q.eq("userId", userId).eq("source", "task").eq("sourceId", taskSourceId),
+			)
+			.collect(),
+		ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_source_sourceId", (q) =>
+				q
+					.eq("userId", userId)
+					.eq("source", "task")
+					.gte("sourceId", travelPrefix)
+					.lt("sourceId", `task:${taskSourceId}:travel;`),
+			)
+			.collect(),
+		ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_source_sourceId", (q) =>
+				q
+					.eq("userId", userId)
+					.eq("source", "task")
+					.gte("sourceId", legacyTravelPrefix)
+					.lt("sourceId", `${taskSourceId}:travel;`),
+			)
+			.collect(),
+	]);
+	const pinnedEvents = [...mainEvents, ...travelEvents, ...legacyTravelEvents].filter(
+		(e) => e.pinned === true,
 	);
-	if (matchingPinnedEvents.length === 0) {
+	if (pinnedEvents.length === 0) {
 		return;
 	}
 	const now = Date.now();
 	await Promise.all(
-		matchingPinnedEvents.map((event) =>
+		pinnedEvents.map((event) =>
 			ctx.db.patch(event._id, {
 				pinned: false,
 				updatedAt: now,
@@ -274,11 +295,10 @@ export const reorderTasks = mutation({
 				}),
 			),
 		);
-		for (const item of args.items) {
-			if (item.status === "backlog") {
-				await clearPinnedTaskCalendarEvents(ctx, ctx.userId, item.id);
-			}
-		}
+		const backlogItems = args.items.filter((item) => item.status === "backlog");
+		await Promise.all(
+			backlogItems.map((item) => clearPinnedTaskCalendarEvents(ctx, ctx.userId, item.id)),
+		);
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId: ctx.userId,
 			triggeredBy: "task_change",
