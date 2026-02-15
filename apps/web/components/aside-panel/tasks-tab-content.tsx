@@ -22,33 +22,57 @@ import { ChevronDown, Clock3, Search } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import {
+	AsideSortFilterBar,
+	type DurationFilter,
+	type HoursSetOption,
+	type SortOption,
+	matchesDurationFilter,
+	sortByDueDate,
+} from "./aside-sort-filter-bar";
 import { AsideTaskCard } from "./aside-task-card";
 
 export function TasksTabContent({
 	tasks,
 	tasksPending,
+	hoursSets,
 }: {
 	tasks: TaskDTO[];
 	tasksPending: boolean;
+	hoursSets: HoursSetOption[];
 }) {
 	const [search, setSearch] = useState("");
 	const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+	const [sort, setSort] = useState<SortOption>("default");
+	const [durationFilter, setDurationFilter] = useState<DurationFilter>("all");
+	const [hoursSetFilter, setHoursSetFilter] = useState("all");
 	const { mutate: updateTask } = useMutationWithStatus(api.tasks.mutations.updateTask);
 
 	const filteredTasks = useMemo(() => {
+		let result = tasks;
 		const term = search.toLowerCase().trim();
-		if (!term) return tasks;
-		return tasks.filter(
-			(t) => t.title.toLowerCase().includes(term) || t.description?.toLowerCase().includes(term),
-		);
-	}, [tasks, search]);
+		if (term) {
+			result = result.filter(
+				(t) => t.title.toLowerCase().includes(term) || t.description?.toLowerCase().includes(term),
+			);
+		}
+		if (durationFilter !== "all") {
+			result = result.filter((t) => matchesDurationFilter(t.estimatedMinutes, durationFilter));
+		}
+		if (hoursSetFilter !== "all") {
+			result = result.filter((t) => t.hoursSetId === hoursSetFilter);
+		}
+		return result;
+	}, [tasks, search, durationFilter, hoursSetFilter]);
 
 	const groupedByStatus = useMemo(() => {
-		return statusOrder.map((status) => ({
-			status,
-			tasks: filteredTasks.filter((t) => t.status === status),
-		}));
-	}, [filteredTasks]);
+		return statusOrder.map((status) => {
+			const groupTasks = filteredTasks.filter((t) => t.status === status);
+			if (sort === "due_asc") return { status, tasks: sortByDueDate(groupTasks, "asc") };
+			if (sort === "due_desc") return { status, tasks: sortByDueDate(groupTasks, "desc") };
+			return { status, tasks: groupTasks };
+		});
+	}, [filteredTasks, sort]);
 
 	const hasAnyTasks = groupedByStatus.some((g) => g.tasks.length > 0);
 
@@ -121,14 +145,24 @@ export function TasksTabContent({
 					/>
 				</div>
 
+				<AsideSortFilterBar
+					sort={sort}
+					onSortChange={setSort}
+					durationFilter={durationFilter}
+					onDurationFilterChange={setDurationFilter}
+					hoursSetFilter={hoursSetFilter}
+					onHoursSetFilterChange={setHoursSetFilter}
+					hoursSets={hoursSets}
+				/>
+
 				{tasksPending ? (
 					<div className="font-[family-name:var(--font-cutive)] text-[0.76rem] text-muted-foreground">
 						Loading tasks...
 					</div>
 				) : !hasAnyTasks ? (
 					<div className="font-[family-name:var(--font-cutive)] rounded-xl border border-dashed border-border/60 p-4 text-center text-[0.76rem] text-muted-foreground">
-						{search
-							? `No tasks match \u201c${search}\u201d`
+						{search || durationFilter !== "all" || hoursSetFilter !== "all"
+							? "No tasks match the current filters."
 							: "No tasks yet. Create your first task on the Tasks page."}
 					</div>
 				) : (

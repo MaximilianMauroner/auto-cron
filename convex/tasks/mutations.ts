@@ -4,6 +4,7 @@ import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
 import { ensureCategoryOwnership, ensureDefaultCategories } from "../categories/shared";
+import { env } from "../env";
 import {
 	ensureHoursSetOwnership,
 	getDefaultHoursSet,
@@ -365,6 +366,14 @@ export const seedDevTasks = mutation({
 		created: v.number(),
 	}),
 	handler: withMutationAuth(async (ctx, args: { count?: number }): Promise<{ created: number }> => {
+		const internalAdminUserIds = env().INTERNAL_ADMIN_USER_IDS;
+		if (!internalAdminUserIds?.includes(ctx.userId)) {
+			throw new ConvexError({
+				code: "UNAUTHORIZED",
+				message: "This operation is restricted to internal admins.",
+			});
+		}
+
 		const seedCount = Math.max(1, Math.min(20, Math.floor(args.count ?? 5)));
 		const hoursSetId = await resolveHoursSetForTask(ctx, ctx.userId, undefined);
 		const { personalId } = await ensureDefaultCategories(ctx, ctx.userId);

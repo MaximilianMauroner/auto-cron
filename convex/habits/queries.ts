@@ -99,7 +99,6 @@ export const listHabits = query({
 				const category = categoryMap.get(habit.categoryId) ?? null;
 				return {
 					...habit,
-					priority: habit.priority === "blocker" ? "critical" : habit.priority,
 					effectiveColor: habit.color ?? category?.color ?? "#f59e0b",
 				};
 			})

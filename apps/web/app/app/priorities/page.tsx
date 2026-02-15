@@ -111,9 +111,7 @@ function PriorityColumnsView({ tasks, habits, setEditingTaskId }: PriorityColumn
 		return priorityOrder.map((priority) => ({
 			priority,
 			tasks: tasks.filter((t) => t.priority === priority),
-			habits: habits.filter(
-				(h) => (h.priority ?? "medium") === (priority as unknown as HabitPriority),
-			),
+			habits: habits.filter((h) => (h.priority ?? "medium") === (priority as HabitPriority)),
 		}));
 	}, [tasks, habits]);
 

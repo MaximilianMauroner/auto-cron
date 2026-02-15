@@ -17,17 +17,30 @@ import { useCallback, useMemo, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
 import { AsideHabitItem } from "./aside-habit-item";
+import {
+	AsideSortFilterBar,
+	type DurationFilter,
+	type HoursSetOption,
+	type SortOption,
+	matchesDurationFilter,
+	sortByDueDate,
+} from "./aside-sort-filter-bar";
 import { AsideTaskCard } from "./aside-task-card";
 
 export function PrioritiesTabContent({
 	tasks,
 	tasksPending,
+	hoursSets,
 }: {
 	tasks: TaskDTO[];
 	tasksPending: boolean;
+	hoursSets: HoursSetOption[];
 }) {
 	const [search, setSearch] = useState("");
 	const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+	const [sort, setSort] = useState<SortOption>("default");
+	const [durationFilter, setDurationFilter] = useState<DurationFilter>("all");
+	const [hoursSetFilter, setHoursSetFilter] = useState("all");
 	const habitsQuery = useAuthenticatedQueryWithStatus(api.habits.queries.listHabits, {});
 	const habits = (habitsQuery.data ?? []) as HabitDTO[];
 	const { mutate: updateTask } = useMutationWithStatus(api.tasks.mutations.updateTask);
@@ -35,26 +48,44 @@ export function PrioritiesTabContent({
 	const isLoading = tasksPending || habitsQuery.isPending;
 
 	const filteredTasks = useMemo(() => {
+		let result = tasks.filter((t) => t.status !== "done");
 		const term = search.toLowerCase().trim();
-		const activeTasks = tasks.filter((t) => t.status !== "done");
-		if (!term) return activeTasks;
-		return activeTasks.filter(
-			(t) => t.title.toLowerCase().includes(term) || t.description?.toLowerCase().includes(term),
-		);
-	}, [tasks, search]);
+		if (term) {
+			result = result.filter(
+				(t) => t.title.toLowerCase().includes(term) || t.description?.toLowerCase().includes(term),
+			);
+		}
+		if (durationFilter !== "all") {
+			result = result.filter((t) => matchesDurationFilter(t.estimatedMinutes, durationFilter));
+		}
+		if (hoursSetFilter !== "all") {
+			result = result.filter((t) => t.hoursSetId === hoursSetFilter);
+		}
+		return result;
+	}, [tasks, search, durationFilter, hoursSetFilter]);
 
 	const filteredHabits = useMemo(() => {
+		let result = habits.filter((h) => h.isActive);
 		const term = search.toLowerCase().trim();
-		const activeHabits = habits.filter((h) => h.isActive);
-		if (!term) return activeHabits;
-		return activeHabits.filter(
-			(h) => h.title.toLowerCase().includes(term) || h.description?.toLowerCase().includes(term),
-		);
-	}, [habits, search]);
+		if (term) {
+			result = result.filter(
+				(h) => h.title.toLowerCase().includes(term) || h.description?.toLowerCase().includes(term),
+			);
+		}
+		if (durationFilter !== "all") {
+			result = result.filter((h) => matchesDurationFilter(h.durationMinutes, durationFilter));
+		}
+		if (hoursSetFilter !== "all") {
+			result = result.filter((h) => h.hoursSetId === hoursSetFilter);
+		}
+		return result;
+	}, [habits, search, durationFilter, hoursSetFilter]);
 
 	const groupedByPriority = useMemo(() => {
 		return priorityOrder.map((priority) => {
-			const priorityTasks = filteredTasks.filter((t) => t.priority === priority);
+			let priorityTasks = filteredTasks.filter((t) => t.priority === priority);
+			if (sort === "due_asc") priorityTasks = sortByDueDate(priorityTasks, "asc");
+			if (sort === "due_desc") priorityTasks = sortByDueDate(priorityTasks, "desc");
 			const priorityHabits = filteredHabits.filter(
 				(h) => (h.priority ?? "medium") === (priority as unknown as HabitPriority),
 			);
@@ -65,7 +96,7 @@ export function PrioritiesTabContent({
 				total: priorityTasks.length + priorityHabits.length,
 			};
 		});
-	}, [filteredTasks, filteredHabits]);
+	}, [filteredTasks, filteredHabits, sort]);
 
 	// ── DnD (tasks only — habits are non-draggable in the aside) ──
 
@@ -133,6 +164,16 @@ export function PrioritiesTabContent({
 						className="h-8 pl-8 font-[family-name:var(--font-outfit)] text-[0.76rem]"
 					/>
 				</div>
+
+				<AsideSortFilterBar
+					sort={sort}
+					onSortChange={setSort}
+					durationFilter={durationFilter}
+					onDurationFilterChange={setDurationFilter}
+					hoursSetFilter={hoursSetFilter}
+					onHoursSetFilterChange={setHoursSetFilter}
+					hoursSets={hoursSets}
+				/>
 
 				{isLoading ? (
 					<div className="font-[family-name:var(--font-cutive)] text-[0.76rem] text-muted-foreground">
@@ -214,7 +255,9 @@ export function PrioritiesTabContent({
 							))}
 							{displayGroups.every((g) => g.total === 0) ? (
 								<div className="font-[family-name:var(--font-cutive)] rounded-xl border border-dashed border-border/60 p-4 text-center text-[0.76rem] text-muted-foreground">
-									{search ? `No items match \u201c${search}\u201d` : "No active tasks or habits."}
+									{search || durationFilter !== "all" || hoursSetFilter !== "all"
+										? "No items match the current filters."
+										: "No active tasks or habits."}
 								</div>
 							) : null}
 						</div>

@@ -388,7 +388,7 @@ const sanitizeHabitPriority = (
 	priority: string | undefined,
 ): "low" | "medium" | "high" | "critical" => {
 	if (priority === "low" || priority === "medium" || priority === "high") return priority;
-	if (priority === "critical" || priority === "blocker") return "critical";
+	if (priority === "critical") return "critical";
 	return "medium";
 };
 
@@ -399,8 +399,7 @@ const normalizeHabitQuickCreateDefaults = (
 		settings?.habitQuickCreatePriority === "low" ||
 		settings?.habitQuickCreatePriority === "medium" ||
 		settings?.habitQuickCreatePriority === "high" ||
-		settings?.habitQuickCreatePriority === "critical" ||
-		settings?.habitQuickCreatePriority === "blocker"
+		settings?.habitQuickCreatePriority === "critical"
 			? settings.habitQuickCreatePriority
 			: defaultHabitQuickCreateSettings.priority;
 
@@ -1124,7 +1123,7 @@ export const setHabitQuickCreateDefaults = mutation({
 			ctx,
 			args: {
 				defaults: {
-					priority: "low" | "medium" | "high" | "critical" | "blocker";
+					priority: "low" | "medium" | "high" | "critical";
 					durationMinutes: number;
 					frequency: "daily" | "weekly" | "biweekly" | "monthly";
 					recoveryPolicy: "skip" | "recover";
@@ -1133,7 +1132,7 @@ export const setHabitQuickCreateDefaults = mutation({
 				};
 			},
 		): Promise<{
-			priority: "low" | "medium" | "high" | "critical" | "blocker";
+			priority: "low" | "medium" | "high" | "critical";
 			durationMinutes: number;
 			frequency: "daily" | "weekly" | "biweekly" | "monthly";
 			recoveryPolicy: "skip" | "recover";

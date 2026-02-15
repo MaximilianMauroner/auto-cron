@@ -32,9 +32,6 @@ const buildDedupeKey = (event: Doc<"calendarEvents">) => {
 	if (event.seriesId && event.occurrenceStart !== undefined) {
 		return `series:${event.seriesId}:${event.occurrenceStart}`;
 	}
-	if (event.seriesId && event.occurrenceStart !== undefined) {
-		return `series:${event.seriesId}:${event.occurrenceStart}`;
-	}
 	return `fallback:${event.source}:${event.sourceId ?? "none"}:${event.start}:${event.end}:${event.title ?? "untitled"}`;
 };
 

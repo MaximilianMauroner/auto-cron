@@ -33,13 +33,7 @@ export default defineSchema({
 		),
 		taskQuickCreateColor: v.optional(v.string()),
 		habitQuickCreatePriority: v.optional(
-			v.union(
-				v.literal("low"),
-				v.literal("medium"),
-				v.literal("high"),
-				v.literal("critical"),
-				v.literal("blocker"),
-			),
+			v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("critical")),
 		),
 		habitQuickCreateDurationMinutes: v.optional(v.number()),
 		habitQuickCreateFrequency: v.optional(
@@ -170,13 +164,7 @@ export default defineSchema({
 		title: v.string(),
 		description: v.optional(v.string()),
 		priority: v.optional(
-			v.union(
-				v.literal("low"),
-				v.literal("medium"),
-				v.literal("high"),
-				v.literal("critical"),
-				v.literal("blocker"),
-			),
+			v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("critical")),
 		),
 		categoryId: v.id("taskCategories"),
 		recurrenceRule: v.optional(v.string()),
@@ -480,6 +468,7 @@ export default defineSchema({
 
 	feedback: defineTable({
 		userId: v.optional(v.string()),
+		fingerprint: v.optional(v.string()),
 		category: v.union(v.literal("bug"), v.literal("idea"), v.literal("general")),
 		subject: v.optional(v.string()),
 		message: v.string(),
@@ -491,5 +480,6 @@ export default defineSchema({
 		updatedAt: v.number(),
 	})
 		.index("by_createdAt", ["createdAt"])
+		.index("by_fingerprint_createdAt", ["fingerprint", "createdAt"])
 		.index("by_userId_createdAt", ["userId", "createdAt"]),
 });

@@ -30,7 +30,7 @@ export type TaskQuickCreateDefaults = {
 };
 
 export type HabitQuickCreateDefaults = {
-	priority: "low" | "medium" | "high" | "critical" | "blocker";
+	priority: "low" | "medium" | "high" | "critical";
 	durationMinutes: number;
 	frequency: "daily" | "weekly" | "biweekly" | "monthly";
 	recoveryPolicy: "skip" | "recover";
@@ -114,7 +114,7 @@ export type HabitQuickCreateSettingsShape = {
 };
 
 export type NormalizedHabitQuickCreateDefaults = {
-	habitQuickCreatePriority: "low" | "medium" | "high" | "critical" | "blocker";
+	habitQuickCreatePriority: "low" | "medium" | "high" | "critical";
 	habitQuickCreateDurationMinutes: number;
 	habitQuickCreateFrequency: "daily" | "weekly" | "biweekly" | "monthly";
 	habitQuickCreateRecoveryPolicy: "skip" | "recover";

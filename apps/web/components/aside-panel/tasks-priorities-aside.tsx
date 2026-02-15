@@ -3,8 +3,10 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import type { TaskDTO } from "@auto-cron/types";
+import { useMemo } from "react";
 import { api } from "../../../../convex/_generated/api";
 import { useAsidePanel } from "./aside-panel-context";
+import type { HoursSetOption } from "./aside-sort-filter-bar";
 import { PrioritiesTabContent } from "./priorities-tab-content";
 import { TasksTabContent } from "./tasks-tab-content";
 
@@ -16,6 +18,15 @@ export function TasksPrioritiesAside() {
 	);
 	const tasks = (tasksQuery.data ?? []) as TaskDTO[];
 	const tasksPending = tasksQuery.isPending;
+
+	const hoursSetsQuery = useAuthenticatedQueryWithStatus(
+		api.hours.queries.listHoursSets,
+		open ? {} : "skip",
+	);
+	const hoursSets: HoursSetOption[] = useMemo(
+		() => (hoursSetsQuery.data ?? []).map((hs) => ({ id: hs._id, name: hs.name })),
+		[hoursSetsQuery.data],
+	);
 
 	return (
 		<Tabs defaultValue="tasks" className="flex h-full flex-col">
@@ -36,10 +47,10 @@ export function TasksPrioritiesAside() {
 				</TabsList>
 			</div>
 			<TabsContent value="tasks" className="min-h-0 overflow-y-auto">
-				<TasksTabContent tasks={tasks} tasksPending={tasksPending} />
+				<TasksTabContent tasks={tasks} tasksPending={tasksPending} hoursSets={hoursSets} />
 			</TabsContent>
 			<TabsContent value="priorities" className="min-h-0 overflow-y-auto">
-				<PrioritiesTabContent tasks={tasks} tasksPending={tasksPending} />
+				<PrioritiesTabContent tasks={tasks} tasksPending={tasksPending} hoursSets={hoursSets} />
 			</TabsContent>
 		</Tabs>
 	);

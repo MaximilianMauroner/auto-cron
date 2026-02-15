@@ -2890,6 +2890,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 																	: current,
 															);
 														}}
+														weekStartsOn={userPreferences.weekStartsOn}
 														initialFocus
 														className="rounded-md border-0 bg-transparent"
 													/>
@@ -2922,6 +2923,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 																	: current,
 															);
 														}}
+														weekStartsOn={userPreferences.weekStartsOn}
 														initialFocus
 														className="rounded-md border-0 bg-transparent"
 													/>
@@ -3196,6 +3198,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 																							: current,
 																					);
 																				}}
+																				weekStartsOn={userPreferences.weekStartsOn}
 																				initialFocus
 																				className="rounded-md border-0 bg-transparent"
 																			/>

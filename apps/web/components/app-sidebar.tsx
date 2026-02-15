@@ -25,6 +25,7 @@ import {
 	SidebarMenuItem,
 	SidebarRail,
 } from "@/components/ui/sidebar";
+import { useUserPreferences } from "@/components/user-preferences-context";
 import { useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { useCustomer } from "autumn-js/react";
@@ -117,6 +118,7 @@ export function AppSidebar() {
 	const [isSigningOut, setIsSigningOut] = useState(false);
 	const { resolvedTheme, setTheme } = useTheme();
 	const [mounted, setMounted] = useState(false);
+	const { weekStartsOn } = useUserPreferences();
 
 	useEffect(() => {
 		setMounted(true);
@@ -305,6 +307,7 @@ export function AppSidebar() {
 								mode="single"
 								selected={sidebarSelectedDate}
 								onSelect={handleDateSelect}
+								weekStartsOn={weekStartsOn}
 								className="w-full rounded-md border border-sidebar-border/60 bg-sidebar-accent/30 p-1.5 [--cell-size:--spacing(5)]"
 							/>
 						</SidebarGroupContent>

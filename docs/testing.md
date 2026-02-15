@@ -103,8 +103,8 @@ Run this checklist when touching `convex/scheduling/*`, trigger wiring, or diagn
 
 ## Manual auth + middleware checklist
 
-- Unauthenticated navigation to protected routes (`/calendar`, `/tasks`, `/habits`, `/settings`) redirects to `/sign-in`.
+- Unauthenticated navigation to protected routes (`/app/calendar`, `/app/tasks`, `/app/habits`, `/app/settings`) redirects to `/sign-in`.
 - Authenticated navigation to protected routes does not loop or bounce.
-- `/callback` auth flow completes and returns to `/calendar`.
+- `/callback` auth flow completes and returns to `/app/calendar`.
 - Sign-out invalidates access to protected routes until re-authenticated.
 - Sidebar calendar panel does not flicker to an empty state while auth is still initializing.

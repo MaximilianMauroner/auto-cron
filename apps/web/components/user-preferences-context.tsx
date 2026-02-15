@@ -6,10 +6,13 @@ import { api } from "../../../convex/_generated/api";
 
 type TimeFormatPreference = "12h" | "24h";
 
+type WeekStartsOn = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
 type UserPreferencesValue = {
 	timezone: string;
 	hour12: boolean;
 	timeFormatPreference: TimeFormatPreference;
+	weekStartsOn: WeekStartsOn;
 	isLoading: boolean;
 };
 
@@ -36,6 +39,7 @@ const fallback: UserPreferencesValue = {
 	timezone: typeof window !== "undefined" ? detectLocalTimeZone() : "UTC",
 	hour12: typeof window !== "undefined" ? detectLocalTimeFormatPreference() === "12h" : false,
 	timeFormatPreference: typeof window !== "undefined" ? detectLocalTimeFormatPreference() : "24h",
+	weekStartsOn: 1,
 	isLoading: true,
 };
 
@@ -58,6 +62,7 @@ export function UserPreferencesProvider({ children }: { children: ReactNode }) {
 			timezone,
 			hour12: timeFormatPreference === "12h",
 			timeFormatPreference,
+			weekStartsOn: preferencesQuery.data?.weekStartsOn ?? 1,
 			isLoading: preferencesQuery.isPending,
 		};
 	}, [
@@ -65,6 +70,7 @@ export function UserPreferencesProvider({ children }: { children: ReactNode }) {
 		localTimeZone,
 		preferencesQuery.data?.timeFormatPreference,
 		preferencesQuery.data?.timezone,
+		preferencesQuery.data?.weekStartsOn,
 		preferencesQuery.isPending,
 	]);
 

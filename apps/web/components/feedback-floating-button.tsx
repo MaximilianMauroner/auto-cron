@@ -20,11 +20,10 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useMutationWithStatus } from "@/hooks/use-convex-status";
-import type { FunctionReference } from "convex/server";
+import { makeFunctionReference } from "convex/server";
 import { Check, MessageSquare, Send } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { api } from "../../../convex/_generated/api";
 
 type FeedbackCategory = "bug" | "idea" | "general";
 
@@ -34,16 +33,25 @@ export function FeedbackButton() {
 	const [category, setCategory] = useState<FeedbackCategory>("idea");
 	const [subject, setSubject] = useState("");
 	const [message, setMessage] = useState("");
+	const [fingerprint, setFingerprint] = useState<string | null>(null);
 	const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
 	const [submitState, setSubmitState] = useState<"idle" | "success" | "error">("idle");
 	const [submitError, setSubmitError] = useState<string | null>(null);
-	const createFeedbackMutationRef = (
-		api as unknown as {
-			feedback: { mutations: { createFeedback: FunctionReference<"mutation"> } };
-		}
-	).feedback.mutations.createFeedback;
+	const createFeedbackMutation = makeFunctionReference<
+		"mutation",
+		{
+			category: FeedbackCategory;
+			subject?: string;
+			message: string;
+			fingerprint?: string;
+			page?: string;
+			timezone?: string;
+			userAgent?: string;
+		},
+		string
+	>("feedback/mutations:createFeedback");
 	const { mutate: createFeedback, isPending: isSubmitting } =
-		useMutationWithStatus(createFeedbackMutationRef);
+		useMutationWithStatus(createFeedbackMutation);
 
 	const feedbackDetails = useMemo(() => {
 		const location = typeof window !== "undefined" ? window.location.href : "unknown";
@@ -67,6 +75,20 @@ export function FeedbackButton() {
 		const onOpen = () => setIsDialogOpen(true);
 		window.addEventListener("open-feedback-dialog", onOpen);
 		return () => window.removeEventListener("open-feedback-dialog", onOpen);
+	}, []);
+
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const key = "auto-cron-feedback-fingerprint";
+		let value = window.localStorage.getItem(key);
+		if (!value) {
+			value =
+				typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+					? crypto.randomUUID()
+					: `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+			window.localStorage.setItem(key, value);
+		}
+		setFingerprint(value);
 	}, []);
 
 	if (!pathname.startsWith("/app")) return null;
@@ -94,6 +116,7 @@ export function FeedbackButton() {
 				category,
 				subject: subject.trim() || undefined,
 				message: message.trim(),
+				fingerprint: fingerprint ?? undefined,
 				page: window.location.href,
 				timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
 				userAgent: navigator.userAgent,
