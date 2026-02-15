@@ -16,63 +16,7 @@ Known bugs and defects discovered during development and review. Resolve in prio
 
 ## Critical
 
-### Google refresh token stored in client-side cookies
-
-- **Spotted during**: Security audit (Feb 2026)
-- **File**: apps/web/app/callback/route.ts:65-71
-- **Description**: Google refresh tokens are stored in HTTP-only cookies with `sameSite: "lax"`. Refresh tokens are long-lived secrets that grant ongoing access to user calendars. Cookies are sent with every request, enlarging the attack surface for cookie theft, CSRF, and exposure in logs/proxies.
-- **Action**: Store refresh tokens only in the Convex backend (already done via `upsertGoogleTokens` mutation). Remove cookie-based storage and use an opaque server-side session identifier instead.
-- **Priority**: critical
-
-### Google access token stored in cookies
-
-- **Spotted during**: Security audit (Feb 2026)
-- **File**: apps/web/app/callback/route.ts:58-64
-- **Description**: The OAuth access token is persisted in a cookie. Even though it is HTTP-only, it is sent with every request and may be logged by middleware or proxies. If `sameSite: "lax"` is insufficient, the token could be exposed via CSRF.
-- **Action**: Keep OAuth tokens server-side only in encrypted Convex storage; use opaque session tokens in cookies instead.
-- **Priority**: critical
-
-### No error boundaries anywhere in the app
-
-- **Spotted during**: Frontend audit (Feb 2026)
-- **File**: apps/web/app/layout.tsx, apps/web/app/app/layout.tsx
-- **Description**: No `error.tsx` or React `ErrorBoundary` components exist for any route. If any component throws during render, the entire application crashes with no fallback UI, giving users a blank screen.
-- **Action**: Add `error.tsx` files at `app/`, `app/app/`, and key route segments (calendar, tasks, habits, settings). Each should render a user-friendly error message with a retry button.
-- **Priority**: critical
-
-### calendar-client.tsx is 3,857 lines
-
-- **Spotted during**: Frontend audit (Feb 2026)
-- **File**: apps/web/app/app/calendar/calendar-client.tsx
-- **Description**: Single component file far exceeds the 1,000-line soft limit. It contains state management, drag-drop handling, recurrence editing, event dialogs, and calendar rendering all in one file. This is unmaintainable, hard to review, and impossible to lazy-load sub-features.
-- **Action**: Split into separate modules: CalendarView, EventEditor, RecurrenceEditor, DragDropHandler, and modal dialogs. Move each to its own file under `components/calendar/`.
-- **Priority**: critical
-
-### ~~`updateActiveProduct` allows plan-bypass~~ (FIXED)
-
-- **Spotted during**: PR review (Feb 2026)
-- **File**: convex/hours/mutations.ts:752
-- **Description**: Public mutation let any authenticated client set `activeProductId` to any valid tier without verifying the user's Autumn subscription. Since scheduling horizon limits are enforced using `activeProductId`, this was a plan-bypass vector.
-- **Action**: ~~Convert to internalMutation and create a verified action that checks Autumn subscription before updating.~~
-- **Resolution**: Converted to `internalUpdateActiveProduct` (internal mutation). Created `syncActiveProduct` action in `hours/actions.ts` that verifies the product against Autumn's customer API before calling the internal mutation. Frontend updated to use the action.
-- **Priority**: critical
-
-### ~~Full table scan in `clearPinnedTaskCalendarEvents`~~ (FIXED)
-
-- **Spotted during**: Convex audit (Feb 2026)
-- **File**: convex/tasks/mutations.ts:144-174
-- **Description**: Queries ALL calendar events for a user via `by_userId` index, then filters in JS for `source === "task"` and `pinned === true`. For users with thousands of events this is a memory and performance hazard that runs on every task status change to backlog. Also had a travel sourceId format mismatch: unpin logic matched `${taskId}:travel:` but solver produces `task:${taskId}:travel:`.
-- **Action**: ~~Use the existing `by_userId_source_sourceId` index (filter by source "task") and fix travel sourceId prefix matching.~~
-- **Resolution**: Now uses `by_userId_source_sourceId` index filtered by `source="task"`. Travel sourceId matching updated to handle both legacy and current formats.
-- **Priority**: critical
-
-### Full table scan in `findProtectedFingerprintMatches`
-
-- **Spotted during**: Convex audit (Feb 2026)
-- **File**: convex/calendar/mutations.ts:233-260
-- **Description**: Queries events by `by_userId_start` then filters extensively in application code for source, end, title, allDay, and calendar matching. Loads ALL events at a given timestamp before filtering.
-- **Action**: Add a more selective index (e.g., `by_userId_start_source`) or narrow the query to reduce in-memory filtering.
-- **Priority**: critical
+_No open critical issues currently._
 
 ## High
 
@@ -116,7 +60,7 @@ Known bugs and defects discovered during development and review. Resolve in prio
 - **Action**: Implement per-user rate limiting on calendar sync (e.g., max 1 full sync per 5 minutes per user). Add exponential backoff for Google API errors.
 - **Priority**: high
 
-### Habits page is 2,302 lines
+### Habits page is 2,256 lines
 
 - **Spotted during**: Frontend audit (Feb 2026)
 - **File**: apps/web/app/app/habits/page.tsx
@@ -124,7 +68,7 @@ Known bugs and defects discovered during development and review. Resolve in prio
 - **Action**: Extract internal components (HabitCard, HabitDialog, HabitForm) to separate files under `components/habits/`.
 - **Priority**: high
 
-### Tasks page is 1,597 lines
+### Tasks page is 1,562 lines
 
 - **Spotted during**: Frontend audit (Feb 2026)
 - **File**: apps/web/app/app/tasks/page.tsx

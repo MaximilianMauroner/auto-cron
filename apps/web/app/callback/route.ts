@@ -15,7 +15,6 @@ export const GET = handleAuth({
 	onSuccess: async ({ accessToken, oauthTokens }) => {
 		const cookieStore = await cookies();
 		const isProd = serverEnv.NODE_ENV === "production";
-		const existingRefreshToken = cookieStore.get("google_refresh_token")?.value;
 
 		if (!oauthTokens) {
 			cookieStore.set("google_oauth_status", "missing_tokens", {
@@ -28,7 +27,7 @@ export const GET = handleAuth({
 			return;
 		}
 
-		const refreshToken = oauthTokens.refreshToken ?? existingRefreshToken;
+		const refreshToken = oauthTokens.refreshToken;
 		if (!refreshToken) {
 			cookieStore.set("google_oauth_status", "missing_refresh_token", {
 				httpOnly: true,
@@ -45,31 +44,7 @@ export const GET = handleAuth({
 			refreshToken,
 		});
 
-		const now = Math.floor(Date.now() / 1000);
-		const accessMaxAge = Math.max(60, oauthTokens.expiresAt - now);
 		cookieStore.set("google_oauth_status", "connected", {
-			httpOnly: true,
-			secure: isProd,
-			sameSite: "lax",
-			path: "/",
-			maxAge: 60 * 60 * 24 * 30,
-		});
-
-		cookieStore.set("google_access_token", oauthTokens.accessToken, {
-			httpOnly: true,
-			secure: isProd,
-			sameSite: "lax",
-			path: "/",
-			maxAge: accessMaxAge,
-		});
-		cookieStore.set("google_refresh_token", refreshToken, {
-			httpOnly: true,
-			secure: isProd,
-			sameSite: "lax",
-			path: "/",
-			maxAge: 60 * 60 * 24 * 30,
-		});
-		cookieStore.set("google_token_expires_at", String(oauthTokens.expiresAt), {
 			httpOnly: true,
 			secure: isProd,
 			sameSite: "lax",
