@@ -148,6 +148,33 @@ const normalizeTaskQuickCreateDefaultsForSettings = (settings: {
 	};
 };
 
+const hasChangedFields = (current: Record<string, unknown>, patch: Record<string, unknown>) => {
+	for (const [key, value] of Object.entries(patch)) {
+		if (current[key] !== value) {
+			return true;
+		}
+	}
+	return false;
+};
+
+const areSyncTokensEqual = (
+	a: Array<{ calendarId: string; syncToken: string }> | undefined,
+	b: Array<{ calendarId: string; syncToken: string }> | undefined,
+) => {
+	const left = a ?? [];
+	const right = b ?? [];
+	if (left.length !== right.length) return false;
+	const rightByCalendarId = new Map(
+		right.map((token) => [token.calendarId, token.syncToken] as const),
+	);
+	for (const token of left) {
+		if (rightByCalendarId.get(token.calendarId) !== token.syncToken) {
+			return false;
+		}
+	}
+	return true;
+};
+
 const recurrenceScopeValidator = v.union(
 	v.literal("single"),
 	v.literal("following"),
@@ -373,6 +400,7 @@ const watchChannelStatusValidator = v.union(
 	v.literal("stopped"),
 );
 const GOOGLE_SYNC_DEBOUNCE_WINDOW_MS = 15 * 1000;
+const WATCH_NOTIFICATION_DEBOUNCE_WINDOW_MS = 15 * 1000;
 
 export const enqueueGoogleSyncRun = internalMutation({
 	args: {
@@ -387,6 +415,7 @@ export const enqueueGoogleSyncRun = internalMutation({
 			v.literal("enqueued"),
 			v.literal("already_pending"),
 			v.literal("debounced_running"),
+			v.literal("debounced_completed"),
 		),
 	}),
 	handler: async (
@@ -395,7 +424,7 @@ export const enqueueGoogleSyncRun = internalMutation({
 	): Promise<{
 		enqueued: boolean;
 		runId: Id<"googleSyncRuns">;
-		reason: "enqueued" | "already_pending" | "debounced_running";
+		reason: "enqueued" | "already_pending" | "debounced_running" | "debounced_completed";
 	}> => {
 		const now = Date.now();
 		const latestPending = (
@@ -429,7 +458,7 @@ export const enqueueGoogleSyncRun = internalMutation({
 		)[0];
 		if (
 			latestRunning &&
-			latestRunning.triggeredBy === args.triggeredBy &&
+			(args.triggeredBy === "webhook" || latestRunning.triggeredBy === args.triggeredBy) &&
 			now - latestRunning.startedAt < GOOGLE_SYNC_DEBOUNCE_WINDOW_MS &&
 			!args.force
 		) {
@@ -437,6 +466,29 @@ export const enqueueGoogleSyncRun = internalMutation({
 				enqueued: false,
 				runId: latestRunning._id,
 				reason: "debounced_running",
+			};
+		}
+
+		const latestCompleted = (
+			await ctx.db
+				.query("googleSyncRuns")
+				.withIndex("by_userId_status_startedAt", (q) =>
+					q.eq("userId", args.userId).eq("status", "completed"),
+				)
+				.order("desc")
+				.take(1)
+		)[0];
+		if (
+			latestCompleted &&
+			(args.triggeredBy === "webhook" || latestCompleted.triggeredBy === args.triggeredBy) &&
+			typeof latestCompleted.completedAt === "number" &&
+			now - latestCompleted.completedAt < GOOGLE_SYNC_DEBOUNCE_WINDOW_MS &&
+			!args.force
+		) {
+			return {
+				enqueued: false,
+				runId: latestCompleted._id,
+				reason: "debounced_completed",
 			};
 		}
 
@@ -622,14 +674,18 @@ export const recordWatchNotification = internalMutation({
 	},
 	returns: v.object({
 		shouldEnqueue: v.boolean(),
-		reason: v.union(v.literal("accepted"), v.literal("duplicate_message")),
+		reason: v.union(
+			v.literal("accepted"),
+			v.literal("duplicate_message"),
+			v.literal("debounced_notification"),
+		),
 	}),
 	handler: async (
 		ctx,
 		args,
 	): Promise<{
 		shouldEnqueue: boolean;
-		reason: "accepted" | "duplicate_message";
+		reason: "accepted" | "duplicate_message" | "debounced_notification";
 	}> => {
 		const channel = await ctx.db.get(args.watchChannelId);
 		if (!channel) {
@@ -646,6 +702,15 @@ export const recordWatchNotification = internalMutation({
 			return {
 				shouldEnqueue: false,
 				reason: "duplicate_message",
+			};
+		}
+		if (
+			typeof channel.lastNotifiedAt === "number" &&
+			args.lastNotifiedAt - channel.lastNotifiedAt < WATCH_NOTIFICATION_DEBOUNCE_WINDOW_MS
+		) {
+			return {
+				shouldEnqueue: false,
+				reason: "debounced_notification",
 			};
 		}
 		const nextMessageNumber =
@@ -704,18 +769,25 @@ const upsertSeriesForGoogleEvent = async (
 		color: event.color,
 		etag: event.etag,
 		lastSyncedAt: event.lastSyncedAt,
-		updatedAt: now,
 		isRecurring: Boolean(event.recurringEventId || event.recurrenceRule),
 	};
 
 	let series: Doc<"calendarEventSeries"> | null;
 	if (existing) {
-		await ctx.db.patch(existing._id, patch);
-		series = await ctx.db.get(existing._id);
+		if (hasChangedFields(existing as unknown as Record<string, unknown>, patch)) {
+			await ctx.db.patch(existing._id, {
+				...patch,
+				updatedAt: now,
+			});
+			series = await ctx.db.get(existing._id);
+		} else {
+			series = existing;
+		}
 	} else {
 		const insertedId = await ctx.db.insert("calendarEventSeries", {
 			userId,
 			...patch,
+			updatedAt: now,
 		});
 		series = await ctx.db.get(insertedId);
 	}
@@ -851,14 +923,12 @@ const buildOccurrencePatch = ({
 	primary,
 	seriesId,
 	occurrenceStart,
-	now,
 	isProtectedSource,
 }: {
 	event: SyncEventInput;
 	primary: Doc<"calendarEvents"> | undefined;
 	seriesId: Id<"calendarEventSeries">;
 	occurrenceStart: number;
-	now: number;
 	isProtectedSource: boolean;
 }) => {
 	const isRecurringInstance = Boolean(event.recurringEventId);
@@ -887,7 +957,6 @@ const buildOccurrencePatch = ({
 			isRecurringInstance,
 			eventValue: event.allDay,
 		}),
-		updatedAt: now,
 		source,
 		sourceId: isProtectedSource ? primary?.sourceId : event.googleEventId,
 		calendarId: event.calendarId,
@@ -1006,7 +1075,6 @@ const upsertSingleSyncedEvent = async ({
 			primary,
 			seriesId: series._id,
 			occurrenceStart,
-			now,
 			isProtectedSource,
 		}),
 		googleEventId: resolvedGoogleEventId,
@@ -1024,6 +1092,7 @@ const upsertSingleSyncedEvent = async ({
 		await ctx.db.insert("calendarEvents", {
 			userId,
 			...occurrencePatch,
+			updatedAt: now,
 		});
 		return { scheduleImpact: false };
 	}
@@ -1050,8 +1119,8 @@ const upsertSingleSyncedEvent = async ({
 		action: localIsNewer ? "sync-metadata-only" : "apply-full-patch",
 	});
 
-	if (primary.source === "task" && primary.sourceId && !localIsNewer) {
-		if ((startChanged || endChanged) && !primary.sourceId.includes(":travel:")) {
+	if (primary.source === "task" && primary.sourceId != null && !localIsNewer) {
+		if ((startChanged || endChanged) && !primary.sourceId.includes(":travel:") && !primary.pinned) {
 			log?.("[sync:upsert] pinning task event", {
 				primaryId: String(primary._id),
 				primaryStart: primary.start,
@@ -1091,7 +1160,12 @@ const upsertSingleSyncedEvent = async ({
 			});
 		}
 	} else {
-		await ctx.db.patch(primary._id, occurrencePatch);
+		if (hasChangedFields(primary as unknown as Record<string, unknown>, occurrencePatch)) {
+			await ctx.db.patch(primary._id, {
+				...occurrencePatch,
+				updatedAt: now,
+			});
+		}
 	}
 
 	for (const duplicate of orderedMatches.slice(1)) {
@@ -1291,6 +1365,14 @@ export const upsertGoogleTokens = mutation({
 						return Array.from(tokensByCalendarId.values());
 					})()
 				: (existing.googleCalendarSyncTokens ?? []);
+			const nextGoogleSyncToken = args.syncToken ?? existing.googleSyncToken;
+			const unchanged =
+				existing.googleRefreshToken === args.refreshToken &&
+				nextGoogleSyncToken === existing.googleSyncToken &&
+				areSyncTokensEqual(existing.googleCalendarSyncTokens, nextCalendarSyncTokens);
+			if (unchanged) {
+				return existing._id;
+			}
 			const defaultTaskSchedulingMode = sanitizeTaskSchedulingMode(
 				(existing as { defaultTaskSchedulingMode?: string }).defaultTaskSchedulingMode,
 			);
@@ -1311,7 +1393,7 @@ export const upsertGoogleTokens = mutation({
 				dateFormat: existing.dateFormat,
 				hoursBootstrapped: existing.hoursBootstrapped,
 				googleRefreshToken: args.refreshToken,
-				googleSyncToken: args.syncToken ?? existing.googleSyncToken,
+				googleSyncToken: nextGoogleSyncToken,
 				googleCalendarSyncTokens: nextCalendarSyncTokens,
 				googleConnectedCalendars: existing.googleConnectedCalendars,
 			});
@@ -1665,14 +1747,20 @@ export const upsertSyncedEventsForUser = internalMutation({
 	},
 	returns: v.object({
 		upserted: v.number(),
+		needsReschedule: v.boolean(),
 	}),
 	handler: async (ctx, args) => {
 		const result = await performUpsertSyncedEventsForUser(ctx, args.userId, args);
-		await enqueueSchedulingRunFromMutation(ctx, {
-			userId: args.userId,
-			triggeredBy: "calendar_change",
-		});
-		return { upserted: result.upserted };
+		if (result.needsReschedule) {
+			await enqueueSchedulingRunFromMutation(ctx, {
+				userId: args.userId,
+				triggeredBy: "calendar_change",
+			});
+		}
+		return {
+			upserted: result.upserted,
+			needsReschedule: result.needsReschedule,
+		};
 	},
 });
 

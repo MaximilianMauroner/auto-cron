@@ -31,8 +31,21 @@ import type {
 } from "./types";
 
 const GOOGLE_CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
+const GOOGLE_CALENDAR_LIST_FIELDS =
+	"nextPageToken,items(id,summary,primary,backgroundColor,colorId,accessRole,deleted,hidden)";
+const GOOGLE_EVENT_FIELDS =
+	"id,summary,description,start,end,status,deleted,etag,recurrence,recurringEventId,originalStartTime,transparency,visibility,location,colorId,extendedProperties/private,htmlLink";
+const GOOGLE_EVENTS_SYNC_FIELDS = `nextPageToken,nextSyncToken,items(${GOOGLE_EVENT_FIELDS})`;
+const GOOGLE_WATCH_RESPONSE_FIELDS = "id,resourceId,resourceUri,expiration";
+const TOKEN_EXPIRY_SAFETY_WINDOW_MS = 60 * 1000;
+const accessTokenCache = new Map<string, { accessToken: string; expiresAt: number }>();
 
 const getAccessToken = async (refreshToken: string) => {
+	const cached = accessTokenCache.get(refreshToken);
+	if (cached && cached.expiresAt > Date.now() + TOKEN_EXPIRY_SAFETY_WINDOW_MS) {
+		return { access_token: cached.accessToken } as GoogleTokenResponse;
+	}
+
 	const environment = env();
 	const clientId = environment.GOOGLE_CLIENT_ID;
 	const clientSecret = environment.GOOGLE_CLIENT_SECRET;
@@ -53,7 +66,15 @@ const getAccessToken = async (refreshToken: string) => {
 	if (!response.ok) {
 		throw new Error(`Unable to refresh Google token (${response.status}).`);
 	}
-	return (await response.json()) as GoogleTokenResponse;
+	const token = (await response.json()) as GoogleTokenResponse;
+	const expiresInSeconds = Number(token.expires_in ?? 3600);
+	if (token.access_token) {
+		accessTokenCache.set(refreshToken, {
+			accessToken: token.access_token,
+			expiresAt: Date.now() + Math.max(0, expiresInSeconds) * 1000,
+		});
+	}
+	return token;
 };
 
 const callGoogle = async (
@@ -64,6 +85,13 @@ const callGoogle = async (
 	const token = await getAccessToken(refreshToken);
 	const headers = new Headers(init.headers);
 	headers.set("Authorization", `Bearer ${token.access_token}`);
+	headers.set("Accept-Encoding", "gzip");
+	const userAgent = headers.get("User-Agent");
+	if (!userAgent) {
+		headers.set("User-Agent", "auto-cron-calendar-sync (gzip)");
+	} else if (!userAgent.toLowerCase().includes("gzip")) {
+		headers.set("User-Agent", `${userAgent} (gzip)`);
+	}
 	if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
 	return fetch(`${GOOGLE_CALENDAR_BASE}${path}`, { ...init, headers });
 };
@@ -78,6 +106,7 @@ export const googleCalendarProvider: CalendarProvider = {
 				showHidden: "false",
 				showDeleted: "false",
 				maxResults: String(GOOGLE_CALENDAR_LIST_PAGE_SIZE),
+				fields: GOOGLE_CALENDAR_LIST_FIELDS,
 			});
 			if (nextPageToken) {
 				searchParams.set("pageToken", nextPageToken);
@@ -139,6 +168,7 @@ export const googleCalendarProvider: CalendarProvider = {
 					singleEvents: "true",
 					showDeleted: "true",
 					maxResults: String(GOOGLE_EVENTS_PAGE_SIZE),
+					fields: GOOGLE_EVENTS_SYNC_FIELDS,
 				});
 				if (currentSyncToken) {
 					searchParams.set("syncToken", currentSyncToken);
@@ -219,9 +249,10 @@ export const googleCalendarProvider: CalendarProvider = {
 
 	async createEvent({ refreshToken, calendarId = "primary", event }) {
 		const targetCalendarId = event.calendarId ?? calendarId;
+		const searchParams = new URLSearchParams({ fields: GOOGLE_EVENT_FIELDS });
 		const response = await callGoogle(
 			refreshToken,
-			`/calendars/${encodeURIComponent(targetCalendarId)}/events`,
+			`/calendars/${encodeURIComponent(targetCalendarId)}/events?${searchParams.toString()}`,
 			{
 				method: "POST",
 				body: JSON.stringify(createGoogleEventPayload(event)),
@@ -240,6 +271,7 @@ export const googleCalendarProvider: CalendarProvider = {
 		const googleEventId = event.googleEventId ?? event.sourceId;
 		if (!googleEventId) throw new Error("Cannot update event without googleEventId.");
 		const params = new URLSearchParams();
+		params.set("fields", GOOGLE_EVENT_FIELDS);
 		if (scope !== "series") {
 			params.set("sendUpdates", "none");
 		}
@@ -258,6 +290,7 @@ export const googleCalendarProvider: CalendarProvider = {
 		if (targetCalendarId !== sourceCalendarId) {
 			const moveParams = new URLSearchParams({
 				destination: targetCalendarId,
+				fields: GOOGLE_EVENT_FIELDS,
 			});
 			if (scope !== "series") {
 				moveParams.set("sendUpdates", "none");
@@ -322,9 +355,10 @@ export const googleCalendarProvider: CalendarProvider = {
 		ttlSeconds = 7 * 24 * 60 * 60,
 	}): Promise<CalendarWatchStartResult> {
 		const ttl = clampWatchTtlSeconds(ttlSeconds);
+		const searchParams = new URLSearchParams({ fields: GOOGLE_WATCH_RESPONSE_FIELDS });
 		const response = await callGoogle(
 			refreshToken,
-			`/calendars/${encodeURIComponent(calendarId)}/events/watch`,
+			`/calendars/${encodeURIComponent(calendarId)}/events/watch?${searchParams.toString()}`,
 			{
 				method: "POST",
 				body: JSON.stringify({

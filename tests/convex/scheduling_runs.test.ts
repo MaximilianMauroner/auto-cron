@@ -977,28 +977,84 @@ describe("scheduling run queueing", () => {
 			expect(latest?.status).toBe("pending");
 		});
 
-		test("upsertSyncedEventsForUser enqueues calendar_change", async () => {
+		test("upsertSyncedEventsForUser does not enqueue when no schedule impact", async () => {
 			const testConvex = createTestConvex();
 			const userId = "user-sync-upsert-trigger";
 			const user = testConvex.withIdentity({ subject: userId });
 			const now = Date.now();
 
-			await testConvex.mutation(internal.calendar.mutations.upsertSyncedEventsForUser, {
-				userId,
-				events: [
-					{
-						googleEventId: "google-evt-1",
-						title: "Synced event",
-						start: now + 60 * 60 * 1000,
-						end: now + 90 * 60 * 1000,
-						allDay: false,
-						calendarId: "primary",
-						busyStatus: "busy",
-						lastSyncedAt: now,
-					},
-				],
-				deletedEvents: [],
+			const result = await testConvex.mutation(
+				internal.calendar.mutations.upsertSyncedEventsForUser,
+				{
+					userId,
+					events: [
+						{
+							googleEventId: "google-evt-1",
+							title: "Synced event",
+							start: now + 60 * 60 * 1000,
+							end: now + 90 * 60 * 1000,
+							allDay: false,
+							calendarId: "primary",
+							busyStatus: "busy",
+							lastSyncedAt: now,
+						},
+					],
+					deletedEvents: [],
+				},
+			);
+			expect(result.needsReschedule).toBe(false);
+
+			const latest = await latestRun(user);
+			expect(latest).toBeNull();
+		});
+
+		test("upsertSyncedEventsForUser enqueues calendar_change on schedule-impacting delete", async () => {
+			const testConvex = createTestConvex();
+			const userId = "user-sync-upsert-trigger-impact";
+			const user = testConvex.withIdentity({ subject: userId });
+			const now = Date.now();
+
+			const taskId = await seedScheduledTaskBlock(testConvex, user, userId, {
+				taskRequestId: "sync-upsert-impact-task",
+				taskTitle: "Sync impact task",
+				start: now + 60 * 60 * 1000,
+				end: now + 90 * 60 * 1000,
 			});
+
+			const taskEvent = await testConvex.run(async (ctx) => {
+				return ctx.db
+					.query("calendarEvents")
+					.withIndex("by_userId_source_sourceId", (q) =>
+						q.eq("userId", userId).eq("source", "task").eq("sourceId", String(taskId)),
+					)
+					.first();
+			});
+			const eventId = ensureDefined(taskEvent?._id, "task event id");
+
+			await testConvex.mutation(internal.calendar.internal.updateLocalEventFromGoogle, {
+				id: eventId,
+				googleEventId: "impact-google-event-1",
+				calendarId: "primary",
+				lastSyncedAt: now,
+			});
+
+			await settleAllActiveRuns(testConvex, user);
+
+			const upsertResult = await testConvex.mutation(
+				internal.calendar.mutations.upsertSyncedEventsForUser,
+				{
+					userId,
+					events: [],
+					deletedEvents: [
+						{
+							googleEventId: "impact-google-event-1",
+							calendarId: "primary",
+							lastSyncedAt: now + 1,
+						},
+					],
+				},
+			);
+			expect(upsertResult.needsReschedule).toBe(true);
 
 			const latest = await latestRun(user);
 			expect(latest?.triggeredBy).toBe("calendar_change");

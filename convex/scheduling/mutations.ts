@@ -101,6 +101,7 @@ export const applySchedulingBlocks = internalMutation({
 	returns: v.object({
 		tasksScheduled: v.number(),
 		habitsScheduled: v.number(),
+		scheduledEventsChanged: v.boolean(),
 		removedGoogleEvents: v.array(
 			v.object({
 				googleEventId: v.string(),
@@ -236,10 +237,12 @@ export const applySchedulingBlocks = internalMutation({
 		const tasksById = new Map<string, { starts: number[]; ends: number[] }>();
 		let tasksScheduled = 0;
 		let habitsScheduled = 0;
+		let scheduledEventsChanged = false;
 		const removedGoogleEvents: Array<{ googleEventId: string; calendarId: string }> = [];
 		const now = Date.now();
 		for (const orphanEvent of orphanScheduledEvents) {
 			appendRemovedGoogleEvent(removedGoogleEvents, orphanEvent);
+			scheduledEventsChanged = true;
 			await ctx.db.delete(orphanEvent._id);
 		}
 		for (const [key, blocks] of groupedBlocks) {
@@ -272,6 +275,7 @@ export const applySchedulingBlocks = internalMutation({
 					current.seriesId !== undefined ||
 					current.originalStartTime !== undefined;
 				if (needsPatch) {
+					scheduledEventsChanged = true;
 					await ctx.db.patch(current._id, {
 						title: block.title,
 						start: block.start,
@@ -294,6 +298,7 @@ export const applySchedulingBlocks = internalMutation({
 
 			for (const block of blocks.slice(pairCount)) {
 				const resolvedBlockColor = resolveBlockColor(block, resolvedTravelColor);
+				scheduledEventsChanged = true;
 				await ctx.db.insert("calendarEvents", {
 					userId: args.userId,
 					title: block.title,
@@ -325,6 +330,7 @@ export const applySchedulingBlocks = internalMutation({
 					pinnedEvent.sourceId?.includes(":travel:") &&
 					pinnedEvent.color !== resolvedTravelColor
 				) {
+					scheduledEventsChanged = true;
 					await ctx.db.patch(pinnedEvent._id, {
 						color: resolvedTravelColor,
 						updatedAt: now,
@@ -334,6 +340,7 @@ export const applySchedulingBlocks = internalMutation({
 						originalStartTime: undefined,
 					});
 				} else if (shouldClearRecurring) {
+					scheduledEventsChanged = true;
 					await ctx.db.patch(pinnedEvent._id, {
 						updatedAt: now,
 						recurrenceRule: undefined,
@@ -346,6 +353,7 @@ export const applySchedulingBlocks = internalMutation({
 
 			for (const staleEvent of unpinnedExisting.slice(pairCount)) {
 				appendRemovedGoogleEvent(removedGoogleEvents, staleEvent);
+				scheduledEventsChanged = true;
 				await ctx.db.delete(staleEvent._id);
 			}
 
@@ -367,6 +375,7 @@ export const applySchedulingBlocks = internalMutation({
 			for (const staleEvent of staleGroup) {
 				if (staleEvent.pinned) continue; // preserve pinned events
 				appendRemovedGoogleEvent(removedGoogleEvents, staleEvent);
+				scheduledEventsChanged = true;
 				await ctx.db.delete(staleEvent._id);
 			}
 		}
@@ -419,6 +428,7 @@ export const applySchedulingBlocks = internalMutation({
 		return {
 			tasksScheduled,
 			habitsScheduled,
+			scheduledEventsChanged,
 			removedGoogleEvents,
 		};
 	},

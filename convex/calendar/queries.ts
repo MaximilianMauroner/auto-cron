@@ -327,7 +327,9 @@ export const listGoogleCalendars = query({
 });
 
 export const getGoogleSyncHealth = query({
-	args: {},
+	args: {
+		includeLatestRun: v.optional(v.boolean()),
+	},
 	returns: v.object({
 		googleConnected: v.boolean(),
 		activeChannels: v.number(),
@@ -344,8 +346,15 @@ export const getGoogleSyncHealth = query({
 		latestRunCompletedAt: v.optional(v.number()),
 		latestRunError: v.optional(v.string()),
 	}),
-	handler: withQueryAuth(async (ctx) => {
+	handler: withQueryAuth(async (ctx, args: { includeLatestRun?: boolean }) => {
 		const { userId } = ctx;
+		const latestRunPromise = args.includeLatestRun
+			? ctx.db
+					.query("googleSyncRuns")
+					.withIndex("by_userId_startedAt", (q) => q.eq("userId", userId))
+					.order("desc")
+					.take(1)
+			: Promise.resolve([] as Doc<"googleSyncRuns">[]);
 		const [settings, channels, latestRunArr] = await Promise.all([
 			ctx.db
 				.query("userSettings")
@@ -355,11 +364,7 @@ export const getGoogleSyncHealth = query({
 				.query("googleCalendarWatchChannels")
 				.withIndex("by_userId", (q) => q.eq("userId", userId))
 				.collect(),
-			ctx.db
-				.query("googleSyncRuns")
-				.withIndex("by_userId_startedAt", (q) => q.eq("userId", userId))
-				.order("desc")
-				.take(1),
+			latestRunPromise,
 		]);
 		const now = Date.now();
 		const activeChannels = channels.filter(

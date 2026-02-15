@@ -47,7 +47,9 @@ describe("google calendar provider watch channels", () => {
 		expect(result.resourceId).toBe("resource-123");
 		expect(result.expirationAt).toBe(1893456000000);
 
-		const watchCall = fetchMock.mock.calls[1];
+		const watchCall = fetchMock.mock.calls.find((call) =>
+			String(call[0]).includes("/calendars/primary/events/watch"),
+		);
 		expect(watchCall?.[0]).toContain("/calendars/primary/events/watch");
 		const init = watchCall?.[1] as RequestInit;
 		const payload = JSON.parse(String(init.body)) as {
@@ -81,7 +83,9 @@ describe("google calendar provider watch channels", () => {
 			resourceId: "resource-9",
 		});
 
-		const stopCall = fetchMock.mock.calls[1];
+		const stopCall = fetchMock.mock.calls.find((call) =>
+			String(call[0]).includes("/channels/stop"),
+		);
 		expect(stopCall?.[0]).toContain("/channels/stop");
 		const init = stopCall?.[1] as RequestInit;
 		const payload = JSON.parse(String(init.body)) as {

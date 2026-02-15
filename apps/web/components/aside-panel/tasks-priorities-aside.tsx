@@ -4,11 +4,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import type { TaskDTO } from "@auto-cron/types";
 import { api } from "../../../../convex/_generated/api";
+import { useAsidePanel } from "./aside-panel-context";
 import { PrioritiesTabContent } from "./priorities-tab-content";
 import { TasksTabContent } from "./tasks-tab-content";
 
 export function TasksPrioritiesAside() {
-	const tasksQuery = useAuthenticatedQueryWithStatus(api.tasks.queries.listTasks, {});
+	const { open } = useAsidePanel();
+	const tasksQuery = useAuthenticatedQueryWithStatus(
+		api.tasks.queries.listTasks,
+		open ? {} : "skip",
+	);
 	const tasks = (tasksQuery.data ?? []) as TaskDTO[];
 	const tasksPending = tasksQuery.isPending;
 

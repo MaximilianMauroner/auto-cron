@@ -843,6 +843,13 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 		let created = 0;
 		let updated = 0;
 		let unchanged = 0;
+		const localGoogleUpdates: Array<{
+			id: ScheduledEventForGoogleSync["id"];
+			googleEventId: string;
+			calendarId?: string;
+			etag?: string;
+			lastSyncedAt: number;
+		}> = [];
 
 		for (const event of scheduledEvents) {
 			const remote = event.googleEventId
@@ -869,7 +876,7 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 						color: event.color,
 					},
 				});
-				await updateLocalEventFromGoogle(ctx, {
+				localGoogleUpdates.push({
 					id: event.id,
 					googleEventId: createdEvent.googleEventId,
 					calendarId: createdEvent.calendarId,
@@ -924,7 +931,7 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 				scope: "single",
 			});
 
-			await updateLocalEventFromGoogle(ctx, {
+			localGoogleUpdates.push({
 				id: event.id,
 				googleEventId: updatedEvent.googleEventId,
 				calendarId: updatedEvent.calendarId,
@@ -932,6 +939,12 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 				lastSyncedAt: updatedEvent.lastSyncedAt,
 			});
 			updated += 1;
+		}
+
+		if (localGoogleUpdates.length > 0) {
+			await ctx.runMutation(internal.calendar.internal.updateLocalEventsFromGoogleBatch, {
+				updates: localGoogleUpdates,
+			});
 		}
 
 		return {

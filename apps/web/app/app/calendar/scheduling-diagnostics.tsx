@@ -13,7 +13,18 @@ import { useUserPreferences } from "@/components/user-preferences-context";
 import { useActionWithStatus, useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import { cn } from "@/lib/utils";
 import { AlertTriangle, Gauge, PlayCircle } from "lucide-react";
+import { useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
+
+type GoogleSyncHealth = {
+	googleConnected: boolean;
+	activeChannels: number;
+	lastWebhookAt?: number;
+	latestRunStatus?: "pending" | "running" | "completed" | "failed";
+	expiringSoonChannels?: number;
+	latestRunCompletedAt?: number;
+	latestRunError?: string | null;
+};
 
 const formatDateTime = (value: number | undefined, hour12: boolean) => {
 	if (!value) return "-";
@@ -26,17 +37,20 @@ const formatDateTime = (value: number | undefined, hour12: boolean) => {
 	}).format(new Date(value));
 };
 
-export function SchedulingDiagnostics() {
+export function SchedulingDiagnostics({
+	googleSyncHealth,
+}: {
+	googleSyncHealth: GoogleSyncHealth | null;
+}) {
+	const [open, setOpen] = useState(false);
 	const { hour12 } = useUserPreferences();
-	const latestRunQuery = useAuthenticatedQueryWithStatus(api.scheduling.queries.getLatestRun, {});
-	const googleSyncHealthQuery = useAuthenticatedQueryWithStatus(
-		api.calendar.queries.getGoogleSyncHealth,
-		{},
+	const latestRunQuery = useAuthenticatedQueryWithStatus(
+		api.scheduling.queries.getLatestRun,
+		open ? {} : "skip",
 	);
 	const { execute: runNow, isPending } = useActionWithStatus(api.scheduling.actions.runNow);
 
 	const latestRun = latestRunQuery.data;
-	const googleSyncHealth = googleSyncHealthQuery.data;
 	const lateCount = latestRun?.lateTasks?.length ?? 0;
 	const shortfallCount =
 		latestRun?.habitShortfalls?.reduce(
@@ -66,7 +80,7 @@ export function SchedulingDiagnostics() {
 				: "text-muted-foreground";
 
 	return (
-		<Sheet>
+		<Sheet open={open} onOpenChange={setOpen}>
 			<SheetTrigger asChild>
 				<Button
 					type="button"

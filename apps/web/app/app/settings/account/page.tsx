@@ -72,7 +72,7 @@ export default function AccountSettingsPage() {
 
 	const googleSyncHealthQuery = useAuthenticatedQueryWithStatus(
 		api.calendar.queries.getGoogleSyncHealth,
-		{},
+		{ includeLatestRun: true },
 	);
 	const googleCalendarsQuery = useAuthenticatedQueryWithStatus(
 		api.calendar.queries.listGoogleCalendars,

@@ -21,6 +21,8 @@ Hard-won lessons from debugging sessions. Agents should check this file when stu
 - Convex tests can fail on queued scheduler jobs if scheduled functions are not mocked. We disable background dispatch in tests via `CONVEX_DISABLE_BACKGROUND_DISPATCH=true`, which makes enqueue mutations create run rows without calling `ctx.scheduler.runAfter`; keep this behavior when adjusting scheduling triggers.
 - Google push sync channels require both `GOOGLE_CALENDAR_WEBHOOK_URL` and `GOOGLE_CALENDAR_WEBHOOK_TOKEN_SECRET`; without both, watch-channel provisioning is skipped and only fallback cron queueing runs.
 - `GOOGLE_CALENDAR_WEBHOOK_URL` must be a public HTTPS endpoint reachable by Google. Localhost/private URLs will pass local tests but never receive production `events.watch` notifications.
+- Webhook-triggered Google sync enqueueing is intentionally debounced against any recently running/completed sync run (not just `triggeredBy: "webhook"`) to avoid feedback loops after local push writes. Keep `upsertGoogleTokens` and event upserts idempotent to prevent avoidable query invalidations and duplicate run fan-out.
+- Google provider calls intentionally request partial response fields and set gzip headers in [convex/providers/calendar/google.ts](convex/providers/calendar/google.ts) to reduce Calendar API payloads. If sync mappings change, update field projections together with mapper expectations to avoid missing data.
 
 ## Monorepo
 

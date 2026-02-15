@@ -78,7 +78,7 @@ export default function CalendarsSettingsPage() {
 	);
 	const googleSyncHealthQuery = useAuthenticatedQueryWithStatus(
 		api.calendar.queries.getGoogleSyncHealth,
-		{},
+		{ includeLatestRun: true },
 	);
 
 	const googleCalendars = (googleCalendarsQuery.data ?? []) as GoogleCalendarListItem[];

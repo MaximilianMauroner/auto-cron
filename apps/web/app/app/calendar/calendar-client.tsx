@@ -852,6 +852,18 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const syncedGoogleRangeRef = useRef<SyncRange | null>(null);
 	const autoSyncAttemptedRangeKeyRef = useRef<string | null>(null);
 	const autoWatchRegistrationAttemptedRef = useRef(false);
+	const [googleSyncHealthTrackingEnabled, setGoogleSyncHealthTrackingEnabled] = useState(true);
+	const [googleSyncHealthSnapshot, setGoogleSyncHealthSnapshot] = useState<{
+		googleConnected: boolean;
+		activeChannels: number;
+		expiringSoonChannels: number;
+		lastWebhookAt?: number;
+		latestRunStatus?: "pending" | "running" | "completed" | "failed";
+		latestRunCompletedAt?: number;
+		latestRunError?: string;
+	} | null>(null);
+	const [watchBootstrapResolved, setWatchBootstrapResolved] = useState(false);
+	const [rangeBootstrapResolved, setRangeBootstrapResolved] = useState(false);
 	const userPreferences = useUserPreferences();
 
 	const calendarControlsPlugin = useMemo(() => createCalendarControlsPlugin(), []);
@@ -909,8 +921,9 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	);
 	const googleSyncHealthQuery = useAuthenticatedQueryWithStatus(
 		api.calendar.queries.getGoogleSyncHealth,
-		{},
+		googleSyncHealthTrackingEnabled ? {} : "skip",
 	);
+	const googleSyncHealth = googleSyncHealthQuery.data ?? googleSyncHealthSnapshot;
 	const googleCalendars = (googleCalendarsQuery.data ?? []) as GoogleCalendarListItem[];
 
 	const { mutate: createEventMutation } = useMutationWithStatus(api.calendar.mutations.createEvent);
@@ -2036,21 +2049,31 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	useEffect(() => {
 		if (!isAuthenticated || isAuthLoading) return;
 		if (autoWatchRegistrationAttemptedRef.current) return;
-		const syncHealth = googleSyncHealthQuery.data;
-		if (!syncHealth?.googleConnected) return;
+		const syncHealth = googleSyncHealth;
+		if (!syncHealth) return;
+		if (!syncHealth.googleConnected) {
+			setWatchBootstrapResolved(true);
+			return;
+		}
 		if (syncHealth.activeChannels > 0) {
 			autoWatchRegistrationAttemptedRef.current = true;
+			setWatchBootstrapResolved(true);
 			return;
 		}
 
 		autoWatchRegistrationAttemptedRef.current = true;
-		void ensureGoogleWatchChannels({}).catch((registrationError) => {
-			autoWatchRegistrationAttemptedRef.current = false;
-			console.error("[calendar] failed to auto-register Google watch channels", {
-				error: registrationError instanceof Error ? registrationError.message : registrationError,
+		void ensureGoogleWatchChannels({})
+			.catch((registrationError) => {
+				autoWatchRegistrationAttemptedRef.current = false;
+				setWatchBootstrapResolved(false);
+				console.error("[calendar] failed to auto-register Google watch channels", {
+					error: registrationError instanceof Error ? registrationError.message : registrationError,
+				});
+			})
+			.finally(() => {
+				setWatchBootstrapResolved(true);
 			});
-		});
-	}, [ensureGoogleWatchChannels, googleSyncHealthQuery.data, isAuthenticated, isAuthLoading]);
+	}, [ensureGoogleWatchChannels, googleSyncHealth, isAuthenticated, isAuthLoading]);
 
 	const syncNow = useCallback(
 		async (reason: "manual" | "auto" = "manual", overrideRange?: SyncRange) => {
@@ -2097,8 +2120,12 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 
 	useEffect(() => {
 		if (!isAuthenticated) return;
-		const syncHealth = googleSyncHealthQuery.data;
-		if (syncHealth === undefined) return;
+		const syncHealth = googleSyncHealth;
+		if (!syncHealth) return;
+		if (!syncHealth.googleConnected) {
+			setRangeBootstrapResolved(true);
+			return;
+		}
 
 		const targetRange: SyncRange = {
 			start: queryRange.start,
@@ -2115,13 +2142,34 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 				targetRange.start >= currentSyncedRange.start &&
 				targetRange.end <= currentSyncedRange.end,
 		);
-		if (rangeIsCovered) return;
+		if (rangeIsCovered) {
+			setRangeBootstrapResolved(true);
+			return;
+		}
 
 		const rangeKey = `${targetRange.start}:${targetRange.end}`;
 		if (autoSyncAttemptedRangeKeyRef.current === rangeKey) return;
 		autoSyncAttemptedRangeKeyRef.current = rangeKey;
+		setRangeBootstrapResolved(true);
 		void syncNow("auto", targetRange);
-	}, [isAuthenticated, queryRange.end, queryRange.start, syncNow, googleSyncHealthQuery.data]);
+	}, [isAuthenticated, queryRange.end, queryRange.start, syncNow, googleSyncHealth]);
+
+	useEffect(() => {
+		if (!googleSyncHealthQuery.data) return;
+		setGoogleSyncHealthSnapshot(googleSyncHealthQuery.data);
+	}, [googleSyncHealthQuery.data]);
+
+	useEffect(() => {
+		if (!isAuthenticated) return;
+		if (!googleSyncHealthTrackingEnabled) return;
+		if (!watchBootstrapResolved || !rangeBootstrapResolved) return;
+		setGoogleSyncHealthTrackingEnabled(false);
+	}, [
+		googleSyncHealthTrackingEnabled,
+		isAuthenticated,
+		rangeBootstrapResolved,
+		watchBootstrapResolved,
+	]);
 
 	const createEvent = async (payload: CalendarEventCreateInput) => {
 		const id = await createEventMutation({ input: payload });
@@ -3738,7 +3786,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 								</PopoverContent>
 							</Popover>
 
-							<SchedulingDiagnostics />
+							<SchedulingDiagnostics googleSyncHealth={googleSyncHealth ?? null} />
 						</div>
 					</div>
 

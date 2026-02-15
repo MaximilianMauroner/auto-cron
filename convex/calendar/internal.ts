@@ -379,62 +379,94 @@ export const getEventById = internalQuery({
 	},
 });
 
-export const updateLocalEventFromGoogle = internalMutation({
+const localEventFromGoogleUpdateValidator = v.object({
+	id: v.id("calendarEvents"),
+	googleEventId: v.string(),
+	calendarId: v.optional(v.string()),
+	etag: v.optional(v.string()),
+	lastSyncedAt: v.number(),
+});
+
+const applyLocalEventFromGoogleUpdate = async (
+	ctx: MutationCtx,
 	args: {
-		id: v.id("calendarEvents"),
-		googleEventId: v.string(),
-		calendarId: v.optional(v.string()),
-		etag: v.optional(v.string()),
-		lastSyncedAt: v.number(),
+		id: Doc<"calendarEvents">["_id"];
+		googleEventId: string;
+		calendarId?: string;
+		etag?: string;
+		lastSyncedAt: number;
 	},
-	handler: async (ctx, args) => {
-		const event = await ctx.db.get(args.id);
-		if (!event) return;
-		const nextSourceId = event.source === "google" ? args.googleEventId : event.sourceId;
-		const nextCalendarId = args.calendarId ?? event.calendarId;
-		const nextOccurrenceStart = normalizeToMinute(event.originalStartTime ?? event.start);
+) => {
+	const event = await ctx.db.get(args.id);
+	if (!event) return;
+	const nextSourceId = event.source === "google" ? args.googleEventId : event.sourceId;
+	const nextCalendarId = args.calendarId ?? event.calendarId;
+	const nextOccurrenceStart = normalizeToMinute(event.originalStartTime ?? event.start);
 
-		if (
-			event.googleEventId !== args.googleEventId ||
-			event.sourceId !== nextSourceId ||
-			event.calendarId !== nextCalendarId ||
-			event.etag !== args.etag ||
-			event.lastSyncedAt !== args.lastSyncedAt ||
-			event.occurrenceStart !== nextOccurrenceStart
-		) {
-			await ctx.db.patch(args.id, {
-				googleEventId: args.googleEventId,
-				sourceId: nextSourceId,
-				calendarId: nextCalendarId,
-				etag: args.etag,
-				lastSyncedAt: args.lastSyncedAt,
-				occurrenceStart: nextOccurrenceStart,
-			});
-		}
+	if (
+		event.googleEventId !== args.googleEventId ||
+		event.sourceId !== nextSourceId ||
+		event.calendarId !== nextCalendarId ||
+		event.etag !== args.etag ||
+		event.lastSyncedAt !== args.lastSyncedAt ||
+		event.occurrenceStart !== nextOccurrenceStart
+	) {
+		await ctx.db.patch(args.id, {
+			googleEventId: args.googleEventId,
+			sourceId: nextSourceId,
+			calendarId: nextCalendarId,
+			etag: args.etag,
+			lastSyncedAt: args.lastSyncedAt,
+			occurrenceStart: nextOccurrenceStart,
+		});
+	}
 
-		if (event.seriesId) {
-			const series = await ctx.db.get(event.seriesId);
-			if (series) {
-				const nextSeriesCalendarId = args.calendarId ?? series.calendarId;
-				const nextGoogleSeriesId = series.googleSeriesId ?? args.googleEventId;
-				const nextSeriesEtag = args.etag ?? series.etag;
-				if (
-					series.sourceId !== args.googleEventId ||
-					series.calendarId !== nextSeriesCalendarId ||
-					series.googleSeriesId !== nextGoogleSeriesId ||
-					series.etag !== nextSeriesEtag ||
-					series.lastSyncedAt !== args.lastSyncedAt
-				) {
-					await ctx.db.patch(series._id, {
-						sourceId: args.googleEventId,
-						calendarId: nextSeriesCalendarId,
-						googleSeriesId: nextGoogleSeriesId,
-						etag: nextSeriesEtag,
-						lastSyncedAt: args.lastSyncedAt,
-					});
-				}
+	if (event.seriesId) {
+		const series = await ctx.db.get(event.seriesId);
+		if (series) {
+			const nextSeriesCalendarId = args.calendarId ?? series.calendarId;
+			const nextGoogleSeriesId = series.googleSeriesId ?? args.googleEventId;
+			const nextSeriesEtag = args.etag ?? series.etag;
+			if (
+				series.sourceId !== args.googleEventId ||
+				series.calendarId !== nextSeriesCalendarId ||
+				series.googleSeriesId !== nextGoogleSeriesId ||
+				series.etag !== nextSeriesEtag ||
+				series.lastSyncedAt !== args.lastSyncedAt
+			) {
+				await ctx.db.patch(series._id, {
+					sourceId: args.googleEventId,
+					calendarId: nextSeriesCalendarId,
+					googleSeriesId: nextGoogleSeriesId,
+					etag: nextSeriesEtag,
+					lastSyncedAt: args.lastSyncedAt,
+				});
 			}
 		}
+	}
+};
+
+export const updateLocalEventFromGoogle = internalMutation({
+	args: localEventFromGoogleUpdateValidator,
+	handler: async (ctx, args) => {
+		await applyLocalEventFromGoogleUpdate(ctx, args);
+	},
+});
+
+export const updateLocalEventsFromGoogleBatch = internalMutation({
+	args: {
+		updates: v.array(localEventFromGoogleUpdateValidator),
+	},
+	returns: v.object({
+		updatedCount: v.number(),
+	}),
+	handler: async (ctx, args) => {
+		for (const update of args.updates) {
+			await applyLocalEventFromGoogleUpdate(ctx, update);
+		}
+		return {
+			updatedCount: args.updates.length,
+		};
 	},
 });
 

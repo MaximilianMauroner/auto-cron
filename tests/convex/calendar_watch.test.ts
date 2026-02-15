@@ -32,6 +32,38 @@ describe("google calendar watch + sync queue", () => {
 		expect(second.runId).toBe(first.runId);
 	});
 
+	test("enqueueGoogleSyncRun dedupes when recent completed run exists", async () => {
+		vi.useFakeTimers();
+		const base = Date.now();
+		vi.setSystemTime(base);
+
+		const testConvex = createTestConvex();
+		const first = await testConvex.mutation(internal.calendar.mutations.enqueueGoogleSyncRun, {
+			userId: "watch-user-completed-dedupe",
+			triggeredBy: "webhook",
+		});
+		await testConvex.mutation(internal.calendar.mutations.markGoogleSyncRunRunning, {
+			runId: first.runId,
+		});
+		await testConvex.mutation(internal.calendar.mutations.completeGoogleSyncRun, {
+			runId: first.runId,
+			imported: 1,
+			deleted: 0,
+		});
+
+		vi.setSystemTime(base + 1000);
+		const second = await testConvex.mutation(internal.calendar.mutations.enqueueGoogleSyncRun, {
+			userId: "watch-user-completed-dedupe",
+			triggeredBy: "webhook",
+		});
+
+		expect(second.enqueued).toBe(false);
+		expect(second.reason).toBe("debounced_completed");
+		expect(second.runId).toBe(first.runId);
+
+		vi.useRealTimers();
+	});
+
 	test("webhook ignores unknown channels", async () => {
 		const testConvex = createTestConvex();
 		const result = await testConvex.action(internal.calendar.actions.handleGoogleCalendarWebhook, {
@@ -131,7 +163,7 @@ describe("google calendar watch + sync queue", () => {
 
 		expect(first.enqueued).toBe(true);
 		expect(second.enqueued).toBe(false);
-		expect(second.reason).toBe("already_pending");
+		expect(second.reason).toBe("debounced_notification");
 	});
 
 	test("ensureWatchChannelsForUser creates channels for writable calendars", async () => {
@@ -142,20 +174,20 @@ describe("google calendar watch + sync queue", () => {
 			refreshToken: "refresh-user-5",
 		});
 
-		const fetchMock = vi
-			.fn()
-			.mockResolvedValueOnce(
-				new Response(
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const url = String(input);
+			if (url === "https://oauth2.googleapis.com/token") {
+				return new Response(
 					JSON.stringify({
-						access_token: "token-list",
+						access_token: "token",
 						expires_in: 3600,
 						token_type: "Bearer",
 					}),
 					{ status: 200, headers: { "Content-Type": "application/json" } },
-				),
-			)
-			.mockResolvedValueOnce(
-				new Response(
+				);
+			}
+			if (url.includes("/users/me/calendarList")) {
+				return new Response(
 					JSON.stringify({
 						items: [
 							{
@@ -167,20 +199,10 @@ describe("google calendar watch + sync queue", () => {
 						],
 					}),
 					{ status: 200, headers: { "Content-Type": "application/json" } },
-				),
-			)
-			.mockResolvedValueOnce(
-				new Response(
-					JSON.stringify({
-						access_token: "token-watch",
-						expires_in: 3600,
-						token_type: "Bearer",
-					}),
-					{ status: 200, headers: { "Content-Type": "application/json" } },
-				),
-			)
-			.mockResolvedValueOnce(
-				new Response(
+				);
+			}
+			if (url.includes("/calendars/primary/events/watch")) {
+				return new Response(
 					JSON.stringify({
 						id: "watch-channel-5",
 						resourceId: "watch-resource-5",
@@ -188,8 +210,10 @@ describe("google calendar watch + sync queue", () => {
 						expiration: String(Date.now() + 7 * 24 * 60 * 60 * 1000),
 					}),
 					{ status: 200, headers: { "Content-Type": "application/json" } },
-				),
-			);
+				);
+			}
+			throw new Error(`Unexpected fetch URL: ${url}`);
+		});
 		vi.stubGlobal("fetch", fetchMock);
 
 		const result = await testConvex.action(internal.calendar.actions.ensureWatchChannelsForUser, {
