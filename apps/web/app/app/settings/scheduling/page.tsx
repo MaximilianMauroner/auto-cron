@@ -17,7 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
 import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duration";
 import { cn } from "@/lib/utils";
-import type { HabitFrequency, HabitRecoveryPolicy } from "@auto-cron/types";
+import type { HabitFrequency, HabitPriority, HabitRecoveryPolicy } from "@auto-cron/types";
 import type { Priority, TaskSchedulingMode, TaskVisibilityPreference } from "@auto-cron/types";
 import { Check, ListChecks, Repeat, Save, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -41,7 +41,8 @@ const schedulingModes: { mode: TaskSchedulingMode; label: string; description: s
 	},
 ];
 
-const priorityOptions: Priority[] = ["low", "medium", "high", "critical", "blocker"];
+const taskPriorityOptions: Priority[] = ["low", "medium", "high", "critical", "blocker"];
+const habitPriorityOptions: HabitPriority[] = ["low", "medium", "high", "critical"];
 const frequencyOptions: { value: HabitFrequency; label: string }[] = [
 	{ value: "daily", label: "Daily" },
 	{ value: "weekly", label: "Weekly" },
@@ -69,7 +70,7 @@ type TaskDefaultsFormState = {
 };
 
 type HabitDefaultsFormState = {
-	priority: Priority;
+	priority: HabitPriority;
 	durationMinutes: string;
 	frequency: HabitFrequency;
 	recoveryPolicy: HabitRecoveryPolicy;
@@ -106,7 +107,7 @@ const toTaskDefaultsForm = (defaults: {
 });
 
 const toHabitDefaultsForm = (defaults: {
-	priority: Priority;
+	priority: HabitPriority;
 	durationMinutes: number;
 	frequency: HabitFrequency;
 	recoveryPolicy: HabitRecoveryPolicy;
@@ -458,7 +459,7 @@ export default function SchedulingSettingsPage() {
 										<SelectValue />
 									</SelectTrigger>
 									<SelectContent>
-										{priorityOptions.map((p) => (
+										{taskPriorityOptions.map((p) => (
 											<SelectItem key={p} value={p}>
 												{p}
 											</SelectItem>
@@ -626,7 +627,7 @@ export default function SchedulingSettingsPage() {
 									onValueChange={(priority) =>
 										setHabitForm((c) => ({
 											...c,
-											priority: priority as Priority,
+											priority: priority as HabitPriority,
 										}))
 									}
 								>
@@ -634,7 +635,7 @@ export default function SchedulingSettingsPage() {
 										<SelectValue />
 									</SelectTrigger>
 									<SelectContent>
-										{priorityOptions.map((p) => (
+										{habitPriorityOptions.map((p) => (
 											<SelectItem key={p} value={p}>
 												{p}
 											</SelectItem>

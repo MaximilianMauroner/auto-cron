@@ -1,4 +1,5 @@
 import { ConvexError, v } from "convex/values";
+import type { Id } from "../_generated/dataModel";
 import { internalMutation } from "../_generated/server";
 import { GOOGLE_CALENDAR_COLORS } from "../categories/shared";
 import { enqueueSchedulingRunFromMutation } from "./enqueue";
@@ -66,15 +67,15 @@ export const markRunRunning = internalMutation({
 	args: {
 		runId: v.id("schedulingRuns"),
 	},
-	returns: v.null(),
+	returns: v.boolean(),
 	handler: async (ctx, args) => {
 		const run = await ctx.db.get(args.runId);
-		if (!run) return null;
-		if (run.status !== "pending") return null;
+		if (!run) return false;
+		if (run.status !== "pending") return false;
 		await ctx.db.patch(args.runId, {
 			status: "running",
 		});
-		return null;
+		return true;
 	},
 });
 
@@ -187,11 +188,20 @@ export const applySchedulingBlocks = internalMutation({
 			.unique();
 		const resolvedTravelColor =
 			travelCategory?.color ?? GOOGLE_CALENDAR_COLORS[DEFAULT_TRAVEL_COLOR_INDEX];
-		const tasks = await ctx.db
-			.query("tasks")
-			.withIndex("by_userId", (q) => q.eq("userId", args.userId))
-			.collect();
-		const tasksBySourceId = new Map(tasks.map((task) => [String(task._id), task] as const));
+		const travelCandidateTaskIds = Array.from(
+			new Set(
+				existingScheduledEvents.filter(isTravelBufferCandidate).map((event) => event.sourceId),
+			),
+		);
+		const travelCandidateTasks = await Promise.all(
+			travelCandidateTaskIds.map((taskId) => ctx.db.get(taskId as Id<"tasks">)),
+		);
+		const tasksBySourceId = new Map<string, (typeof travelCandidateTasks)[number]>();
+		for (const [index, task] of travelCandidateTasks.entries()) {
+			const taskId = travelCandidateTaskIds[index];
+			if (!taskId || !task || task.userId !== args.userId) continue;
+			tasksBySourceId.set(taskId, task);
+		}
 
 		for (const event of existingScheduledEvents) {
 			if (!isTravelBufferCandidate(event)) continue;
@@ -392,7 +402,30 @@ export const applySchedulingBlocks = internalMutation({
 			}
 		}
 
-		for (const task of tasks) {
+		const [scheduledTasks, inProgressTasks, placementTasks] = await Promise.all([
+			ctx.db
+				.query("tasks")
+				.withIndex("by_userId_status", (q) => q.eq("userId", args.userId).eq("status", "scheduled"))
+				.collect(),
+			ctx.db
+				.query("tasks")
+				.withIndex("by_userId_status", (q) =>
+					q.eq("userId", args.userId).eq("status", "in_progress"),
+				)
+				.collect(),
+			Promise.all(Array.from(tasksById.keys()).map((taskId) => ctx.db.get(taskId as Id<"tasks">))),
+		]);
+
+		const tasksToReconcile = new Map<string, (typeof scheduledTasks)[number]>();
+		for (const task of [...scheduledTasks, ...inProgressTasks]) {
+			tasksToReconcile.set(String(task._id), task);
+		}
+		for (const task of placementTasks) {
+			if (!task || task.userId !== args.userId) continue;
+			tasksToReconcile.set(String(task._id), task);
+		}
+
+		for (const task of tasksToReconcile.values()) {
 			const placements = tasksById.get(String(task._id));
 			if (!placements) {
 				const shouldResetStatus = task.status === "scheduled" || task.status === "in_progress";

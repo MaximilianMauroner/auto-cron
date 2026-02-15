@@ -164,8 +164,7 @@ const sanitizeHabitQuickCreateDefaults = (
 		settings?.habitQuickCreatePriority === "low" ||
 		settings?.habitQuickCreatePriority === "medium" ||
 		settings?.habitQuickCreatePriority === "high" ||
-		settings?.habitQuickCreatePriority === "critical" ||
-		settings?.habitQuickCreatePriority === "blocker"
+		settings?.habitQuickCreatePriority === "critical"
 			? settings.habitQuickCreatePriority
 			: defaultHabitQuickCreateSettings.priority;
 
@@ -268,6 +267,7 @@ export const getCalendarDisplayPreferences = query({
 	returns: v.object({
 		timezone: v.union(v.null(), v.string()),
 		timeFormatPreference: v.union(v.null(), timeFormatPreferenceValidator),
+		weekStartsOn: weekStartsOnValidator,
 	}),
 	handler: withQueryAuth(async (ctx) => {
 		const settings = await ctx.db
@@ -278,6 +278,7 @@ export const getCalendarDisplayPreferences = query({
 		return {
 			timezone: rawTimezone && isValidTimeZone(rawTimezone) ? rawTimezone : null,
 			timeFormatPreference: normalizeTimeFormatPreference(settings?.timeFormatPreference),
+			weekStartsOn: normalizeWeekStartsOn(settings?.weekStartsOn) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
 		};
 	}),
 });

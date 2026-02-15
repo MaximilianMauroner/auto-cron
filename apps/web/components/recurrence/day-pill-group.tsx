@@ -39,11 +39,13 @@ export function DayPillGroup({
 						variant={selected ? "default" : "outline"}
 						disabled={disabled}
 						className={cn(
-							"rounded-full font-[family-name:var(--font-outfit)] font-medium",
+							"rounded-full font-[family-name:var(--font-outfit)] font-medium transition-colors",
 							size === "sm"
 								? "h-8 min-w-8 px-2.5 text-[0.72rem]"
 								: "h-9 min-w-9 px-3 text-[0.76rem]",
-							selected && "bg-accent text-accent-foreground hover:bg-accent/90",
+							selected
+								? "bg-accent text-accent-foreground hover:bg-accent/90"
+								: "hover:bg-muted hover:text-foreground hover:border-border",
 						)}
 						onClick={() => toggleDay(day.value)}
 					>

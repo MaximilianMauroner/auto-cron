@@ -2,11 +2,11 @@
 
 import { AppSidebar } from "@/components/app-sidebar";
 import {
+	AsideContentProvider,
 	AsidePanel,
 	AsidePanelContent,
 	AsidePanelProvider,
 	AsidePanelTrigger,
-	EventDetailProvider,
 } from "@/components/aside-panel";
 import { FeedbackButton } from "@/components/feedback-floating-button";
 import {
@@ -167,7 +167,7 @@ export function DashboardShell({
 			<SidebarProvider className="h-screen! min-h-0!">
 				<AppSidebar />
 				<AsidePanelProvider defaultOpen={defaultAsidePanelOpen}>
-					<EventDetailProvider>
+					<AsideContentProvider>
 						<main className="flex-1 min-h-0 overflow-hidden bg-background flex flex-col">
 							<LayoutHeader />
 							<div className="flex flex-1 min-h-0 overflow-hidden">
@@ -177,7 +177,7 @@ export function DashboardShell({
 								</AsidePanel>
 							</div>
 						</main>
-					</EventDetailProvider>
+					</AsideContentProvider>
 				</AsidePanelProvider>
 			</SidebarProvider>
 		);
@@ -195,7 +195,7 @@ export function DashboardShell({
 				open={asideOpen}
 				onOpenChange={handleAsideOpenChange}
 			>
-				<EventDetailProvider>
+				<AsideContentProvider>
 					<ResizablePanelGroup
 						orientation="horizontal"
 						defaultLayout={defaultPanelSizes}
@@ -241,7 +241,7 @@ export function DashboardShell({
 							</aside>
 						</ResizablePanel>
 					</ResizablePanelGroup>
-				</EventDetailProvider>
+				</AsideContentProvider>
 			</AsidePanelProvider>
 		</SidebarProvider>
 	);

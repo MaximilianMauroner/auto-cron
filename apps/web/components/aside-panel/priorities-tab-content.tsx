@@ -1,7 +1,6 @@
 "use client";
 
 import { DragOverlayCard, DroppableColumn, SortableItem } from "@/components/dnd";
-import { TaskEditSheet } from "@/components/tasks/task-edit-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
@@ -16,45 +15,81 @@ import { ChevronDown, Clock3, Search } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
+import { useAsideContent } from "./aside-content-context";
 import { AsideHabitItem } from "./aside-habit-item";
+import {
+	AsideSortFilterBar,
+	type DurationFilter,
+	type HoursSetOption,
+	type SortOption,
+	matchesDurationFilter,
+	sortByDueDate,
+} from "./aside-sort-filter-bar";
 import { AsideTaskCard } from "./aside-task-card";
 
 export function PrioritiesTabContent({
 	tasks,
 	tasksPending,
+	hoursSets,
 }: {
 	tasks: TaskDTO[];
 	tasksPending: boolean;
+	hoursSets: HoursSetOption[];
 }) {
 	const [search, setSearch] = useState("");
-	const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+	const [sort, setSort] = useState<SortOption>("default");
+	const [durationFilter, setDurationFilter] = useState<DurationFilter>("all");
+	const [hoursSetFilter, setHoursSetFilter] = useState("all");
 	const habitsQuery = useAuthenticatedQueryWithStatus(api.habits.queries.listHabits, {});
 	const habits = (habitsQuery.data ?? []) as HabitDTO[];
 	const { mutate: updateTask } = useMutationWithStatus(api.tasks.mutations.updateTask);
+	const { mutate: updateHabit } = useMutationWithStatus(api.habits.mutations.updateHabit);
+	const { mutate: toggleHabitActive } = useMutationWithStatus(
+		api.habits.mutations.toggleHabitActive,
+	);
+	const { mutate: deleteHabit } = useMutationWithStatus(api.habits.mutations.deleteHabit);
+	const { openHabit, openTask } = useAsideContent();
 
 	const isLoading = tasksPending || habitsQuery.isPending;
 
 	const filteredTasks = useMemo(() => {
+		let result = tasks.filter((t) => t.status !== "done");
 		const term = search.toLowerCase().trim();
-		const activeTasks = tasks.filter((t) => t.status !== "done");
-		if (!term) return activeTasks;
-		return activeTasks.filter(
-			(t) => t.title.toLowerCase().includes(term) || t.description?.toLowerCase().includes(term),
-		);
-	}, [tasks, search]);
+		if (term) {
+			result = result.filter(
+				(t) => t.title.toLowerCase().includes(term) || t.description?.toLowerCase().includes(term),
+			);
+		}
+		if (durationFilter !== "all") {
+			result = result.filter((t) => matchesDurationFilter(t.estimatedMinutes, durationFilter));
+		}
+		if (hoursSetFilter !== "all") {
+			result = result.filter((t) => t.hoursSetId === hoursSetFilter);
+		}
+		return result;
+	}, [tasks, search, durationFilter, hoursSetFilter]);
 
 	const filteredHabits = useMemo(() => {
+		let result = habits.filter((h) => h.isActive);
 		const term = search.toLowerCase().trim();
-		const activeHabits = habits.filter((h) => h.isActive);
-		if (!term) return activeHabits;
-		return activeHabits.filter(
-			(h) => h.title.toLowerCase().includes(term) || h.description?.toLowerCase().includes(term),
-		);
-	}, [habits, search]);
-
+		if (term) {
+			result = result.filter(
+				(h) => h.title.toLowerCase().includes(term) || h.description?.toLowerCase().includes(term),
+			);
+		}
+		if (durationFilter !== "all") {
+			result = result.filter((h) => matchesDurationFilter(h.durationMinutes, durationFilter));
+		}
+		if (hoursSetFilter !== "all") {
+			result = result.filter((h) => h.hoursSetId === hoursSetFilter);
+		}
+		return result;
+	}, [habits, search, durationFilter, hoursSetFilter]);
 	const groupedByPriority = useMemo(() => {
 		return priorityOrder.map((priority) => {
-			const priorityTasks = filteredTasks.filter((t) => t.priority === priority);
+			let priorityTasks = filteredTasks.filter((t) => t.priority === priority);
+			if (sort === "due_asc") priorityTasks = sortByDueDate(priorityTasks, "asc");
+			if (sort === "due_desc") priorityTasks = sortByDueDate(priorityTasks, "desc");
 			const priorityHabits = filteredHabits.filter(
 				(h) => (h.priority ?? "medium") === (priority as unknown as HabitPriority),
 			);
@@ -65,7 +100,7 @@ export function PrioritiesTabContent({
 				total: priorityTasks.length + priorityHabits.length,
 			};
 		});
-	}, [filteredTasks, filteredHabits]);
+	}, [filteredTasks, filteredHabits, sort]);
 
 	// ── DnD (tasks only — habits are non-draggable in the aside) ──
 
@@ -122,145 +157,174 @@ export function PrioritiesTabContent({
 	}, [groupedByPriority, dndState.pendingMoves, filteredTasks]);
 
 	return (
-		<>
-			<div className="flex flex-col gap-3 p-3">
-				<div className="relative">
-					<Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-					<Input
-						value={search}
-						onChange={(e) => setSearch(e.target.value)}
-						placeholder="Search for something..."
-						className="h-8 pl-8 font-[family-name:var(--font-outfit)] text-[0.76rem]"
-					/>
-				</div>
+		<div className="flex flex-col gap-3 p-3">
+			<div className="relative">
+				<Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+				<Input
+					value={search}
+					onChange={(e) => setSearch(e.target.value)}
+					placeholder="Search for something..."
+					className="h-8 pl-8 font-[family-name:var(--font-outfit)] text-[0.76rem]"
+				/>
+			</div>
 
-				{isLoading ? (
-					<div className="font-[family-name:var(--font-cutive)] text-[0.76rem] text-muted-foreground">
-						Loading...
-					</div>
-				) : (
-					<DndContext
-						sensors={dndState.sensors}
-						collisionDetection={dndState.collisionDetection}
-						onDragStart={dndState.handleDragStart}
-						onDragEnd={dndState.handleDragEnd}
-						onDragCancel={dndState.handleDragCancel}
-					>
-						<div className="space-y-1">
-							{displayGroups.map((group) => (
-								<Collapsible key={group.priority} defaultOpen={group.total > 0}>
-									<CollapsibleTrigger className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-[0.76rem] font-medium hover:bg-accent/50">
-										<div className="flex items-center gap-2">
-											<span className="font-[family-name:var(--font-outfit)]">
-												{priorityLabels[group.priority]}
-											</span>
-											<Badge
-												className={`${priorityClass[group.priority]} font-[family-name:var(--font-outfit)] tabular-nums text-[0.6rem] px-1.5 py-0`}
-											>
-												{group.total}
-											</Badge>
-										</div>
-										<ChevronDown className="size-3.5 text-muted-foreground transition-transform [[data-state=closed]>&]:rotate-[-90deg]" />
-									</CollapsibleTrigger>
-									<CollapsibleContent>
-										<div className="space-y-1 pl-1">
-											{group.habits.length > 0 ? (
-												<div className="space-y-0.5">
+			<AsideSortFilterBar
+				sort={sort}
+				onSortChange={setSort}
+				durationFilter={durationFilter}
+				onDurationFilterChange={setDurationFilter}
+				hoursSetFilter={hoursSetFilter}
+				onHoursSetFilterChange={setHoursSetFilter}
+				hoursSets={hoursSets}
+			/>
+
+			{isLoading ? (
+				<div className="font-[family-name:var(--font-cutive)] text-[0.76rem] text-muted-foreground">
+					Loading...
+				</div>
+			) : (
+				<DndContext
+					sensors={dndState.sensors}
+					collisionDetection={dndState.collisionDetection}
+					onDragStart={dndState.handleDragStart}
+					onDragEnd={dndState.handleDragEnd}
+					onDragCancel={dndState.handleDragCancel}
+				>
+					<div className="space-y-1">
+						{displayGroups.map((group) => (
+							<Collapsible key={group.priority} defaultOpen={group.total > 0}>
+								<CollapsibleTrigger className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-[0.76rem] font-medium hover:bg-accent/50">
+									<div className="flex items-center gap-2">
+										<span className="font-[family-name:var(--font-outfit)]">
+											{priorityLabels[group.priority]}
+										</span>
+										<Badge
+											className={`${priorityClass[group.priority]} font-[family-name:var(--font-outfit)] tabular-nums text-[0.6rem] px-1.5 py-0`}
+										>
+											{group.total}
+										</Badge>
+									</div>
+									<ChevronDown className="size-3.5 text-muted-foreground transition-transform [[data-state=closed]>&]:rotate-[-90deg]" />
+								</CollapsibleTrigger>
+								<CollapsibleContent>
+									<div className="space-y-1 pl-1">
+										{group.habits.length > 0 ? (
+											<div className="space-y-0.5">
+												<div className="flex items-center gap-2 px-2 py-1 font-[family-name:var(--font-cutive)] text-[0.66rem] uppercase tracking-[0.08em] text-muted-foreground">
+													Habits
+													<Badge
+														variant="secondary"
+														className="font-[family-name:var(--font-outfit)] tabular-nums text-[0.58rem] px-1 py-0"
+													>
+														{group.habits.length}
+													</Badge>
+												</div>
+												{group.habits.map((habit) => (
+													<AsideHabitItem
+														key={habit._id}
+														habit={habit}
+														onClick={() => openHabit(habit._id, "details")}
+														onEdit={() => openHabit(habit._id, "edit")}
+														onDelete={() =>
+															deleteHabit({
+																id: habit._id as Id<"habits">,
+															})
+														}
+														onToggle={(isActive) =>
+															toggleHabitActive({
+																id: habit._id as Id<"habits">,
+																isActive,
+															})
+														}
+														onChangePriority={(priority) =>
+															updateHabit({
+																id: habit._id as Id<"habits">,
+																patch: { priority },
+															})
+														}
+													/>
+												))}
+											</div>
+										) : null}
+										<DroppableColumn
+											id={group.priority}
+											items={group.tasks.map((t) => t._id)}
+											className="space-y-1"
+										>
+											{group.tasks.length > 0 ? (
+												<>
 													<div className="flex items-center gap-2 px-2 py-1 font-[family-name:var(--font-cutive)] text-[0.66rem] uppercase tracking-[0.08em] text-muted-foreground">
-														Habits
+														Tasks
 														<Badge
 															variant="secondary"
 															className="font-[family-name:var(--font-outfit)] tabular-nums text-[0.58rem] px-1 py-0"
 														>
-															{group.habits.length}
+															{group.tasks.length}
 														</Badge>
 													</div>
-													{group.habits.map((habit) => (
-														<AsideHabitItem key={habit._id} habit={habit} />
+													{group.tasks.map((task) => (
+														<SortableItem key={task._id} id={task._id}>
+															<AsideTaskCard
+																task={task}
+																onOpenTask={(id) => openTask(id, "details")}
+																onEditTask={(id) => openTask(id, "edit")}
+															/>
+														</SortableItem>
 													))}
+												</>
+											) : (
+												<div className="py-1 text-center font-[family-name:var(--font-cutive)] text-[0.6rem] text-muted-foreground/40">
+													Drop tasks here
 												</div>
-											) : null}
-											<DroppableColumn
-												id={group.priority}
-												items={group.tasks.map((t) => t._id)}
-												className="space-y-1"
-											>
-												{group.tasks.length > 0 ? (
-													<>
-														<div className="flex items-center gap-2 px-2 py-1 font-[family-name:var(--font-cutive)] text-[0.66rem] uppercase tracking-[0.08em] text-muted-foreground">
-															Tasks
-															<Badge
-																variant="secondary"
-																className="font-[family-name:var(--font-outfit)] tabular-nums text-[0.58rem] px-1 py-0"
-															>
-																{group.tasks.length}
-															</Badge>
-														</div>
-														{group.tasks.map((task) => (
-															<SortableItem key={task._id} id={task._id}>
-																<AsideTaskCard task={task} onEditTask={setEditingTaskId} />
-															</SortableItem>
-														))}
-													</>
-												) : (
-													<div className="py-1 text-center font-[family-name:var(--font-cutive)] text-[0.6rem] text-muted-foreground/40">
-														Drop tasks here
-													</div>
-												)}
-											</DroppableColumn>
-										</div>
-									</CollapsibleContent>
-								</Collapsible>
-							))}
-							{displayGroups.every((g) => g.total === 0) ? (
-								<div className="font-[family-name:var(--font-cutive)] rounded-xl border border-dashed border-border/60 p-4 text-center text-[0.76rem] text-muted-foreground">
-									{search ? `No items match \u201c${search}\u201d` : "No active tasks or habits."}
-								</div>
-							) : null}
-						</div>
-
-						<DragOverlay dropAnimation={null}>
-							{activeTask ? (
-								<DragOverlayCard>
-									<div className="rounded-lg border border-border/60 bg-background/95 p-2.5">
-										<div className="flex items-start gap-2">
-											<span
-												className="mt-1 size-2 shrink-0 rounded-full"
-												style={{
-													backgroundColor:
-														activeTask.effectiveColor ?? activeTask.color ?? "#f59e0b",
-												}}
-											/>
-											<div className="min-w-0 flex-1">
-												<p className="font-[family-name:var(--font-outfit)] truncate text-[0.76rem] font-medium">
-													{activeTask.title}
-												</p>
-												<div className="mt-1 flex items-center gap-2 font-[family-name:var(--font-cutive)] text-[0.68rem] text-muted-foreground">
-													<span className="inline-flex items-center gap-0.5">
-														<Clock3 className="size-3" />
-														{formatDurationCompact(activeTask.estimatedMinutes)}
-													</span>
-												</div>
-											</div>
-											<Badge
-												className={`${priorityClass[activeTask.priority]} font-[family-name:var(--font-cutive)] text-[0.6rem] px-1.5 py-0`}
-											>
-												{priorityLabels[activeTask.priority]}
-											</Badge>
-										</div>
+											)}
+										</DroppableColumn>
 									</div>
-								</DragOverlayCard>
-							) : null}
-						</DragOverlay>
-					</DndContext>
-				)}
-			</div>
-			<TaskEditSheet
-				taskId={editingTaskId}
-				onOpenChange={(open) => {
-					if (!open) setEditingTaskId(null);
-				}}
-			/>
-		</>
+								</CollapsibleContent>
+							</Collapsible>
+						))}
+						{displayGroups.every((g) => g.total === 0) ? (
+							<div className="font-[family-name:var(--font-cutive)] rounded-xl border border-dashed border-border/60 p-4 text-center text-[0.76rem] text-muted-foreground">
+								{search || durationFilter !== "all" || hoursSetFilter !== "all"
+									? "No items match the current filters."
+									: "No active tasks or habits."}
+							</div>
+						) : null}
+					</div>
+
+					<DragOverlay dropAnimation={null}>
+						{activeTask ? (
+							<DragOverlayCard>
+								<div className="rounded-lg border border-border/60 bg-background/95 p-2.5">
+									<div className="flex items-start gap-2">
+										<span
+											className="mt-1 size-2 shrink-0 rounded-full"
+											style={{
+												backgroundColor: activeTask.effectiveColor ?? activeTask.color ?? "#f59e0b",
+											}}
+										/>
+										<div className="min-w-0 flex-1">
+											<p className="font-[family-name:var(--font-outfit)] truncate text-[0.76rem] font-medium">
+												{activeTask.title}
+											</p>
+											<div className="mt-1 flex items-center gap-2 font-[family-name:var(--font-cutive)] text-[0.68rem] text-muted-foreground">
+												<span className="inline-flex items-center gap-0.5">
+													<Clock3 className="size-3" />
+													{formatDurationCompact(activeTask.estimatedMinutes)}
+												</span>
+											</div>
+										</div>
+										<Badge
+											className={`${priorityClass[activeTask.priority]} font-[family-name:var(--font-cutive)] text-[0.6rem] px-1.5 py-0`}
+										>
+											{priorityLabels[activeTask.priority]}
+										</Badge>
+									</div>
+								</div>
+							</DragOverlayCard>
+						) : null}
+					</DragOverlay>
+				</DndContext>
+			)}
+		</div>
 	);
 }

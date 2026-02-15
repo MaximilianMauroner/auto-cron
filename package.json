@@ -7,7 +7,7 @@
 		"dev:web": "turbo dev --filter=@auto-cron/web",
 		"dev:convex": "bunx convex dev",
 		"build": "bun run env:check && turbo build",
-		"env:check": "bun run scripts/validate-env.ts",
+		"env:check": "bun run apps/web/env/check.ts",
 		"lint": "biome check .",
 		"format": "biome check --write .",
 		"format:staged": "lint-staged",

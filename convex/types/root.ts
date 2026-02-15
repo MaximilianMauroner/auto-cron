@@ -46,6 +46,7 @@ export type BillingMode = "live" | "allow_all" | "deny_tasks" | "deny_habits" | 
 export type ConvexEnv = {
 	AUTUMN_BILLING_MODE?: BillingMode;
 	AUTUMN_SECRET_KEY: string;
+	INTERNAL_ADMIN_USER_IDS?: string[];
 	GOOGLE_CLIENT_ID: string;
 	GOOGLE_CLIENT_SECRET: string;
 	GOOGLE_CALENDAR_WEBHOOK_URL?: string;

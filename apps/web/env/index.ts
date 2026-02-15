@@ -15,10 +15,12 @@ export const env = createEnv({
 		WORKOS_COOKIE_PASSWORD: z.string().min(32),
 	},
 	client: {
+		NEXT_PUBLIC_APP_URL: z.url().optional(),
 		NEXT_PUBLIC_AUTUMN_BACKEND_URL: z.url().optional(),
 		NEXT_PUBLIC_WORKOS_REDIRECT_URI: z.url(),
 	},
 	experimental__runtimeEnv: {
+		NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
 		NEXT_PUBLIC_AUTUMN_BACKEND_URL: process.env.NEXT_PUBLIC_AUTUMN_BACKEND_URL,
 		NEXT_PUBLIC_WORKOS_REDIRECT_URI: process.env.NEXT_PUBLIC_WORKOS_REDIRECT_URI,
 	},

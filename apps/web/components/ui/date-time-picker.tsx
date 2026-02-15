@@ -117,7 +117,7 @@ export function DateTimePicker({
 	className,
 	allowClear = true,
 }: DateTimePickerProps) {
-	const { hour12 } = useUserPreferences();
+	const { hour12, weekStartsOn } = useUserPreferences();
 	const [open, setOpen] = useState(false);
 	const [draftText, setDraftText] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -205,6 +205,7 @@ export function DateTimePicker({
 						setDraftText(event.target.value);
 						if (error) setError(null);
 					}}
+					onFocus={() => setOpen(true)}
 					onBlur={commitDraft}
 					onKeyDown={(event) => {
 						if (event.key !== "Enter") return;
@@ -221,7 +222,12 @@ export function DateTimePicker({
 						</Button>
 					</PopoverTrigger>
 					<PopoverContent align="end" className="w-auto p-3">
-						<Calendar mode="single" selected={selectedDate ?? undefined} onSelect={onSelectDay} />
+						<Calendar
+							mode="single"
+							selected={selectedDate ?? undefined}
+							onSelect={onSelectDay}
+							weekStartsOn={weekStartsOn}
+						/>
 						<div className="mt-3 flex items-center gap-2">
 							<Input
 								type="time"

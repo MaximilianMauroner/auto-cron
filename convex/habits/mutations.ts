@@ -4,18 +4,20 @@ import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
 import { ensureCategoryOwnership } from "../categories/shared";
+import { insertChangeLog } from "../changeLogs/shared";
 import { ensureHoursSetOwnership, getDefaultHoursSet } from "../hours/shared";
 import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
+import { recurrenceFromLegacyFrequency } from "../scheduling/rrule";
 import type {
 	DeleteHabitArgs,
 	HabitCreateInput,
-	HabitFrequency,
 	HabitUpdatePatch,
 	InternalCreateHabitArgs,
 	InternalRollbackHabitArgs,
 	ToggleHabitArgs,
 	UpdateHabitArgs,
 } from "./habitTypes";
+import { ensureHabitSeries, upsertRecurrencePattern } from "./recurrence";
 
 const habitFrequencyValidator = v.union(
 	v.literal("daily"),
@@ -50,14 +52,6 @@ const habitUnscheduledBehaviorValidator = v.union(
 	v.literal("leave_on_calendar"),
 	v.literal("remove_from_calendar"),
 );
-
-const recurrenceFromLegacyFrequency = (frequency: HabitFrequency | undefined) => {
-	if (frequency === "daily") return "RRULE:FREQ=DAILY;INTERVAL=1";
-	if (frequency === "weekly") return "RRULE:FREQ=WEEKLY;INTERVAL=1";
-	if (frequency === "biweekly") return "RRULE:FREQ=WEEKLY;INTERVAL=2";
-	if (frequency === "monthly") return "RRULE:FREQ=MONTHLY;INTERVAL=1";
-	return "RRULE:FREQ=WEEKLY;INTERVAL=1";
-};
 
 const habitCreateInputValidator = v.object({
 	title: v.string(),
@@ -129,6 +123,18 @@ const habitUpdatePatchValidator = v.object({
 	isActive: v.optional(v.boolean()),
 });
 
+const recurrencePatchKeys = [
+	"recurrenceRule",
+	"recoveryPolicy",
+	"frequency",
+	"repeatsPerPeriod",
+	"preferredWindowStart",
+	"preferredWindowEnd",
+	"preferredDays",
+	"startDate",
+	"endDate",
+] as const;
+
 const notFoundError = () =>
 	new ConvexError({
 		code: "NOT_FOUND",
@@ -171,21 +177,132 @@ export const updateHabit = mutation({
 		if (!habit || habit.userId !== ctx.userId) {
 			throw notFoundError();
 		}
+		const recurrencePattern = await ctx.db.get(habit.recurrencePatternId);
+		if (!recurrencePattern || recurrencePattern.userId !== ctx.userId) {
+			throw new ConvexError({
+				code: "INVALID_RECURRENCE_PATTERN",
+				message: "Recurrence pattern not found for habit.",
+			});
+		}
 
 		const nextPatch: Record<string, unknown> = {};
 		for (const [key, value] of Object.entries(args.patch)) {
 			nextPatch[key] = value === null ? undefined : value;
 		}
-		if (nextPatch.recurrenceRule === undefined && args.patch.frequency) {
-			nextPatch.recurrenceRule = recurrenceFromLegacyFrequency(args.patch.frequency);
+		const patchHasKey = (key: keyof HabitUpdatePatch) =>
+			Object.prototype.hasOwnProperty.call(args.patch, key);
+
+		const hasRecurrencePatch = recurrencePatchKeys.some((key) => patchHasKey(key));
+		if (hasRecurrencePatch) {
+			const nextFrequency =
+				patchHasKey("frequency") && args.patch.frequency === null
+					? undefined
+					: typeof nextPatch.frequency === "string"
+						? (nextPatch.frequency as "daily" | "weekly" | "biweekly" | "monthly")
+						: recurrencePattern.frequency;
+			const recurrenceRuleFromPatch = patchHasKey("recurrenceRule")
+				? args.patch.recurrenceRule === null
+					? recurrenceFromLegacyFrequency(nextFrequency)
+					: typeof nextPatch.recurrenceRule === "string"
+						? (nextPatch.recurrenceRule as string)
+						: undefined
+				: undefined;
+			const recurrenceRule =
+				recurrenceRuleFromPatch ??
+				recurrencePattern.recurrenceRule ??
+				recurrenceFromLegacyFrequency(nextFrequency);
+			if (!recurrenceRule) {
+				throw new ConvexError({
+					code: "INVALID_RECURRENCE_RULE",
+					message: "A recurrence rule is required.",
+				});
+			}
+
+			const nextRecurrencePatternId = await upsertRecurrencePattern(ctx, {
+				userId: ctx.userId,
+				pattern: {
+					recurrenceRule,
+					recoveryPolicy:
+						patchHasKey("recoveryPolicy") && args.patch.recoveryPolicy === null
+							? undefined
+							: typeof nextPatch.recoveryPolicy === "string"
+								? (nextPatch.recoveryPolicy as "skip" | "recover")
+								: recurrencePattern.recoveryPolicy,
+					frequency: nextFrequency,
+					repeatsPerPeriod:
+						patchHasKey("repeatsPerPeriod") && args.patch.repeatsPerPeriod === null
+							? undefined
+							: typeof nextPatch.repeatsPerPeriod === "number"
+								? (nextPatch.repeatsPerPeriod as number)
+								: recurrencePattern.repeatsPerPeriod,
+					startDate:
+						patchHasKey("startDate") && args.patch.startDate === null
+							? undefined
+							: typeof nextPatch.startDate === "number"
+								? (nextPatch.startDate as number)
+								: recurrencePattern.startDate,
+					endDate:
+						patchHasKey("endDate") && args.patch.endDate === null
+							? undefined
+							: typeof nextPatch.endDate === "number"
+								? (nextPatch.endDate as number)
+								: recurrencePattern.endDate,
+					preferredWindowStart:
+						patchHasKey("preferredWindowStart") && args.patch.preferredWindowStart === null
+							? undefined
+							: typeof nextPatch.preferredWindowStart === "string"
+								? (nextPatch.preferredWindowStart as string)
+								: recurrencePattern.preferredWindowStart,
+					preferredWindowEnd:
+						patchHasKey("preferredWindowEnd") && args.patch.preferredWindowEnd === null
+							? undefined
+							: typeof nextPatch.preferredWindowEnd === "string"
+								? (nextPatch.preferredWindowEnd as string)
+								: recurrencePattern.preferredWindowEnd,
+					preferredDays:
+						patchHasKey("preferredDays") && args.patch.preferredDays === null
+							? undefined
+							: Array.isArray(nextPatch.preferredDays)
+								? (nextPatch.preferredDays as number[])
+								: recurrencePattern.preferredDays,
+					timezone: recurrencePattern.timezone,
+				},
+			});
+			nextPatch.recurrencePatternId = nextRecurrencePatternId;
 		}
+		const filteredPatchEntries = Object.entries(nextPatch).filter(
+			([key]) => !recurrencePatchKeys.includes(key as (typeof recurrencePatchKeys)[number]),
+		);
+		const habitPatch = Object.fromEntries(filteredPatchEntries) as Partial<typeof habit>;
 		if (args.patch.hoursSetId !== undefined && args.patch.hoursSetId !== null) {
 			await resolveHoursSetForHabit(ctx, ctx.userId, args.patch.hoursSetId);
 		}
 		if (args.patch.categoryId) {
 			await ensureCategoryOwnership(ctx, args.patch.categoryId, ctx.userId);
 		}
-		await ctx.db.patch(args.id, nextPatch as Partial<typeof habit>);
+		await ctx.db.patch(args.id, habitPatch);
+		const changedFields = Object.keys(habitPatch);
+		const action = changedFields.includes("isActive")
+			? "habit_active_state_changed"
+			: changedFields.includes("priority")
+				? "habit_priority_changed"
+				: "habit_updated";
+		await insertChangeLog(ctx, {
+			userId: ctx.userId,
+			entityType: "habit",
+			entityId: String(args.id),
+			action,
+			metadata: {
+				changedFields,
+			},
+		});
+		const latestHabit = (await ctx.db.get(args.id)) ?? habit;
+		await ensureHabitSeries(ctx, {
+			userId: ctx.userId,
+			habitId: args.id,
+			recurrencePatternId: latestHabit.recurrencePatternId,
+			isActive: latestHabit.isActive,
+		});
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId: ctx.userId,
 			triggeredBy: "habit_change",
@@ -205,6 +322,15 @@ export const deleteHabit = mutation({
 			throw notFoundError();
 		}
 		await ctx.db.delete(args.id);
+		await insertChangeLog(ctx, {
+			userId: ctx.userId,
+			entityType: "habit",
+			entityId: String(args.id),
+			action: "habit_deleted",
+			metadata: {
+				title: habit.title,
+			},
+		});
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId: ctx.userId,
 			triggeredBy: "habit_change",
@@ -225,6 +351,21 @@ export const toggleHabitActive = mutation({
 			throw notFoundError();
 		}
 		await ctx.db.patch(args.id, { isActive: args.isActive });
+		await insertChangeLog(ctx, {
+			userId: ctx.userId,
+			entityType: "habit",
+			entityId: String(args.id),
+			action: args.isActive ? "habit_resumed" : "habit_paused",
+			metadata: {
+				isActive: args.isActive,
+			},
+		});
+		await ensureHabitSeries(ctx, {
+			userId: ctx.userId,
+			habitId: args.id,
+			recurrencePatternId: habit.recurrencePatternId,
+			isActive: args.isActive,
+		});
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId: ctx.userId,
 			triggeredBy: "habit_change",
@@ -254,30 +395,36 @@ export const internalCreateHabitForUserWithOperation = internalMutation({
 
 		const hoursSetId = await resolveHoursSetForHabit(ctx, args.userId, args.input.hoursSetId);
 		await ensureCategoryOwnership(ctx, args.input.categoryId, args.userId);
+		const recurrenceRule =
+			args.input.recurrenceRule ?? recurrenceFromLegacyFrequency(args.input.frequency);
+		const recurrencePatternId = await upsertRecurrencePattern(ctx, {
+			userId: args.userId,
+			pattern: {
+				recurrenceRule,
+				recoveryPolicy: args.input.recoveryPolicy,
+				frequency: args.input.frequency,
+				repeatsPerPeriod: args.input.repeatsPerPeriod,
+				startDate: args.input.startDate,
+				endDate: args.input.endDate,
+				preferredWindowStart: args.input.preferredWindowStart,
+				preferredWindowEnd: args.input.preferredWindowEnd,
+				preferredDays: args.input.preferredDays,
+			},
+		});
 		const insertedId = await ctx.db.insert("habits", {
 			userId: args.userId,
 			title: args.input.title,
 			description: args.input.description,
 			priority: args.input.priority ?? "medium",
 			categoryId: args.input.categoryId,
-			recurrenceRule:
-				args.input.recurrenceRule ?? recurrenceFromLegacyFrequency(args.input.frequency),
-			recoveryPolicy: args.input.recoveryPolicy ?? "skip",
-			frequency: args.input.frequency,
 			durationMinutes: args.input.durationMinutes,
 			minDurationMinutes: args.input.minDurationMinutes,
 			maxDurationMinutes: args.input.maxDurationMinutes,
-			repeatsPerPeriod: args.input.repeatsPerPeriod,
 			idealTime: args.input.idealTime,
-			preferredWindowStart: args.input.preferredWindowStart,
-			preferredWindowEnd: args.input.preferredWindowEnd,
-			preferredDays: args.input.preferredDays,
 			hoursSetId,
 			preferredCalendarId: args.input.preferredCalendarId,
 			color: args.input.color,
 			location: args.input.location,
-			startDate: args.input.startDate,
-			endDate: args.input.endDate,
 			visibilityPreference: args.input.visibilityPreference,
 			timeDefenseMode: args.input.timeDefenseMode,
 			reminderMode: args.input.reminderMode,
@@ -289,7 +436,17 @@ export const internalCreateHabitForUserWithOperation = internalMutation({
 			dependencyNote: args.input.dependencyNote,
 			publicDescription: args.input.publicDescription,
 			isActive: args.input.isActive ?? true,
+			recurrencePatternId,
+			seriesId: undefined,
 		});
+
+		const seriesId = await ensureHabitSeries(ctx, {
+			userId: args.userId,
+			habitId: insertedId,
+			recurrencePatternId,
+			isActive: args.input.isActive ?? true,
+		});
+		await ctx.db.patch(insertedId, { seriesId });
 
 		if (reservation) {
 			await ctx.db.patch(reservation._id, {

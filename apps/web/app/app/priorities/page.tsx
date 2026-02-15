@@ -1,9 +1,9 @@
 "use client";
 
+import { useAsideContent } from "@/components/aside-panel";
 import { DragOverlayCard, DroppableColumn, SortableItem } from "@/components/dnd";
 import { PriorityCard } from "@/components/priorities/priority-card";
 import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
-import { TaskEditSheet } from "@/components/tasks/task-edit-sheet";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthenticatedQueryWithStatus, useMutationWithStatus } from "@/hooks/use-convex-status";
@@ -27,7 +27,7 @@ type ViewMode = "priority" | "status";
 
 export default function PrioritiesPage() {
 	const [view, setView] = useState<ViewMode>("priority");
-	const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+	const { openHabit, openTask } = useAsideContent();
 
 	const tasksQuery = useAuthenticatedQueryWithStatus(api.tasks.queries.listTasks, {});
 	const tasks = (tasksQuery.data ?? []) as TaskDTO[];
@@ -78,19 +78,19 @@ export default function PrioritiesPage() {
 					<PriorityColumnsView
 						tasks={activeTasks}
 						habits={activeHabits}
-						setEditingTaskId={setEditingTaskId}
+						onOpenTaskDetails={(task) => openTask(task._id, "details")}
+						onOpenHabitDetails={(habit) => openHabit(habit._id, "details")}
+						onEditTask={(task) => openTask(task._id, "edit")}
+						onEditHabit={(habit) => openHabit(habit._id, "edit")}
 					/>
 				) : (
-					<StatusKanbanView tasks={tasks} setEditingTaskId={setEditingTaskId} />
+					<StatusKanbanView
+						tasks={tasks}
+						onOpenTaskDetails={(task) => openTask(task._id, "details")}
+						onEditTask={(task) => openTask(task._id, "edit")}
+					/>
 				)}
 			</div>
-
-			<TaskEditSheet
-				taskId={editingTaskId}
-				onOpenChange={(open) => {
-					if (!open) setEditingTaskId(null);
-				}}
-			/>
 		</div>
 	);
 }
@@ -100,20 +100,33 @@ export default function PrioritiesPage() {
 type PriorityColumnsViewProps = {
 	tasks: TaskDTO[];
 	habits: HabitDTO[];
-	setEditingTaskId: (id: string | null) => void;
+	onEditTask: (task: TaskDTO) => void;
+	onEditHabit: (habit: HabitDTO) => void;
+	onOpenTaskDetails: (task: TaskDTO) => void;
+	onOpenHabitDetails: (habit: HabitDTO) => void;
 };
 
-function PriorityColumnsView({ tasks, habits, setEditingTaskId }: PriorityColumnsViewProps) {
+function PriorityColumnsView({
+	tasks,
+	habits,
+	onEditTask,
+	onEditHabit,
+	onOpenTaskDetails,
+	onOpenHabitDetails,
+}: PriorityColumnsViewProps) {
 	const { mutate: updateTask } = useMutationWithStatus(api.tasks.mutations.updateTask);
+	const { mutate: deleteTask } = useMutationWithStatus(api.tasks.mutations.deleteTask);
 	const { mutate: updateHabit } = useMutationWithStatus(api.habits.mutations.updateHabit);
+	const { mutate: toggleHabitActive } = useMutationWithStatus(
+		api.habits.mutations.toggleHabitActive,
+	);
+	const { mutate: deleteHabit } = useMutationWithStatus(api.habits.mutations.deleteHabit);
 
 	const groupedByPriority = useMemo(() => {
 		return priorityOrder.map((priority) => ({
 			priority,
 			tasks: tasks.filter((t) => t.priority === priority),
-			habits: habits.filter(
-				(h) => (h.priority ?? "medium") === (priority as unknown as HabitPriority),
-			),
+			habits: habits.filter((h) => (h.priority ?? "medium") === (priority as HabitPriority)),
 		}));
 	}, [tasks, habits]);
 
@@ -204,7 +217,7 @@ function PriorityColumnsView({ tasks, habits, setEditingTaskId }: PriorityColumn
 			onDragEnd={dndState.handleDragEnd}
 			onDragCancel={dndState.handleDragCancel}
 		>
-			<div className="grid gap-4 lg:flex-1 lg:grid-cols-5 lg:min-h-0">
+			<div className="flex min-h-0 flex-1 snap-x snap-mandatory gap-4 overflow-x-auto overflow-y-hidden pb-2 pr-2">
 				{displayGroups.map((group, index) => {
 					const allItems = [
 						...group.habits.map((h) => `habit:${h._id}`),
@@ -212,7 +225,10 @@ function PriorityColumnsView({ tasks, habits, setEditingTaskId }: PriorityColumn
 					];
 
 					return (
-						<div key={group.priority} className="flex flex-col lg:min-h-0">
+						<div
+							key={group.priority}
+							className="flex w-[340px] min-w-[340px] snap-start flex-col lg:w-[420px] lg:min-w-[420px]"
+						>
 							<div className="mb-3 shrink-0">
 								<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
 									{String(index + 1).padStart(2, "0")} / {priorityLabels[group.priority]}
@@ -232,7 +248,7 @@ function PriorityColumnsView({ tasks, habits, setEditingTaskId }: PriorityColumn
 							<DroppableColumn
 								id={group.priority}
 								items={allItems}
-								className="space-y-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+								className="min-h-0 flex-1 space-y-2 overflow-y-auto"
 							>
 								{group.habits.length > 0 ? (
 									<>
@@ -241,7 +257,30 @@ function PriorityColumnsView({ tasks, habits, setEditingTaskId }: PriorityColumn
 										</p>
 										{group.habits.map((habit) => (
 											<SortableItem key={`habit:${habit._id}`} id={`habit:${habit._id}`}>
-												<PriorityCard item={habit} type="habit" />
+												<PriorityCard
+													item={habit}
+													type="habit"
+													onEdit={() => onEditHabit(habit)}
+													onOpenInCalendar={() => window.location.assign("/app/calendar")}
+													onToggleHabitActive={(isActive) =>
+														toggleHabitActive({
+															id: habit._id as Id<"habits">,
+															isActive,
+														})
+													}
+													onHabitPriorityChange={(priority) =>
+														updateHabit({
+															id: habit._id as Id<"habits">,
+															patch: { priority },
+														})
+													}
+													onDeleteHabit={() =>
+														deleteHabit({
+															id: habit._id as Id<"habits">,
+														})
+													}
+													onOpenDetails={() => onOpenHabitDetails(habit)}
+												/>
 											</SortableItem>
 										))}
 									</>
@@ -256,7 +295,26 @@ function PriorityColumnsView({ tasks, habits, setEditingTaskId }: PriorityColumn
 												<PriorityCard
 													item={task}
 													type="task"
-													onEdit={() => setEditingTaskId(task._id)}
+													onEdit={() => onEditTask(task)}
+													onOpenDetails={() => onOpenTaskDetails(task)}
+													onOpenInCalendar={() => window.location.assign("/app/calendar")}
+													onDeleteTask={() =>
+														deleteTask({
+															id: task._id as Id<"tasks">,
+														})
+													}
+													onTaskStatusChange={(status) =>
+														updateTask({
+															id: task._id as Id<"tasks">,
+															patch: { status },
+														})
+													}
+													onTaskPriorityChange={(priority) =>
+														updateTask({
+															id: task._id as Id<"tasks">,
+															patch: { priority },
+														})
+													}
 												/>
 											</SortableItem>
 										))}
@@ -288,11 +346,13 @@ function PriorityColumnsView({ tasks, habits, setEditingTaskId }: PriorityColumn
 
 type StatusKanbanViewProps = {
 	tasks: TaskDTO[];
-	setEditingTaskId: (id: string | null) => void;
+	onEditTask: (task: TaskDTO) => void;
+	onOpenTaskDetails: (task: TaskDTO) => void;
 };
 
-function StatusKanbanView({ tasks, setEditingTaskId }: StatusKanbanViewProps) {
+function StatusKanbanView({ tasks, onEditTask, onOpenTaskDetails }: StatusKanbanViewProps) {
 	const { mutate: updateTask } = useMutationWithStatus(api.tasks.mutations.updateTask);
+	const { mutate: deleteTask } = useMutationWithStatus(api.tasks.mutations.deleteTask);
 
 	const tasksByStatus = useMemo(() => {
 		const grouped: Record<TaskStatus, TaskDTO[]> = {
@@ -383,11 +443,14 @@ function StatusKanbanView({ tasks, setEditingTaskId }: StatusKanbanViewProps) {
 			onDragEnd={dndState.handleDragEnd}
 			onDragCancel={dndState.handleDragCancel}
 		>
-			<div className="grid gap-4 lg:flex-1 lg:grid-cols-5 lg:min-h-0">
+			<div className="flex min-h-0 flex-1 snap-x snap-mandatory gap-4 overflow-x-auto overflow-y-hidden pb-2 pr-2">
 				{statusPipelineOrder.map((status, index) => {
 					const columnTasks = displayTasksByStatus[status];
 					return (
-						<div key={status} className="flex flex-col lg:min-h-0">
+						<div
+							key={status}
+							className="flex w-[340px] min-w-[340px] snap-start flex-col lg:w-[420px] lg:min-w-[420px]"
+						>
 							<div className="mb-3 shrink-0">
 								<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground">
 									{String(index + 1).padStart(2, "0")} / {statusLabels[status]}
@@ -407,7 +470,7 @@ function StatusKanbanView({ tasks, setEditingTaskId }: StatusKanbanViewProps) {
 							<DroppableColumn
 								id={status}
 								items={columnTasks.map((t) => t._id)}
-								className="space-y-2 lg:min-h-0 lg:flex-1 lg:overflow-y-auto"
+								className="min-h-0 flex-1 space-y-2 overflow-y-auto"
 							>
 								{columnTasks.length > 0 ? (
 									columnTasks.map((task) => (
@@ -415,7 +478,26 @@ function StatusKanbanView({ tasks, setEditingTaskId }: StatusKanbanViewProps) {
 											<PriorityCard
 												item={task}
 												type="task"
-												onEdit={() => setEditingTaskId(task._id)}
+												onEdit={() => onEditTask(task)}
+												onOpenDetails={() => onOpenTaskDetails(task)}
+												onOpenInCalendar={() => window.location.assign("/app/calendar")}
+												onDeleteTask={() =>
+													deleteTask({
+														id: task._id as Id<"tasks">,
+													})
+												}
+												onTaskStatusChange={(status) =>
+													updateTask({
+														id: task._id as Id<"tasks">,
+														patch: { status },
+													})
+												}
+												onTaskPriorityChange={(priority) =>
+													updateTask({
+														id: task._id as Id<"tasks">,
+														patch: { priority },
+													})
+												}
 											/>
 										</SortableItem>
 									))

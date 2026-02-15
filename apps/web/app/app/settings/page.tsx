@@ -40,9 +40,17 @@ import {
 	Pencil,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
 import { getMaxHorizonWeeks, isValidProductId } from "../../../../../convex/planLimits";
+
+const CURRENTLY_ENTITLED_PRODUCT_STATUSES = [
+	"active",
+	"trialing",
+	"past_due",
+	"cancelling",
+	"canceling",
+] as const;
 
 type EditingRow = "timezone" | "horizon" | "weekStart" | "dateFormat" | "timeFormat" | null;
 
@@ -138,10 +146,14 @@ export default function GeneralSettingsPage() {
 		{},
 	);
 
-	const { customer, attach } = useCustomer({ errorOnNotFound: false });
+	const { customer } = useCustomer({ errorOnNotFound: false });
 	const autumnProductId = useMemo(() => {
 		const products = customer?.products ?? [];
-		const active = products.filter((p) => ["active", "trialing", "past_due"].includes(p.status));
+		const active = products.filter((p) =>
+			CURRENTLY_ENTITLED_PRODUCT_STATUSES.includes(
+				(p.status ?? "") as (typeof CURRENTLY_ENTITLED_PRODUCT_STATUSES)[number],
+			),
+		);
 		const primary = active.find((p) => !p.is_add_on) ?? active[0];
 		return primary?.id && isValidProductId(primary.id) ? primary.id : undefined;
 	}, [customer?.products]);
@@ -161,33 +173,19 @@ export default function GeneralSettingsPage() {
 	);
 
 	// Sync DB activeProductId with Autumn's actual subscription.
-	// If the customer has no plan at all, auto-attach the free plan.
+	// Sync DB activeProductId with Autumn's actual subscription.
+	// Do not force a free-plan sync while customer products may still be loading,
+	// otherwise we can persist "free" and keep horizon clamped to 1 week.
 	const { execute: syncActiveProduct } = useActionWithStatus(api.hours.actions.syncActiveProduct);
-	const hasSynced = useRef(false);
 	useEffect(() => {
-		if (hasSynced.current || !customer) return;
-
-		if (!autumnProductId) {
-			// Customer exists but has no active plan — attach free
-			hasSynced.current = true;
-			void (async () => {
-				try {
-					await attach({ productId: "free" });
-				} catch {
-					// Best-effort; the backend still enforces limits
-				}
-				void syncActiveProduct({ productId: "free" }).catch(() => {
-					// Best-effort sync; product gates are still enforced server-side
-				});
-			})();
-		} else if (autumnProductId && autumnProductId !== dbActiveProductId) {
-			// Plan mismatch (or DB value missing) — sync DB to match Autumn
-			hasSynced.current = true;
+		if (!customer) return;
+		if (autumnProductId && autumnProductId !== dbActiveProductId) {
+			// Keep syncing until DB matches provider-verified state.
 			void syncActiveProduct({ productId: autumnProductId }).catch(() => {
 				// Best-effort sync; product gates are still enforced server-side
 			});
 		}
-	}, [autumnProductId, dbActiveProductId, customer, attach, syncActiveProduct]);
+	}, [autumnProductId, dbActiveProductId, customer, syncActiveProduct]);
 	const schedulingHorizonWeeks = Math.min(
 		schedulingDefaultsQuery.data?.schedulingHorizonWeeks ?? maxHorizonWeeks,
 		maxHorizonWeeks,
@@ -239,14 +237,39 @@ export default function GeneralSettingsPage() {
 	const saveHorizon = useCallback(
 		async (weeks: number) => {
 			try {
-				await persistSchedulingHorizonWeeks({ weeks });
+				// Ensure horizon clamping uses the latest verified plan before persisting.
+				if (autumnProductId) {
+					await syncActiveProduct({ productId: autumnProductId });
+				}
+				const normalizedWeeks = await persistSchedulingHorizonWeeks({ weeks });
+				if (normalizedWeeks !== weeks) {
+					console.warn("[scheduling:horizon-clamped]", {
+						requestedWeeks: weeks,
+						normalizedWeeks,
+						autumnProductId,
+						dbActiveProductId,
+					});
+				} else {
+					console.info("[scheduling:horizon-saved]", {
+						requestedWeeks: weeks,
+						normalizedWeeks,
+						autumnProductId,
+						dbActiveProductId,
+					});
+				}
 				flashSaved("horizon");
 			} catch {
 				/* mutation error handled by convex */
 			}
 			setEditing(null);
 		},
-		[persistSchedulingHorizonWeeks, flashSaved],
+		[
+			autumnProductId,
+			dbActiveProductId,
+			syncActiveProduct,
+			persistSchedulingHorizonWeeks,
+			flashSaved,
+		],
 	);
 
 	const saveWeekStart = useCallback(

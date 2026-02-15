@@ -230,20 +230,40 @@ const legacyFrequencyToRecurrenceState = (frequency: HabitFrequency): Recurrence
 // ── Human-readable description ──
 
 export const describeRecurrence = (state: RecurrenceState): string => {
-	if (state.preset === "daily" && state.interval === 1) return "Daily";
-	if (state.preset === "monthly" && state.interval === 1) return "Monthly";
+	if (state.unit === "day" && state.interval === 1) return "Daily";
+	if (state.unit === "month" && state.interval === 1) return "Monthly";
+
+	if (state.unit === "week") {
+		const sorted = sortedByDay(state.byDay);
+
+		// Every weekday shorthand
+		if (state.interval === 1 && arraysEqual(sorted, WEEKDAY_DAYS)) {
+			return "Every weekday";
+		}
+
+		const prefix =
+			state.interval === 1
+				? "Weekly"
+				: state.interval === 2
+					? "Biweekly"
+					: `Every ${state.interval} weeks`;
+
+		if (sorted.length === 1) {
+			return `${prefix} on ${WEEKDAY_NAMES[sorted[0] ?? 0]}`;
+		}
+		if (sorted.length > 1) {
+			const dayNames = sorted.map((d) => WEEKDAY_SHORT[d] ?? "?");
+			return `${prefix} on ${dayNames.join(", ")}`;
+		}
+		return prefix;
+	}
 
 	const unitLabel =
 		state.interval === 1
 			? state.unit
 			: `${state.interval} ${state.unit}${state.interval > 1 ? "s" : ""}`;
 
-	let description = state.interval === 1 ? `Every ${unitLabel}` : `Every ${unitLabel}`;
-
-	if (state.unit === "week" && state.byDay.length > 0) {
-		const dayNames = sortedByDay(state.byDay).map((d) => WEEKDAY_SHORT[d] ?? "?");
-		description += ` on ${dayNames.join(", ")}`;
-	}
+	let description = `Every ${unitLabel}`;
 
 	if (state.endCondition === "after_count" && state.endCount) {
 		description += ` \u00d7${state.endCount}`;

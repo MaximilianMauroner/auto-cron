@@ -34,7 +34,7 @@ const GOOGLE_CALENDAR_BASE = "https://www.googleapis.com/calendar/v3";
 const GOOGLE_CALENDAR_LIST_FIELDS =
 	"nextPageToken,items(id,summary,primary,backgroundColor,colorId,accessRole,deleted,hidden)";
 const GOOGLE_EVENT_FIELDS =
-	"id,summary,description,start,end,status,deleted,etag,recurrence,recurringEventId,originalStartTime,transparency,visibility,location,colorId,extendedProperties/private,htmlLink";
+	"id,summary,description,start,end,status,etag,recurrence,recurringEventId,originalStartTime,transparency,visibility,location,colorId,extendedProperties/private,htmlLink";
 const GOOGLE_EVENTS_SYNC_FIELDS = `nextPageToken,nextSyncToken,items(${GOOGLE_EVENT_FIELDS})`;
 const GOOGLE_WATCH_RESPONSE_FIELDS = "id,resourceId,resourceUri,expiration";
 const TOKEN_EXPIRY_SAFETY_WINDOW_MS = 60 * 1000;
@@ -94,6 +94,16 @@ const callGoogle = async (
 	}
 	if (!headers.has("Content-Type") && init.body) headers.set("Content-Type", "application/json");
 	return fetch(`${GOOGLE_CALENDAR_BASE}${path}`, { ...init, headers });
+};
+
+const readGoogleErrorBody = async (response: Response) => {
+	try {
+		const raw = await response.text();
+		if (!raw) return undefined;
+		return raw.length > 500 ? `${raw.slice(0, 500)}...` : raw;
+	} catch {
+		return undefined;
+	}
 };
 
 export const googleCalendarProvider: CalendarProvider = {
@@ -186,7 +196,10 @@ export const googleCalendarProvider: CalendarProvider = {
 					`/calendars/${encodeURIComponent(calendarId)}/events?${searchParams.toString()}`,
 				);
 				if (!response.ok) {
-					throw new Error(`Google sync failed (${response.status})`);
+					const details = await readGoogleErrorBody(response);
+					throw new Error(
+						`Google sync failed (${response.status})${details ? `: ${details}` : ""}`,
+					);
 				}
 				const data = (await response.json()) as GoogleEventsResponse;
 				ingestSyncResponseItems({
@@ -259,7 +272,10 @@ export const googleCalendarProvider: CalendarProvider = {
 			},
 		);
 		if (!response.ok) {
-			throw new Error(`Failed to create Google event (${response.status})`);
+			const details = await readGoogleErrorBody(response);
+			throw new Error(
+				`Failed to create Google event (${response.status})${details ? `: ${details}` : ""}`,
+			);
 		}
 		const created = (await response.json()) as GoogleEvent;
 		const mapped = toGoogleEventUpsert(created, targetCalendarId);
@@ -303,7 +319,10 @@ export const googleCalendarProvider: CalendarProvider = {
 				},
 			);
 			if (!moveResponse.ok) {
-				throw new Error(`Failed to move Google event (${moveResponse.status})`);
+				const details = await readGoogleErrorBody(moveResponse);
+				throw new Error(
+					`Failed to move Google event (${moveResponse.status})${details ? `: ${details}` : ""}`,
+				);
 			}
 			updated = (await moveResponse.json()) as GoogleEvent;
 		}
@@ -319,7 +338,10 @@ export const googleCalendarProvider: CalendarProvider = {
 				},
 			);
 			if (!patchResponse.ok) {
-				throw new Error(`Failed to update Google event (${patchResponse.status})`);
+				const details = await readGoogleErrorBody(patchResponse);
+				throw new Error(
+					`Failed to update Google event (${patchResponse.status})${details ? `: ${details}` : ""}`,
+				);
 			}
 			updated = (await patchResponse.json()) as GoogleEvent;
 		}

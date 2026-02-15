@@ -1,40 +1,15 @@
 "use client";
 
+import { useAsideContent } from "@/components/aside-panel";
 import PaywallDialog from "@/components/autumn/paywall-dialog";
-import { CategoryPicker } from "@/components/category-picker";
-import { QuickCreateHabitDialog } from "@/components/quick-create/quick-create-habit-dialog";
+import { HabitActionsMenu } from "@/components/entity-actions";
+import { HabitDialog } from "@/components/habits/habit-dialog";
 import { SettingsSectionHeader } from "@/components/settings/settings-section-header";
-import {
-	Accordion,
-	AccordionContent,
-	AccordionItem,
-	AccordionTrigger,
-} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { DateTimePicker } from "@/components/ui/date-time-picker";
-import {
-	Dialog,
-	DialogContent,
-	DialogFooter,
-	DialogHeader,
-	DialogTitle,
-} from "@/components/ui/dialog";
-import { DurationInput } from "@/components/ui/duration-input";
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import {
-	Select,
-	SelectContent,
-	SelectItem,
-	SelectTrigger,
-	SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { useUserPreferences } from "@/components/user-preferences-context";
 import {
 	useActionWithStatus,
@@ -43,73 +18,35 @@ import {
 } from "@/hooks/use-convex-status";
 import { getConvexErrorPayload } from "@/lib/convex-errors";
 import { formatDurationFromMinutes, parseDurationToMinutes } from "@/lib/duration";
-import { cn } from "@/lib/utils";
-import type { HabitDTO, HabitFrequency, HabitPriority, HoursSetDTO } from "@auto-cron/types";
-
-import { DayPillGroup } from "@/components/recurrence/day-pill-group";
-import { RecurrenceSelect } from "@/components/recurrence/recurrence-select";
+import {
+	type HabitEditorState,
+	type HabitRecoveryPolicy,
+	type HabitTimeDefenseMode,
+	type HabitVisibilityPreference,
+	addMinutesToTime,
+	createRequestId,
+	defenseModeLabels,
+	frequencyLabels,
+	initialHabitForm,
+	parseCsv,
+	priorityLabels,
+	toDateTimeInput,
+	toTimestamp,
+} from "@/lib/habit-editor";
+import type { GoogleCalendarListItem } from "@/lib/habit-editor";
 import {
 	DAY_OPTIONS,
-	type RecurrenceState,
-	defaultRecurrenceState,
-	describeRecurrence,
 	recurrenceStateToLegacyFrequency,
 	recurrenceStateToRRule,
 	rruleToRecurrenceState,
 } from "@/lib/recurrence";
-
-import { Plus, Search } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { cn } from "@/lib/utils";
+import type { HabitDTO, HabitFrequency, HabitPriority, HoursSetDTO } from "@auto-cron/types";
+import { Clock3, Plus, Search } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
-
-type HabitVisibilityPreference = "default" | "public" | "private";
-type HabitTimeDefenseMode = "always_free" | "auto" | "always_busy";
-type HabitReminderMode = "default" | "custom" | "none";
-type HabitUnscheduledBehavior = "leave_on_calendar" | "remove_from_calendar";
-type HabitRecoveryPolicy = "skip" | "recover";
-
-type HabitEditorState = {
-	id?: string;
-	title: string;
-	description: string;
-	priority: HabitPriority;
-	categoryId: string;
-	frequency: HabitFrequency;
-	recurrenceState: RecurrenceState;
-	repeatsPerPeriod: string;
-	minDurationMinutes: string;
-	maxDurationMinutes: string;
-	idealTime: string;
-	preferredDays: number[];
-	hoursSetId: string;
-	preferredCalendarId: string;
-	color: string;
-	location: string;
-	startDate: string;
-	endDate: string;
-	visibilityPreference: HabitVisibilityPreference;
-	timeDefenseMode: HabitTimeDefenseMode;
-	reminderMode: HabitReminderMode;
-	customReminderMinutes: string;
-	unscheduledBehavior: HabitUnscheduledBehavior;
-	recoveryPolicy: HabitRecoveryPolicy;
-	autoDeclineInvites: boolean;
-	ccEmails: string;
-	duplicateAvoidKeywords: string;
-	dependencyNote: string;
-	publicDescription: string;
-	isActive: boolean;
-};
-
-type GoogleCalendarListItem = {
-	id: string;
-	name: string;
-	primary: boolean;
-	color?: string;
-	accessRole?: "owner" | "writer" | "reader" | "freeBusyReader";
-	isExternal: boolean;
-};
 
 type HabitTemplateCategory =
 	| "All"
@@ -142,68 +79,7 @@ type HabitTemplate = {
 	visibilityPreference: HabitVisibilityPreference;
 };
 
-const priorityLabels: Record<HabitPriority, string> = {
-	low: "Low priority",
-	medium: "Medium priority",
-	high: "High priority",
-	critical: "Critical priority",
-};
-
-const priorityClass: Record<HabitPriority, string> = {
-	low: "bg-emerald-500/10 text-emerald-700 border-emerald-500/30",
-	medium: "bg-sky-500/10 text-sky-700 border-sky-500/30",
-	high: "bg-amber-500/10 text-amber-700 border-amber-500/30",
-	critical: "bg-orange-500/10 text-orange-700 border-orange-500/30",
-};
-
-const frequencyLabels: Record<HabitFrequency, string> = {
-	daily: "Daily",
-	weekly: "Weekly",
-	biweekly: "Biweekly",
-	monthly: "Monthly",
-};
-
-const reminderModeLabels: Record<HabitReminderMode, string> = {
-	default: "Use calendar default reminders",
-	custom: "Custom reminders",
-	none: "Disable reminders",
-};
-
-const unscheduledLabels: Record<HabitUnscheduledBehavior, string> = {
-	leave_on_calendar: "Leave it on the calendar",
-	remove_from_calendar: "Remove it from the calendar",
-};
-
-const recoveryLabels: Record<HabitRecoveryPolicy, string> = {
-	skip: "Skip missed occurrences",
-	recover: "Recover missed occurrences",
-};
-
-const visibilityLabels: Record<HabitVisibilityPreference, string> = {
-	public: "Public",
-	default: "Default visibility",
-	private: "Private",
-};
-
-const defenseModeLabels: Record<HabitTimeDefenseMode, string> = {
-	always_free: "Always free",
-	auto: "Use Auto Cron AI",
-	always_busy: "Always busy",
-};
-
 const dayOptions = DAY_OPTIONS;
-
-const habitColors = [
-	"#f59e0b",
-	"#f97316",
-	"#ef4444",
-	"#84cc16",
-	"#22c55e",
-	"#14b8a6",
-	"#0ea5e9",
-	"#8b5cf6",
-	"#ec4899",
-] as const;
 
 const templateCategories: HabitTemplateCategory[] = [
 	"All",
@@ -437,85 +313,11 @@ const habitTemplates: HabitTemplate[] = [
 	},
 ];
 
-const initialForm: HabitEditorState = {
-	title: "",
-	description: "",
-	priority: "medium",
-	categoryId: "",
-	frequency: "weekly",
-	recurrenceState: defaultRecurrenceState(),
-	repeatsPerPeriod: "1",
-	minDurationMinutes: "30 mins",
-	maxDurationMinutes: "30 mins",
-	idealTime: "09:00",
-	preferredDays: [1, 2, 3, 4, 5],
-	hoursSetId: "",
-	preferredCalendarId: "primary",
-	color: "#f59e0b",
-	location: "",
-	startDate: "",
-	endDate: "",
-	visibilityPreference: "default",
-	timeDefenseMode: "auto",
-	reminderMode: "default",
-	customReminderMinutes: "15",
-	unscheduledBehavior: "remove_from_calendar",
-	recoveryPolicy: "skip",
-	autoDeclineInvites: false,
-	ccEmails: "",
-	duplicateAvoidKeywords: "",
-	dependencyNote: "",
-	publicDescription: "",
-	isActive: true,
-};
-
 const asHabitId = (id: string) => id as Id<"habits">;
-
-const createRequestId = () => {
-	if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-		return crypto.randomUUID();
-	}
-	return `habit-${Date.now()}-${Math.round(Math.random() * 10_000)}`;
-};
-
-const toDateTimeInput = (timestamp?: number) => {
-	if (!timestamp) return "";
-	const date = new Date(timestamp);
-	const year = date.getFullYear();
-	const month = `${date.getMonth() + 1}`.padStart(2, "0");
-	const day = `${date.getDate()}`.padStart(2, "0");
-	const hours = `${date.getHours()}`.padStart(2, "0");
-	const minutes = `${date.getMinutes()}`.padStart(2, "0");
-	return `${year}-${month}-${day}T${hours}:${minutes}`;
-};
-
-const toTimestamp = (value: string) => {
-	if (!value) return undefined;
-	const timestamp = Date.parse(value);
-	return Number.isFinite(timestamp) ? timestamp : undefined;
-};
-
-const addMinutesToTime = (time: string, minutesToAdd: number) => {
-	const match = time.match(/^(\d{2}):(\d{2})$/);
-	if (!match) return undefined;
-	const hours = Number.parseInt(match[1] ?? "0", 10);
-	const minutes = Number.parseInt(match[2] ?? "0", 10);
-	if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return undefined;
-	const total = (((hours * 60 + minutes + minutesToAdd) % 1440) + 1440) % 1440;
-	const nextHours = Math.floor(total / 60);
-	const nextMinutes = total % 60;
-	return `${String(nextHours).padStart(2, "0")}:${String(nextMinutes).padStart(2, "0")}`;
-};
 
 const frequencyFromRecurrenceRule = (rule: string | undefined): HabitFrequency => {
 	return recurrenceStateToLegacyFrequency(rruleToRecurrenceState(rule));
 };
-
-const parseCsv = (value: string) =>
-	value
-		.split(",")
-		.map((segment) => segment.trim())
-		.filter(Boolean);
 
 const formatTimeString = (time: string, hour12: boolean) => {
 	if (!hour12) return time;
@@ -526,13 +328,6 @@ const formatTimeString = (time: string, hour12: boolean) => {
 	const period = hours >= 12 ? "PM" : "AM";
 	const displayHour = hours === 0 ? 12 : hours > 12 ? hours - 12 : hours;
 	return `${displayHour}:${minutes} ${period}`;
-};
-
-const formatWindow = (start?: string, end?: string, hour12 = false) => {
-	if (!start && !end) return "Any time";
-	if (start && end) return `${formatTimeString(start, hour12)} - ${formatTimeString(end, hour12)}`;
-	if (start) return `After ${formatTimeString(start, hour12)}`;
-	return end ? `Before ${formatTimeString(end, hour12)}` : "Any time";
 };
 
 const formatDays = (days?: number[]) => {
@@ -547,18 +342,6 @@ const formatDays = (days?: number[]) => {
 		.join(" ");
 };
 
-const formatDate = (value?: number, hour12?: boolean) => {
-	if (!value) return "";
-	return new Intl.DateTimeFormat(undefined, {
-		month: "short",
-		day: "numeric",
-		year: "numeric",
-		hour: "numeric",
-		minute: "2-digit",
-		hour12,
-	}).format(new Date(value));
-};
-
 const formatTemplateCadence = (template: HabitTemplate) => {
 	const days = formatDays(template.preferredDays);
 	const duration = `${formatDurationFromMinutes(template.minDurationMinutes)} - ${formatDurationFromMinutes(
@@ -569,15 +352,19 @@ const formatTemplateCadence = (template: HabitTemplate) => {
 };
 
 export default function HabitsPage() {
+	const router = useRouter();
+	const pathname = usePathname();
+	const searchParams = useSearchParams();
 	const [isCreateOpen, setIsCreateOpen] = useState(false);
 	const [isEditOpen, setIsEditOpen] = useState(false);
 	const [paywallOpen, setPaywallOpen] = useState(false);
-	const [createForm, setCreateForm] = useState<HabitEditorState>(initialForm);
+	const [createForm, setCreateForm] = useState<HabitEditorState>(initialHabitForm);
 	const [editForm, setEditForm] = useState<HabitEditorState | null>(null);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [activeTab, setActiveTab] = useState<"all" | "templates">("all");
 	const [templateCategory, setTemplateCategory] = useState<HabitTemplateCategory>("All");
 	const [templateQuery, setTemplateQuery] = useState("");
+	const { openHabit } = useAsideContent();
 
 	const categoriesQuery = useAuthenticatedQueryWithStatus(api.categories.queries.getCategories, {});
 	const categories = categoriesQuery.data ?? [];
@@ -624,7 +411,10 @@ export default function HabitsPage() {
 		if (!isCreateOpen) return;
 		const patch: Partial<HabitEditorState> = {};
 		if (!createForm.hoursSetId && defaultHoursSetId) patch.hoursSetId = defaultHoursSetId;
-		if (!createForm.preferredCalendarId) patch.preferredCalendarId = defaultCalendarId;
+		const calendarExists = editableGoogleCalendars.some(
+			(c) => c.id === createForm.preferredCalendarId,
+		);
+		if (!calendarExists && defaultCalendarId) patch.preferredCalendarId = defaultCalendarId;
 		if (Object.keys(patch).length > 0) {
 			setCreateForm((current) => ({ ...current, ...patch }));
 		}
@@ -633,6 +423,7 @@ export default function HabitsPage() {
 		createForm.preferredCalendarId,
 		defaultCalendarId,
 		defaultHoursSetId,
+		editableGoogleCalendars,
 		isCreateOpen,
 	]);
 
@@ -653,6 +444,8 @@ export default function HabitsPage() {
 			pausedHabits: sorted.filter((habit) => !habit.isActive),
 		};
 	}, [habits]);
+
+	const editHabitIdFromQuery = searchParams.get("editHabitId");
 
 	const filteredTemplates = useMemo(() => {
 		const query = templateQuery.trim().toLowerCase();
@@ -715,6 +508,8 @@ export default function HabitsPage() {
 			form.idealTime && maxDurationMinutes
 				? addMinutesToTime(form.idealTime, maxDurationMinutes)
 				: undefined;
+		const boundedEndDate =
+			form.recurrenceState.endCondition === "on_date" ? toTimestamp(form.endDate) : undefined;
 
 		return {
 			title: form.title.trim(),
@@ -737,7 +532,7 @@ export default function HabitsPage() {
 			color: form.color,
 			location: form.location.trim() || undefined,
 			startDate: toTimestamp(form.startDate),
-			endDate: toTimestamp(form.endDate),
+			endDate: boundedEndDate,
 			visibilityPreference: form.visibilityPreference,
 			timeDefenseMode: form.timeDefenseMode,
 			reminderMode: form.reminderMode,
@@ -787,7 +582,7 @@ export default function HabitsPage() {
 		try {
 			await createHabit({ requestId: createRequestId(), input: payload });
 			setCreateForm({
-				...initialForm,
+				...initialHabitForm,
 				hoursSetId: defaultHoursSetId,
 				preferredCalendarId: defaultCalendarId,
 			});
@@ -811,54 +606,24 @@ export default function HabitsPage() {
 		}
 	};
 
-	const openEdit = (habit: HabitDTO) => {
-		const parsedRecurrence = rruleToRecurrenceState(habit.recurrenceRule, habit.frequency);
-		// If the habit has preferredDays but the RRULE didn't capture them, merge them in
-		if (
-			habit.preferredDays?.length &&
-			parsedRecurrence.byDay.length === 0 &&
-			parsedRecurrence.unit === "week"
-		) {
-			parsedRecurrence.byDay = habit.preferredDays;
-		}
-		setEditForm({
-			id: habit._id,
-			title: habit.title,
-			description: habit.description ?? "",
-			priority: habit.priority ?? "medium",
-			categoryId: habit.categoryId ?? "",
-			frequency: habit.frequency ?? frequencyFromRecurrenceRule(habit.recurrenceRule),
-			recurrenceState: parsedRecurrence,
-			repeatsPerPeriod: String(habit.repeatsPerPeriod ?? 1),
-			minDurationMinutes: formatDurationFromMinutes(
-				habit.minDurationMinutes ?? habit.durationMinutes,
-			),
-			maxDurationMinutes: formatDurationFromMinutes(
-				habit.maxDurationMinutes ?? habit.durationMinutes,
-			),
-			idealTime: habit.idealTime ?? habit.preferredWindowStart ?? "",
-			preferredDays: habit.preferredDays ?? [],
-			hoursSetId: habit.hoursSetId ?? defaultHoursSetId,
-			preferredCalendarId: habit.preferredCalendarId ?? defaultCalendarId,
-			color: habit.color ?? "#f59e0b",
-			location: habit.location ?? "",
-			startDate: toDateTimeInput(habit.startDate),
-			endDate: toDateTimeInput(habit.endDate),
-			visibilityPreference: habit.visibilityPreference ?? "default",
-			timeDefenseMode: habit.timeDefenseMode ?? "auto",
-			reminderMode: habit.reminderMode ?? "default",
-			customReminderMinutes: String(habit.customReminderMinutes ?? 15),
-			unscheduledBehavior: habit.unscheduledBehavior ?? "remove_from_calendar",
-			recoveryPolicy: habit.recoveryPolicy ?? "skip",
-			autoDeclineInvites: habit.autoDeclineInvites ?? false,
-			ccEmails: (habit.ccEmails ?? []).join(", "),
-			duplicateAvoidKeywords: (habit.duplicateAvoidKeywords ?? []).join(", "),
-			dependencyNote: habit.dependencyNote ?? "",
-			publicDescription: habit.publicDescription ?? "",
-			isActive: habit.isActive,
-		});
-		setIsEditOpen(true);
-	};
+	const openEdit = useCallback(
+		(habit: HabitDTO) => {
+			openHabit(habit._id, "edit");
+		},
+		[openHabit],
+	);
+
+	useEffect(() => {
+		if (!editHabitIdFromQuery) return;
+		const habitToEdit = habits.find((habit) => habit._id === editHabitIdFromQuery);
+		if (!habitToEdit) return;
+		openEdit(habitToEdit);
+
+		const nextParams = new URLSearchParams(searchParams.toString());
+		nextParams.delete("editHabitId");
+		const nextQuery = nextParams.toString();
+		router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+	}, [editHabitIdFromQuery, habits, openEdit, searchParams, router, pathname]);
 
 	const applyTemplate = (template: HabitTemplate) => {
 		setErrorMessage(null);
@@ -867,7 +632,7 @@ export default function HabitsPage() {
 			templateRecurrence.byDay = template.preferredDays;
 		}
 		setCreateForm({
-			...initialForm,
+			...initialHabitForm,
 			title: template.name,
 			description: template.description,
 			priority: template.priority,
@@ -886,7 +651,8 @@ export default function HabitsPage() {
 			timeDefenseMode: template.timeDefenseMode,
 			recoveryPolicy: template.recoveryPolicy,
 		});
-		setIsCreateOpen(true);
+		// Open on next frame so dialog renders with the freshly applied template state.
+		requestAnimationFrame(() => setIsCreateOpen(true));
 	};
 
 	return (
@@ -1080,10 +846,17 @@ export default function HabitsPage() {
 													key={habit._id}
 													habit={habit}
 													categories={categories}
+													onViewEvents={() => openHabit(habit._id, "details")}
 													onEdit={() => openEdit(habit)}
 													onDelete={() => deleteHabit({ id: asHabitId(habit._id) })}
 													onToggle={(isActive) =>
 														toggleHabitActive({ id: asHabitId(habit._id), isActive })
+													}
+													onChangePriority={(priority) =>
+														updateHabit({
+															id: asHabitId(habit._id),
+															patch: { priority },
+														})
 													}
 													isBusy={busy}
 												/>
@@ -1151,7 +924,19 @@ export default function HabitsPage() {
 				)}
 			</div>
 
-			<QuickCreateHabitDialog open={isCreateOpen} onOpenChange={setIsCreateOpen} />
+			<HabitDialog
+				open={isCreateOpen}
+				onOpenChange={setIsCreateOpen}
+				title="New habit"
+				compactCreate
+				value={createForm}
+				onChange={setCreateForm}
+				onSubmit={onCreateHabit}
+				submitLabel={isCreatingHabit ? "Creating..." : "Create habit"}
+				busy={isCreatingHabit}
+				hoursSets={hoursSets}
+				calendars={editableGoogleCalendars}
+			/>
 
 			<HabitDialog
 				open={isEditOpen}
@@ -1160,7 +945,7 @@ export default function HabitsPage() {
 					if (!open) setEditForm(null);
 				}}
 				title="Edit habit"
-				value={editForm ?? initialForm}
+				value={editForm ?? initialHabitForm}
 				onChange={(next) => setEditForm(next)}
 				onSubmit={onSaveEdit}
 				submitLabel={isUpdatingHabit ? "Saving..." : "Save changes"}
@@ -1195,7 +980,11 @@ function TemplateCard({
 	onUse: () => void;
 }) {
 	return (
-		<div className="group relative overflow-hidden rounded-xl border border-border/60 bg-card/60 p-4">
+		<button
+			type="button"
+			onClick={onUse}
+			className="group relative w-full overflow-hidden rounded-xl border border-border/60 bg-card/60 p-4 text-left cursor-pointer"
+		>
 			<div
 				className="pointer-events-none absolute inset-x-0 top-0 h-1"
 				style={{ backgroundColor: template.color }}
@@ -1232,32 +1021,32 @@ function TemplateCard({
 							{defenseModeLabels[template.timeDefenseMode]}
 						</Badge>
 					</div>
-					<Button
-						size="sm"
-						onClick={onUse}
-						className="bg-accent text-accent-foreground hover:bg-accent/90 shadow-sm"
-					>
+					<span className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-sm font-medium text-accent-foreground shadow-sm">
 						Use template
-					</Button>
+					</span>
 				</div>
 			</div>
-		</div>
+		</button>
 	);
 }
 
 function HabitCard({
 	habit,
 	categories,
+	onViewEvents,
 	onEdit,
 	onDelete,
 	onToggle,
+	onChangePriority,
 	isBusy,
 }: {
 	habit: HabitDTO;
 	categories: { _id: string; name: string }[];
+	onViewEvents: () => void;
 	onEdit: () => void;
 	onDelete: () => void;
 	onToggle: (isActive: boolean) => void;
+	onChangePriority: (priority: HabitPriority) => void;
 	isBusy: boolean;
 }) {
 	const { hour12 } = useUserPreferences();
@@ -1269,10 +1058,16 @@ function HabitCard({
 
 	return (
 		<div
-			className="group rounded-xl border border-border/60 bg-card/60 p-4 transition-colors hover:border-border hover:bg-card/90"
+			className="group cursor-pointer rounded-xl border border-border/60 bg-card/70 p-4 transition-colors hover:border-border hover:bg-card/95"
 			style={{
 				borderLeftWidth: 3,
 				borderLeftColor: habit.effectiveColor ?? habit.color ?? "#f59e0b",
+			}}
+			onClick={onViewEvents}
+			onKeyDown={(event) => {
+				if (event.key !== "Enter" && event.key !== " ") return;
+				event.preventDefault();
+				onViewEvents();
 			}}
 		>
 			<div className="flex items-start justify-between gap-3">
@@ -1282,7 +1077,27 @@ function HabitCard({
 						<p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">{habit.description}</p>
 					)}
 				</div>
-				<Switch checked={habit.isActive} disabled={isBusy} onCheckedChange={onToggle} />
+				<div className="flex items-center gap-1">
+					<div
+						onClick={(event) => event.stopPropagation()}
+						onKeyDown={(event) => event.stopPropagation()}
+					>
+						<Switch checked={habit.isActive} disabled={isBusy} onCheckedChange={onToggle} />
+					</div>
+					<HabitActionsMenu
+						priority={habit.priority ?? "medium"}
+						isActive={habit.isActive}
+						disabled={isBusy}
+						onOpenDetails={onViewEvents}
+						onEdit={onEdit}
+						onDelete={onDelete}
+						onOpenInCalendar={() => {
+							window.location.assign("/app/calendar");
+						}}
+						onToggleActive={onToggle}
+						onChangePriority={onChangePriority}
+					/>
+				</div>
 			</div>
 
 			<div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -1300,956 +1115,10 @@ function HabitCard({
 				</div>
 			)}
 
-			<div className="mt-3 flex items-center justify-end gap-1 border-t border-border/30 pt-2.5">
-				<Button
-					size="sm"
-					variant="ghost"
-					onClick={onEdit}
-					disabled={isBusy}
-					className="h-7 px-2 text-xs"
-				>
-					Edit
-				</Button>
-				<Button
-					size="sm"
-					variant="ghost"
-					onClick={onDelete}
-					disabled={isBusy}
-					className="h-7 px-2 text-xs text-destructive"
-				>
-					Delete
-				</Button>
-			</div>
-		</div>
-	);
-}
-
-function HabitDialog({
-	open,
-	onOpenChange,
-	title,
-	compactCreate = false,
-	value,
-	onChange,
-	onSubmit,
-	submitLabel,
-	busy,
-	hoursSets,
-	calendars,
-}: {
-	open: boolean;
-	onOpenChange: (open: boolean) => void;
-	title: string;
-	compactCreate?: boolean;
-	value: HabitEditorState;
-	onChange: (value: HabitEditorState) => void;
-	onSubmit: () => void;
-	submitLabel: string;
-	busy: boolean;
-	hoursSets: HoursSetDTO[];
-	calendars: GoogleCalendarListItem[];
-}) {
-	const selectedHoursSet = hoursSets.find((hoursSet) => hoursSet._id === value.hoursSetId);
-	const [showAdvanced, setShowAdvanced] = useState(!compactCreate);
-
-	useEffect(() => {
-		if (!open) return;
-		setShowAdvanced(!compactCreate);
-	}, [compactCreate, open]);
-
-	const toggleDay = (day: number) => {
-		const set = new Set(value.preferredDays);
-		if (set.has(day)) {
-			set.delete(day);
-		} else {
-			set.add(day);
-		}
-		onChange({ ...value, preferredDays: Array.from(set) });
-	};
-
-	const stepDuration = (field: "minDurationMinutes" | "maxDurationMinutes", delta: number) => {
-		const current = parseDurationToMinutes(value[field]);
-		const base = current ?? 30;
-		const next = Math.max(15, base + delta);
-		onChange({ ...value, [field]: formatDurationFromMinutes(next) });
-	};
-
-	return (
-		<Dialog open={open} onOpenChange={onOpenChange}>
-			<DialogContent
-				className={cn(
-					"max-h-[90vh] overflow-y-auto",
-					compactCreate && !showAdvanced ? "sm:max-w-xl" : "sm:max-w-2xl",
-				)}
-			>
-				{/* ── Header ── */}
-				<DialogHeader className="space-y-1">
-					<div className="flex items-center gap-2.5">
-						<span
-							className="size-2.5 rounded-full ring-2 ring-offset-1 ring-offset-background"
-							style={{
-								backgroundColor: value.color || "#f59e0b",
-								boxShadow: `0 0 8px ${value.color || "#f59e0b"}30`,
-								// biome-ignore lint/suspicious/noExplicitAny: ring color via style
-								["--tw-ring-color" as any]: `${value.color || "#f59e0b"}40`,
-							}}
-						/>
-						<p className="font-[family-name:var(--font-cutive)] text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
-							{title}
-						</p>
-					</div>
-					<DialogTitle className="font-[family-name:var(--font-outfit)] text-xl font-semibold tracking-tight">
-						{value.title || "New habit"}
-					</DialogTitle>
-				</DialogHeader>
-
-				<div className="space-y-4">
-					{compactCreate && !showAdvanced ? (
-						<div className="space-y-5 rounded-xl border border-border/50 p-5">
-							<div className="space-y-1.5">
-								<Label
-									htmlFor="quick-habit-name"
-									className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80"
-								>
-									Habit name
-								</Label>
-								<Input
-									id="quick-habit-name"
-									placeholder="What routine do you want to build?"
-									value={value.title}
-									onChange={(event) => onChange({ ...value, title: event.target.value })}
-									className="border-0 border-b border-border/50 bg-transparent px-0 font-[family-name:var(--font-outfit)] text-[0.9rem] font-medium shadow-none ring-0 transition-colors placeholder:text-muted-foreground/40 focus-visible:border-accent focus-visible:ring-0"
-								/>
-							</div>
-
-							<div className="h-px bg-border/30" />
-
-							<div className="grid gap-4 md:grid-cols-3">
-								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-										Repeat
-									</Label>
-									<RecurrenceSelect
-										value={value.recurrenceState}
-										onChange={(recurrenceState) =>
-											onChange({
-												...value,
-												recurrenceState,
-												frequency: recurrenceStateToLegacyFrequency(recurrenceState),
-												preferredDays:
-													recurrenceState.unit === "week"
-														? recurrenceState.byDay
-														: value.preferredDays,
-											})
-										}
-									/>
-								</div>
-								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-										Count
-									</Label>
-									<Input
-										type="number"
-										min={1}
-										step={1}
-										value={value.repeatsPerPeriod}
-										onChange={(event) =>
-											onChange({ ...value, repeatsPerPeriod: event.target.value })
-										}
-									/>
-								</div>
-								<div className="space-y-1.5">
-									<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-										Duration
-									</Label>
-									<DurationInput
-										value={value.minDurationMinutes}
-										onChange={(minDurationMinutes) => onChange({ ...value, minDurationMinutes })}
-										placeholder="e.g. 30m"
-									/>
-								</div>
-							</div>
-
-							<div className="space-y-1.5">
-								<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-									Preferred days
-								</Label>
-								<DayPillGroup
-									selectedDays={value.preferredDays}
-									onChange={(days) => onChange({ ...value, preferredDays: days })}
-								/>
-							</div>
-
-							<div className="h-px bg-border/30" />
-
-							<div className="space-y-1.5">
-								<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-									Color
-								</Label>
-								<div className="flex flex-wrap gap-2">
-									{habitColors.map((color) => (
-										<button
-											key={color}
-											type="button"
-											aria-label={`Select ${color}`}
-											className={cn(
-												"size-6 rounded-full border transition-transform hover:scale-110",
-												value.color === color
-													? "border-foreground ring-2 ring-foreground/20 scale-110"
-													: "border-border/50",
-											)}
-											style={{ backgroundColor: color }}
-											onClick={() => onChange({ ...value, color })}
-										/>
-									))}
-								</div>
-							</div>
-
-							<p className="font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground">
-								Using account defaults for hours, calendar, visibility, and defense. Change these in{" "}
-								<a href="/app/settings/scheduling" className="underline underline-offset-2">
-									Settings
-								</a>
-								.
-							</p>
-						</div>
-					) : null}
-
-					{!compactCreate || showAdvanced ? (
-						<Accordion type="multiple" defaultValue={["details"]}>
-							{/* ── Section 1: Details ── */}
-							<AccordionItem value="details" className="rounded-xl border border-border/50 px-5">
-								<AccordionTrigger className="py-4">
-									<div className="text-left">
-										<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
-											01 / Details
-										</p>
-										<p className="mt-1 font-[family-name:var(--font-outfit)] text-lg font-semibold tracking-tight">
-											Habit details
-										</p>
-										<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-normal text-muted-foreground">
-											Name, priority, and general settings
-										</p>
-									</div>
-								</AccordionTrigger>
-								<AccordionContent className="space-y-5 pb-5">
-									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-											Habit name
-										</Label>
-										<Input
-											value={value.title}
-											onChange={(event) => onChange({ ...value, title: event.target.value })}
-											placeholder="Enter a habit name…"
-											className="border-0 border-b border-border/50 bg-transparent px-0 font-[family-name:var(--font-outfit)] text-[0.9rem] font-medium shadow-none ring-0 transition-colors placeholder:text-muted-foreground/40 focus-visible:border-accent focus-visible:ring-0"
-										/>
-									</div>
-
-									<div className="h-px bg-border/30" />
-
-									<div className="grid gap-4 md:grid-cols-2">
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Priority
-											</Label>
-											<Select
-												value={value.priority}
-												onValueChange={(priority) =>
-													onChange({ ...value, priority: priority as HabitPriority })
-												}
-											>
-												<SelectTrigger>
-													<SelectValue />
-												</SelectTrigger>
-												<SelectContent>
-													{Object.entries(priorityLabels).map(([priority, label]) => (
-														<SelectItem key={priority} value={priority}>
-															{label}
-														</SelectItem>
-													))}
-												</SelectContent>
-											</Select>
-										</div>
-
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Calendar
-											</Label>
-											<Select
-												value={value.preferredCalendarId || undefined}
-												onValueChange={(preferredCalendarId) =>
-													onChange({ ...value, preferredCalendarId })
-												}
-											>
-												<SelectTrigger>
-													<SelectValue placeholder="Select calendar" />
-												</SelectTrigger>
-												<SelectContent>
-													{calendars.map((calendar) => (
-														<SelectItem key={calendar.id} value={calendar.id}>
-															{calendar.name}
-														</SelectItem>
-													))}
-												</SelectContent>
-											</Select>
-										</div>
-									</div>
-
-									<div className="grid gap-4 md:grid-cols-[180px_1fr]">
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Color
-											</Label>
-											<div className="flex flex-wrap gap-2 rounded-lg border border-border/40 p-2">
-												{habitColors.map((color) => (
-													<button
-														key={color}
-														type="button"
-														aria-label={`Select ${color}`}
-														className={cn(
-															"size-6 rounded-full border transition-transform hover:scale-110",
-															value.color === color
-																? "border-foreground ring-2 ring-foreground/20 scale-110"
-																: "border-border/50",
-														)}
-														style={{ backgroundColor: color }}
-														onClick={() => onChange({ ...value, color })}
-													/>
-												))}
-											</div>
-										</div>
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Category
-											</Label>
-											<CategoryPicker
-												value={value.categoryId}
-												onValueChange={(id) => onChange({ ...value, categoryId: id })}
-											/>
-										</div>
-									</div>
-
-									<div className="h-px bg-border/30" />
-
-									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-											Notes
-										</Label>
-										<Textarea
-											value={value.description}
-											onChange={(event) => onChange({ ...value, description: event.target.value })}
-											placeholder="Add notes…"
-											className="min-h-24 font-[family-name:var(--font-outfit)] text-[0.82rem]"
-										/>
-									</div>
-
-									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-											Location
-										</Label>
-										<Input
-											value={value.location}
-											onChange={(event) => onChange({ ...value, location: event.target.value })}
-											placeholder="Add location"
-											className="font-[family-name:var(--font-outfit)] text-[0.82rem]"
-										/>
-									</div>
-								</AccordionContent>
-							</AccordionItem>
-
-							{/* ── Section 2: Scheduling ── */}
-							<AccordionItem
-								value="scheduling"
-								className="mt-4 rounded-xl border border-border/50 px-5"
-							>
-								<AccordionTrigger className="py-4">
-									<div className="text-left">
-										<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
-											02 / Scheduling
-										</p>
-										<p className="mt-1 font-[family-name:var(--font-outfit)] text-lg font-semibold tracking-tight">
-											Scheduling
-										</p>
-										<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-normal text-muted-foreground">
-											Hours, duration, and scheduling preferences
-										</p>
-									</div>
-								</AccordionTrigger>
-								<AccordionContent className="space-y-5 pb-5">
-									<div className="grid gap-4 md:grid-cols-[minmax(260px,1fr)_auto] md:items-end">
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Hours
-											</Label>
-											<Select
-												value={value.hoursSetId || undefined}
-												onValueChange={(hoursSetId) => onChange({ ...value, hoursSetId })}
-											>
-												<SelectTrigger>
-													<SelectValue placeholder="Select hours set" />
-												</SelectTrigger>
-												<SelectContent>
-													{hoursSets.map((hoursSet) => (
-														<SelectItem key={hoursSet._id} value={hoursSet._id}>
-															{hoursSet.name}
-															{hoursSet.isDefault ? " (Default)" : ""}
-														</SelectItem>
-													))}
-												</SelectContent>
-											</Select>
-										</div>
-										<Button
-											variant="link"
-											className="justify-start px-0 font-[family-name:var(--font-outfit)] text-[0.76rem]"
-											asChild
-										>
-											<a href="/app/settings/hours">Edit your Working Hours</a>
-										</Button>
-									</div>
-
-									<div className="space-y-2">
-										<p className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-											Eligible days based on Hours selection
-										</p>
-										<EligibleHoursGrid hoursSet={selectedHoursSet} />
-									</div>
-
-									<div className="h-px bg-border/30" />
-
-									<div className="grid gap-4 md:grid-cols-[1fr_140px_auto] md:items-end">
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Repeat
-											</Label>
-											<RecurrenceSelect
-												value={value.recurrenceState}
-												onChange={(recurrenceState) =>
-													onChange({
-														...value,
-														recurrenceState,
-														frequency: recurrenceStateToLegacyFrequency(recurrenceState),
-														preferredDays:
-															recurrenceState.unit === "week"
-																? recurrenceState.byDay
-																: value.preferredDays,
-													})
-												}
-											/>
-										</div>
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Count
-											</Label>
-											<Input
-												type="number"
-												min={1}
-												step={1}
-												value={value.repeatsPerPeriod}
-												onChange={(event) =>
-													onChange({ ...value, repeatsPerPeriod: event.target.value })
-												}
-											/>
-										</div>
-										<p className="pb-2 font-[family-name:var(--font-outfit)] text-[0.76rem] text-muted-foreground">
-											time{value.repeatsPerPeriod === "1" ? "" : "s"} a{" "}
-											{value.frequency === "daily" ? "day" : "week"}
-										</p>
-									</div>
-
-									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-											Ideal days
-										</Label>
-										<DayPillGroup
-											selectedDays={value.preferredDays}
-											onChange={(days) => onChange({ ...value, preferredDays: days })}
-										/>
-									</div>
-
-									<div className="h-px bg-border/30" />
-
-									<div className="grid gap-4 md:grid-cols-3">
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Ideal time
-											</Label>
-											<Input
-												type="time"
-												value={value.idealTime}
-												onChange={(event) => onChange({ ...value, idealTime: event.target.value })}
-											/>
-										</div>
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Minimum duration
-											</Label>
-											<div className="flex items-center gap-2">
-												<DurationInput
-													value={value.minDurationMinutes}
-													onChange={(minDurationMinutes) =>
-														onChange({ ...value, minDurationMinutes })
-													}
-													placeholder="e.g. 30m"
-													className="min-w-0"
-												/>
-												<Button
-													type="button"
-													size="icon"
-													variant="outline"
-													className="size-9 shrink-0"
-													onClick={() => stepDuration("minDurationMinutes", -15)}
-												>
-													-
-												</Button>
-												<Button
-													type="button"
-													size="icon"
-													variant="outline"
-													className="size-9 shrink-0"
-													onClick={() => stepDuration("minDurationMinutes", 15)}
-												>
-													+
-												</Button>
-											</div>
-										</div>
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Maximum duration
-											</Label>
-											<div className="flex items-center gap-2">
-												<DurationInput
-													value={value.maxDurationMinutes}
-													onChange={(maxDurationMinutes) =>
-														onChange({ ...value, maxDurationMinutes })
-													}
-													placeholder="e.g. 2h"
-													className="min-w-0"
-												/>
-												<Button
-													type="button"
-													size="icon"
-													variant="outline"
-													className="size-9 shrink-0"
-													onClick={() => stepDuration("maxDurationMinutes", -15)}
-												>
-													-
-												</Button>
-												<Button
-													type="button"
-													size="icon"
-													variant="outline"
-													className="size-9 shrink-0"
-													onClick={() => stepDuration("maxDurationMinutes", 15)}
-												>
-													+
-												</Button>
-											</div>
-										</div>
-									</div>
-
-									<div className="grid gap-4 md:grid-cols-2">
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Start date
-											</Label>
-											<DateTimePicker
-												value={value.startDate}
-												onChange={(startDate) => onChange({ ...value, startDate })}
-												placeholder="Anytime"
-												minuteStep={15}
-											/>
-										</div>
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												End date
-											</Label>
-											<DateTimePicker
-												value={value.endDate}
-												onChange={(endDate) => onChange({ ...value, endDate })}
-												placeholder="Anytime"
-												minuteStep={15}
-											/>
-										</div>
-									</div>
-								</AccordionContent>
-							</AccordionItem>
-
-							{/* ── Section 3: Options ── */}
-							<AccordionItem
-								value="options"
-								className="mt-4 rounded-xl border border-border/50 px-5"
-							>
-								<AccordionTrigger className="py-4">
-									<div className="text-left">
-										<p className="font-[family-name:var(--font-cutive)] text-[9px] uppercase tracking-[0.15em] text-muted-foreground/70">
-											03 / Options
-										</p>
-										<p className="mt-1 font-[family-name:var(--font-outfit)] text-lg font-semibold tracking-tight">
-											Other options
-										</p>
-										<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-normal text-muted-foreground">
-											Reminders, visibility, time defense, and delivery rules
-										</p>
-									</div>
-								</AccordionTrigger>
-								<AccordionContent className="space-y-5 pb-5">
-									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-											Reminders
-										</Label>
-										<RadioGroup
-											value={value.reminderMode}
-											onValueChange={(reminderMode) =>
-												onChange({ ...value, reminderMode: reminderMode as HabitReminderMode })
-											}
-											className="rounded-lg border border-border/40"
-										>
-											{Object.entries(reminderModeLabels).map(([mode, label]) => (
-												<div
-													key={mode}
-													className={cn(
-														"flex cursor-pointer items-center gap-3 border-b border-border/40 px-3.5 py-3 last:border-b-0",
-														value.reminderMode === mode && "bg-muted/40",
-													)}
-												>
-													<RadioGroupItem value={mode} id={`habit-reminder-${mode}`} />
-													<Label
-														htmlFor={`habit-reminder-${mode}`}
-														className="cursor-pointer font-[family-name:var(--font-outfit)] text-[0.82rem]"
-													>
-														{label}
-													</Label>
-												</div>
-											))}
-										</RadioGroup>
-										{value.reminderMode === "custom" ? (
-											<div className="space-y-1.5 pt-2">
-												<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-													Custom reminder minutes
-												</Label>
-												<Input
-													type="number"
-													min={1}
-													step={1}
-													value={value.customReminderMinutes}
-													onChange={(event) =>
-														onChange({ ...value, customReminderMinutes: event.target.value })
-													}
-												/>
-											</div>
-										) : null}
-									</div>
-
-									<div className="h-px bg-border/30" />
-
-									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-											If your habit can&apos;t be scheduled
-										</Label>
-										<RadioGroup
-											value={value.unscheduledBehavior}
-											onValueChange={(unscheduledBehavior) =>
-												onChange({
-													...value,
-													unscheduledBehavior: unscheduledBehavior as HabitUnscheduledBehavior,
-												})
-											}
-											className="rounded-lg border border-border/40"
-										>
-											{Object.entries(unscheduledLabels).map(([mode, label]) => (
-												<div
-													key={mode}
-													className={cn(
-														"flex cursor-pointer items-center gap-3 border-b border-border/40 px-3.5 py-3 last:border-b-0",
-														value.unscheduledBehavior === mode && "bg-muted/40",
-													)}
-												>
-													<RadioGroupItem value={mode} id={`habit-unscheduled-${mode}`} />
-													<Label
-														htmlFor={`habit-unscheduled-${mode}`}
-														className="cursor-pointer font-[family-name:var(--font-outfit)] text-[0.82rem]"
-													>
-														{label}
-													</Label>
-												</div>
-											))}
-										</RadioGroup>
-									</div>
-
-									<div className="h-px bg-border/30" />
-
-									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-											Recovery policy
-										</Label>
-										<p className="font-[family-name:var(--font-outfit)] text-[0.76rem] text-muted-foreground">
-											Control whether missed occurrences should be recovered in later slots.
-										</p>
-										<RadioGroup
-											value={value.recoveryPolicy}
-											onValueChange={(recoveryPolicy) =>
-												onChange({
-													...value,
-													recoveryPolicy: recoveryPolicy as HabitRecoveryPolicy,
-												})
-											}
-											className="rounded-lg border border-border/40"
-										>
-											{Object.entries(recoveryLabels).map(([mode, label]) => (
-												<div
-													key={mode}
-													className={cn(
-														"flex cursor-pointer items-center gap-3 border-b border-border/40 px-3.5 py-3 last:border-b-0",
-														value.recoveryPolicy === mode && "bg-muted/40",
-													)}
-												>
-													<RadioGroupItem value={mode} id={`habit-recovery-${mode}`} />
-													<Label
-														htmlFor={`habit-recovery-${mode}`}
-														className="cursor-pointer font-[family-name:var(--font-outfit)] text-[0.82rem]"
-													>
-														{label}
-													</Label>
-												</div>
-											))}
-										</RadioGroup>
-									</div>
-
-									<div className="h-px bg-border/30" />
-
-									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-											Visibility
-										</Label>
-										<p className="font-[family-name:var(--font-outfit)] text-[0.76rem] text-muted-foreground">
-											How others see this event on your calendar.
-										</p>
-										<RadioGroup
-											value={value.visibilityPreference}
-											onValueChange={(visibilityPreference) =>
-												onChange({
-													...value,
-													visibilityPreference: visibilityPreference as HabitVisibilityPreference,
-												})
-											}
-											className="rounded-lg border border-border/40"
-										>
-											{Object.entries(visibilityLabels).map(([mode, label]) => (
-												<div
-													key={mode}
-													className={cn(
-														"flex cursor-pointer items-center gap-3 border-b border-border/40 px-3.5 py-3 last:border-b-0",
-														value.visibilityPreference === mode && "bg-muted/40",
-													)}
-												>
-													<RadioGroupItem value={mode} id={`habit-visibility-${mode}`} />
-													<div className="space-y-1">
-														<Label
-															htmlFor={`habit-visibility-${mode}`}
-															className="cursor-pointer font-[family-name:var(--font-outfit)] text-[0.82rem] font-normal"
-														>
-															{label}
-														</Label>
-														{mode === "public" ? (
-															<Textarea
-																value={value.publicDescription}
-																onChange={(event) =>
-																	onChange({ ...value, publicDescription: event.target.value })
-																}
-																placeholder="Optional public description for defended events"
-																className="mt-1 min-h-16 font-[family-name:var(--font-outfit)] text-[0.82rem]"
-															/>
-														) : null}
-													</div>
-												</div>
-											))}
-										</RadioGroup>
-									</div>
-
-									<div className="h-px bg-border/30" />
-
-									<div className="space-y-1.5">
-										<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-											Time defense
-										</Label>
-										<p className="font-[family-name:var(--font-outfit)] text-[0.76rem] text-muted-foreground">
-											How aggressively Auto Cron should defend this event on your calendar.
-										</p>
-										<RadioGroup
-											value={value.timeDefenseMode}
-											onValueChange={(timeDefenseMode) =>
-												onChange({
-													...value,
-													timeDefenseMode: timeDefenseMode as HabitTimeDefenseMode,
-												})
-											}
-											className="rounded-lg border border-border/40"
-										>
-											{Object.entries(defenseModeLabels).map(([mode, label]) => (
-												<div
-													key={mode}
-													className={cn(
-														"flex cursor-pointer items-center gap-3 border-b border-border/40 px-3.5 py-3 last:border-b-0",
-														value.timeDefenseMode === mode && "bg-muted/40",
-													)}
-												>
-													<RadioGroupItem value={mode} id={`habit-defense-${mode}`} />
-													<Label
-														htmlFor={`habit-defense-${mode}`}
-														className="cursor-pointer font-[family-name:var(--font-outfit)] text-[0.82rem]"
-													>
-														{label}
-													</Label>
-												</div>
-											))}
-										</RadioGroup>
-									</div>
-
-									<div className="h-px bg-border/30" />
-
-									<div className="rounded-lg border border-border/40 px-3.5 py-3">
-										<div className="flex items-center space-x-2.5">
-											<Checkbox
-												id="auto-decline"
-												checked={value.autoDeclineInvites}
-												onCheckedChange={(checked) =>
-													onChange({ ...value, autoDeclineInvites: checked === true })
-												}
-											/>
-											<Label
-												htmlFor="auto-decline"
-												className="font-[family-name:var(--font-outfit)] text-[0.82rem]"
-											>
-												Auto-decline invites
-											</Label>
-										</div>
-									</div>
-
-									<div className="grid gap-4 md:grid-cols-3">
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												CC others
-											</Label>
-											<Input
-												value={value.ccEmails}
-												onChange={(event) => onChange({ ...value, ccEmails: event.target.value })}
-												placeholder="a@x.com, b@y.com"
-												className="font-[family-name:var(--font-outfit)] text-[0.82rem]"
-											/>
-										</div>
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Avoid duplicate keywords
-											</Label>
-											<Input
-												value={value.duplicateAvoidKeywords}
-												onChange={(event) =>
-													onChange({ ...value, duplicateAvoidKeywords: event.target.value })
-												}
-												placeholder="meeting, class"
-												className="font-[family-name:var(--font-outfit)] text-[0.82rem]"
-											/>
-										</div>
-										<div className="space-y-1.5">
-											<Label className="font-[family-name:var(--font-cutive)] text-[8px] uppercase tracking-[0.12em] text-muted-foreground/80">
-												Dependency note
-											</Label>
-											<Input
-												value={value.dependencyNote}
-												onChange={(event) =>
-													onChange({ ...value, dependencyNote: event.target.value })
-												}
-												placeholder="Depends on…"
-												className="font-[family-name:var(--font-outfit)] text-[0.82rem]"
-											/>
-										</div>
-									</div>
-								</AccordionContent>
-							</AccordionItem>
-						</Accordion>
-					) : null}
-
-					{/* Active toggle */}
-					<div className="flex items-center justify-between rounded-lg border border-border/40 px-4 py-3">
-						<div>
-							<p className="font-[family-name:var(--font-outfit)] text-[0.82rem] font-medium">
-								Active
-							</p>
-							<p className="font-[family-name:var(--font-outfit)] text-[0.72rem] text-muted-foreground">
-								Enable this habit for scheduling
-							</p>
-						</div>
-						<Switch
-							checked={value.isActive}
-							onCheckedChange={(isActive) => onChange({ ...value, isActive })}
-						/>
-					</div>
-				</div>
-
-				{/* ── Footer ── */}
-				<DialogFooter>
-					{compactCreate ? (
-						<Button
-							variant="ghost"
-							onClick={() => setShowAdvanced((current) => !current)}
-							disabled={busy}
-							className="font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium tracking-[0.02em] text-muted-foreground hover:text-foreground"
-						>
-							{showAdvanced ? "Back to quick form" : "Show advanced fields"}
-						</Button>
-					) : null}
-					<Button
-						variant="ghost"
-						onClick={() => onOpenChange(false)}
-						disabled={busy}
-						className="font-[family-name:var(--font-outfit)] text-[0.76rem] font-medium tracking-[0.02em] text-muted-foreground hover:text-foreground"
-					>
-						Cancel
-					</Button>
-					<Button
-						onClick={onSubmit}
-						disabled={busy}
-						className="gap-2 bg-accent font-[family-name:var(--font-outfit)] text-[0.76rem] font-bold uppercase tracking-[0.1em] text-accent-foreground shadow-[0_2px_12px_-3px_rgba(252,163,17,0.3)] transition-all hover:bg-accent/90 hover:shadow-[0_4px_16px_-3px_rgba(252,163,17,0.4)]"
-					>
-						{submitLabel}
-					</Button>
-				</DialogFooter>
-			</DialogContent>
-		</Dialog>
-	);
-}
-
-function EligibleHoursGrid({ hoursSet }: { hoursSet?: HoursSetDTO }) {
-	return (
-		<div className="rounded-lg border border-border/70 bg-background/40 p-3">
-			<div className="space-y-1.5">
-				{dayOptions.map((day) => (
-					<div key={day.value} className="grid grid-cols-[40px_1fr] items-center gap-2">
-						<div className="text-sm text-muted-foreground">{day.short}</div>
-						<div className="grid grid-cols-24 gap-1">
-							{Array.from({ length: 24 }).map((_, hour) => {
-								const cellStart = hour * 60;
-								const cellEnd = cellStart + 60;
-								const active =
-									hoursSet?.windows.some(
-										(window) =>
-											window.day === day.value &&
-											cellStart < window.endMinute &&
-											cellEnd > window.startMinute,
-									) ?? false;
-								return (
-									<div
-										key={`${day.value}-${hour}`}
-										className={cn(
-											"h-4 rounded-[4px] border border-border/30",
-											active ? "bg-emerald-400/60" : "bg-muted/40",
-										)}
-									/>
-								);
-							})}
-						</div>
-					</div>
-				))}
+			<div className="mt-3 border-t border-border/30 pt-2.5">
+				<Badge variant="outline" className="text-[11px]">
+					{habit.priority ?? "medium"}
+				</Badge>
 			</div>
 		</div>
 	);

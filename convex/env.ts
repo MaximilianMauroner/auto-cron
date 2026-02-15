@@ -29,9 +29,20 @@ const readOptional = (name: string): string | undefined => {
 	return value;
 };
 
+const readOptionalCsv = (name: string): string[] | undefined => {
+	const value = runtimeEnv[name]?.trim();
+	if (!value) return undefined;
+	const parsed = value
+		.split(",")
+		.map((item) => item.trim())
+		.filter((item) => item.length > 0);
+	return parsed.length > 0 ? parsed : undefined;
+};
+
 export const env = (): ConvexEnv => ({
 	AUTUMN_BILLING_MODE: readBillingMode(),
 	AUTUMN_SECRET_KEY: readRequired("AUTUMN_SECRET_KEY"),
+	INTERNAL_ADMIN_USER_IDS: readOptionalCsv("INTERNAL_ADMIN_USER_IDS"),
 	GOOGLE_CLIENT_ID: readRequired("GOOGLE_CLIENT_ID"),
 	GOOGLE_CLIENT_SECRET: readRequired("GOOGLE_CLIENT_SECRET"),
 	GOOGLE_CALENDAR_WEBHOOK_URL: readOptional("GOOGLE_CALENDAR_WEBHOOK_URL"),

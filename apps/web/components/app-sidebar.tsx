@@ -25,6 +25,7 @@ import {
 	SidebarMenuItem,
 	SidebarRail,
 } from "@/components/ui/sidebar";
+import { useUserPreferences } from "@/components/user-preferences-context";
 import { useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { useCustomer } from "autumn-js/react";
@@ -62,6 +63,14 @@ const navItems = [
 	{ title: "Priorities", href: "/app/priorities", icon: Layers },
 	{ title: "Settings", href: "/app/settings", icon: Settings },
 ];
+
+const CURRENTLY_ENTITLED_PRODUCT_STATUSES = [
+	"active",
+	"trialing",
+	"past_due",
+	"cancelling",
+	"canceling",
+] as const;
 
 type GoogleCalendarListItem = {
 	id: string;
@@ -117,6 +126,7 @@ export function AppSidebar() {
 	const [isSigningOut, setIsSigningOut] = useState(false);
 	const { resolvedTheme, setTheme } = useTheme();
 	const [mounted, setMounted] = useState(false);
+	const { weekStartsOn } = useUserPreferences();
 
 	useEffect(() => {
 		setMounted(true);
@@ -127,7 +137,11 @@ export function AppSidebar() {
 	const primaryProduct = useMemo(() => {
 		const products = customer?.products ?? [];
 		return products
-			.filter((p: { status: string }) => ["active", "trialing", "past_due"].includes(p.status))
+			.filter((p: { status: string }) =>
+				CURRENTLY_ENTITLED_PRODUCT_STATUSES.includes(
+					p.status as (typeof CURRENTLY_ENTITLED_PRODUCT_STATUSES)[number],
+				),
+			)
 			.find((p: { is_add_on: boolean }) => !p.is_add_on);
 	}, [customer]);
 	const planName = (primaryProduct as { name?: string } | undefined)?.name ?? "Free";
@@ -305,6 +319,7 @@ export function AppSidebar() {
 								mode="single"
 								selected={sidebarSelectedDate}
 								onSelect={handleDateSelect}
+								weekStartsOn={weekStartsOn}
 								className="w-full rounded-md border border-sidebar-border/60 bg-sidebar-accent/30 p-1.5 [--cell-size:--spacing(5)]"
 							/>
 						</SidebarGroupContent>
@@ -420,37 +435,14 @@ export function AppSidebar() {
 
 					{/* User menu */}
 					<SidebarMenuItem>
-						<DropdownMenu>
-							<DropdownMenuTrigger asChild>
-								<SidebarMenuButton
-									size="lg"
-									tooltip={displayName}
-									className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-								>
-									<Avatar className="size-8 rounded-lg">
-										<AvatarImage src={user?.profilePictureUrl ?? undefined} alt={displayName} />
-										<AvatarFallback className="rounded-lg text-xs">{initials}</AvatarFallback>
-									</Avatar>
-									<div className="grid flex-1 text-left text-sm leading-tight">
-										<span className="font-[family-name:var(--font-outfit)] truncate font-medium">
-											{displayName}
-										</span>
-										<span className="font-[family-name:var(--font-cutive)] truncate text-[0.66rem] tracking-[0.02em] text-muted-foreground">
-											{planName} plan
-										</span>
-									</div>
-									<ChevronsUpDown className="ml-auto size-4" />
-								</SidebarMenuButton>
-							</DropdownMenuTrigger>
-							<DropdownMenuContent
-								className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-								side="bottom"
-								align="end"
-								sideOffset={4}
-							>
-								{/* Header */}
-								<DropdownMenuLabel className="p-0 font-normal">
-									<div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+						{mounted ? (
+							<DropdownMenu>
+								<DropdownMenuTrigger asChild>
+									<SidebarMenuButton
+										size="lg"
+										tooltip={displayName}
+										className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+									>
 										<Avatar className="size-8 rounded-lg">
 											<AvatarImage src={user?.profilePictureUrl ?? undefined} alt={displayName} />
 											<AvatarFallback className="rounded-lg text-xs">{initials}</AvatarFallback>
@@ -460,68 +452,109 @@ export function AppSidebar() {
 												{displayName}
 											</span>
 											<span className="font-[family-name:var(--font-cutive)] truncate text-[0.66rem] tracking-[0.02em] text-muted-foreground">
-												{email}
+												{planName} plan
 											</span>
 										</div>
-									</div>
-								</DropdownMenuLabel>
-								<DropdownMenuSeparator />
+										<ChevronsUpDown className="ml-auto size-4" />
+									</SidebarMenuButton>
+								</DropdownMenuTrigger>
+								<DropdownMenuContent
+									className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+									side="bottom"
+									align="end"
+									sideOffset={4}
+								>
+									{/* Header */}
+									<DropdownMenuLabel className="p-0 font-normal">
+										<div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+											<Avatar className="size-8 rounded-lg">
+												<AvatarImage src={user?.profilePictureUrl ?? undefined} alt={displayName} />
+												<AvatarFallback className="rounded-lg text-xs">{initials}</AvatarFallback>
+											</Avatar>
+											<div className="grid flex-1 text-left text-sm leading-tight">
+												<span className="font-[family-name:var(--font-outfit)] truncate font-medium">
+													{displayName}
+												</span>
+												<span className="font-[family-name:var(--font-cutive)] truncate text-[0.66rem] tracking-[0.02em] text-muted-foreground">
+													{email}
+												</span>
+											</div>
+										</div>
+									</DropdownMenuLabel>
+									<DropdownMenuSeparator />
 
-								{/* Upgrade CTA for free users */}
-								{isFreePlan ? (
-									<>
+									{/* Upgrade CTA for free users */}
+									{isFreePlan ? (
+										<>
+											<DropdownMenuItem asChild>
+												<Link
+													href="/app/pricing"
+													className="font-[family-name:var(--font-outfit)] font-medium text-amber-600 dark:text-amber-400"
+												>
+													<Zap className="text-amber-500" />
+													Upgrade to Plus
+												</Link>
+											</DropdownMenuItem>
+											<DropdownMenuSeparator />
+										</>
+									) : null}
+
+									{/* Account */}
+									<DropdownMenuGroup>
 										<DropdownMenuItem asChild>
-											<Link
-												href="/app/pricing"
-												className="font-[family-name:var(--font-outfit)] font-medium text-amber-600 dark:text-amber-400"
-											>
-												<Zap className="text-amber-500" />
-												Upgrade to Plus
+											<Link href="/app/settings/account">
+												<UserCircle />
+												Account
 											</Link>
 										</DropdownMenuItem>
-										<DropdownMenuSeparator />
-									</>
-								) : null}
+										<DropdownMenuItem asChild>
+											<Link href="/app/pricing">
+												<CreditCard />
+												Billing
+											</Link>
+										</DropdownMenuItem>
+										<DropdownMenuItem asChild>
+											<Link href="/app/settings/notifications">
+												<Bell />
+												Notifications
+											</Link>
+										</DropdownMenuItem>
+									</DropdownMenuGroup>
+									<DropdownMenuSeparator />
 
-								{/* Account */}
-								<DropdownMenuGroup>
-									<DropdownMenuItem asChild>
-										<Link href="/app/settings/account">
-											<UserCircle />
-											Account
-										</Link>
-									</DropdownMenuItem>
-									<DropdownMenuItem asChild>
-										<Link href="/app/pricing">
-											<CreditCard />
-											Billing
-										</Link>
-									</DropdownMenuItem>
-									<DropdownMenuItem asChild>
-										<Link href="/app/settings/notifications">
-											<Bell />
-											Notifications
-										</Link>
-									</DropdownMenuItem>
-								</DropdownMenuGroup>
-								<DropdownMenuSeparator />
+									{/* Support */}
+									<DropdownMenuGroup>
+										<DropdownMenuItem onClick={openFeedbackDialog}>
+											<MessageSquare />
+											Feedback
+										</DropdownMenuItem>
+									</DropdownMenuGroup>
+									<DropdownMenuSeparator />
 
-								{/* Support */}
-								<DropdownMenuGroup>
-									<DropdownMenuItem onClick={openFeedbackDialog}>
-										<MessageSquare />
-										Feedback
+									{/* Sign out */}
+									<DropdownMenuItem onClick={handleSignOut} disabled={isSigningOut}>
+										<LogOut />
+										{isSigningOut ? "Signing out..." : "Log out"}
 									</DropdownMenuItem>
-								</DropdownMenuGroup>
-								<DropdownMenuSeparator />
-
-								{/* Sign out */}
-								<DropdownMenuItem onClick={handleSignOut} disabled={isSigningOut}>
-									<LogOut />
-									{isSigningOut ? "Signing out..." : "Log out"}
-								</DropdownMenuItem>
-							</DropdownMenuContent>
-						</DropdownMenu>
+								</DropdownMenuContent>
+							</DropdownMenu>
+						) : (
+							<SidebarMenuButton size="lg" disabled>
+								<Avatar className="size-8 rounded-lg">
+									<AvatarImage src={user?.profilePictureUrl ?? undefined} alt={displayName} />
+									<AvatarFallback className="rounded-lg text-xs">{initials}</AvatarFallback>
+								</Avatar>
+								<div className="grid flex-1 text-left text-sm leading-tight">
+									<span className="font-[family-name:var(--font-outfit)] truncate font-medium">
+										{displayName}
+									</span>
+									<span className="font-[family-name:var(--font-cutive)] truncate text-[0.66rem] tracking-[0.02em] text-muted-foreground">
+										Loading account...
+									</span>
+								</div>
+								<ChevronsUpDown className="ml-auto size-4" />
+							</SidebarMenuButton>
+						)}
 					</SidebarMenuItem>
 				</SidebarMenu>
 			</SidebarFooter>

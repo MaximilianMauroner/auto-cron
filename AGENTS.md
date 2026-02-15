@@ -84,7 +84,7 @@ Notes:
 
 - `build` is a turbo root task.
 - `dev` starts both web dev and Convex dev from the root script.
-- There is currently no root `test` script in `package.json` (TODO to add when tests are introduced).
+- Convex test scripts are available at root: `bun run test:convex` and `bun run test:convex:run`.
 
 ## Task completion gates
 

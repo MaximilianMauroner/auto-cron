@@ -1,14 +1,8 @@
 import { v } from "convex/values";
+import type { Id } from "../_generated/dataModel";
 import { query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
-import type { ListHabitsArgs } from "./habitTypes";
-
-const habitFrequencyValidator = v.union(
-	v.literal("daily"),
-	v.literal("weekly"),
-	v.literal("biweekly"),
-	v.literal("monthly"),
-);
+import type { ListHabitOccurrencesArgs, ListHabitsArgs } from "./habitTypes";
 
 const habitPriorityValidator = v.union(
 	v.literal("low"),
@@ -16,7 +10,6 @@ const habitPriorityValidator = v.union(
 	v.literal("high"),
 	v.literal("critical"),
 );
-const habitRecoveryPolicyValidator = v.union(v.literal("skip"), v.literal("recover"));
 const habitVisibilityPreferenceValidator = v.union(
 	v.literal("default"),
 	v.literal("public"),
@@ -35,6 +28,13 @@ const habitReminderModeValidator = v.union(
 const habitUnscheduledBehaviorValidator = v.union(
 	v.literal("leave_on_calendar"),
 	v.literal("remove_from_calendar"),
+);
+const habitRecoveryPolicyValidator = v.union(v.literal("skip"), v.literal("recover"));
+const habitFrequencyValidator = v.union(
+	v.literal("daily"),
+	v.literal("weekly"),
+	v.literal("biweekly"),
+	v.literal("monthly"),
 );
 
 const habitDtoValidator = v.object({
@@ -73,6 +73,8 @@ const habitDtoValidator = v.object({
 	dependencyNote: v.optional(v.string()),
 	publicDescription: v.optional(v.string()),
 	isActive: v.boolean(),
+	recurrencePatternId: v.id("recurrencePatterns"),
+	seriesId: v.optional(v.id("workItemSeries")),
 	effectiveColor: v.string(),
 });
 
@@ -93,16 +95,112 @@ export const listHabits = query({
 		const uniqueCategoryIds = [...new Set(filtered.map((h) => h.categoryId))];
 		const categories = await Promise.all(uniqueCategoryIds.map((id) => ctx.db.get(id)));
 		const categoryMap = new Map(uniqueCategoryIds.map((id, i) => [id, categories[i]]));
+		const recurrencePatternIds = [...new Set(filtered.map((h) => String(h.recurrencePatternId)))];
+		const recurrencePatterns = await Promise.all(
+			recurrencePatternIds.map((id) =>
+				ctx.db.get(id as (typeof filtered)[number]["recurrencePatternId"]),
+			),
+		);
+		const recurrencePatternMap = new Map(
+			recurrencePatternIds.map((id, i) => [id, recurrencePatterns[i] ?? null] as const),
+		);
 
 		return filtered
 			.map((habit) => {
 				const category = categoryMap.get(habit.categoryId) ?? null;
+				const recurrencePattern =
+					recurrencePatternMap.get(String(habit.recurrencePatternId)) ?? null;
 				return {
 					...habit,
-					priority: habit.priority === "blocker" ? "critical" : habit.priority,
+					recurrenceRule: recurrencePattern?.recurrenceRule,
+					recoveryPolicy: recurrencePattern?.recoveryPolicy,
+					frequency: recurrencePattern?.frequency,
+					repeatsPerPeriod: recurrencePattern?.repeatsPerPeriod,
+					preferredWindowStart: recurrencePattern?.preferredWindowStart,
+					preferredWindowEnd: recurrencePattern?.preferredWindowEnd,
+					preferredDays: recurrencePattern?.preferredDays,
+					startDate: recurrencePattern?.startDate,
+					endDate: recurrencePattern?.endDate,
 					effectiveColor: habit.color ?? category?.color ?? "#f59e0b",
 				};
 			})
 			.sort((a, b) => a.title.localeCompare(b.title));
+	}),
+});
+
+export const getHabit = query({
+	args: {
+		id: v.id("habits"),
+	},
+	returns: v.union(habitDtoValidator, v.null()),
+	handler: withQueryAuth(async (ctx, args: { id: Id<"habits"> }) => {
+		const habit = await ctx.db.get(args.id);
+		if (!habit || habit.userId !== ctx.userId) {
+			return null;
+		}
+		const category = await ctx.db.get(habit.categoryId);
+		const recurrencePattern = await ctx.db.get(habit.recurrencePatternId);
+		return {
+			...habit,
+			recurrenceRule: recurrencePattern?.recurrenceRule,
+			recoveryPolicy: recurrencePattern?.recoveryPolicy,
+			frequency: recurrencePattern?.frequency,
+			repeatsPerPeriod: recurrencePattern?.repeatsPerPeriod,
+			preferredWindowStart: recurrencePattern?.preferredWindowStart,
+			preferredWindowEnd: recurrencePattern?.preferredWindowEnd,
+			preferredDays: recurrencePattern?.preferredDays,
+			startDate: recurrencePattern?.startDate,
+			endDate: recurrencePattern?.endDate,
+			effectiveColor: habit.color ?? category?.color ?? "#f59e0b",
+		};
+	}),
+});
+
+const habitOccurrenceValidator = v.object({
+	id: v.id("calendarEvents"),
+	start: v.number(),
+	end: v.number(),
+	status: v.optional(
+		v.union(v.literal("confirmed"), v.literal("tentative"), v.literal("cancelled")),
+	),
+	calendarId: v.optional(v.string()),
+	pinned: v.optional(v.boolean()),
+});
+
+export const listHabitOccurrences = query({
+	args: {
+		habitId: v.id("habits"),
+		limit: v.optional(v.number()),
+	},
+	returns: v.array(habitOccurrenceValidator),
+	handler: withQueryAuth(async (ctx, args: ListHabitOccurrencesArgs) => {
+		const habit = await ctx.db.get(args.habitId);
+		if (!habit || habit.userId !== ctx.userId) {
+			return [];
+		}
+
+		const events = await ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_source_sourceId", (q) =>
+				q.eq("userId", ctx.userId).eq("source", "habit").eq("sourceId", String(args.habitId)),
+			)
+			.collect();
+
+		const normalizedLimit = Number.isFinite(args.limit)
+			? Math.max(1, Math.min(Math.floor(args.limit as number), 500))
+			: 250;
+
+		return events
+			.filter((event) => event.status !== "cancelled")
+			.sort((a, b) => a.start - b.start)
+			.slice(-normalizedLimit)
+			.map((event) => ({
+				id: event._id,
+				start: event.start,
+				end: event.end,
+				status: event.status,
+				calendarId: event.calendarId,
+				pinned: event.pinned,
+			}));
 	}),
 });

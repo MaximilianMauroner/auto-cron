@@ -8,6 +8,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { useUserPreferences } from "@/components/user-preferences-context";
 import type { CalendarSource } from "@auto-cron/types";
 import {
 	CalendarDays,
@@ -73,6 +74,7 @@ export function CalendarTopbar({
 	visibleEventCount,
 	syncStatusLabel,
 }: CalendarTopbarProps) {
+	const { weekStartsOn } = useUserPreferences();
 	return (
 		<header className="shrink-0 sticky top-0 z-20 border-b border-border/50 bg-background/80 backdrop-blur-sm px-4 py-2.5 flex flex-col gap-2">
 			<div className="flex items-center justify-between gap-3 flex-wrap">
@@ -199,6 +201,7 @@ export function CalendarTopbar({
 									if (!date) return;
 									onSelectDate(date);
 								}}
+								weekStartsOn={weekStartsOn}
 								initialFocus
 								className="rounded-md border-0 bg-transparent"
 							/>

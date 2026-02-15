@@ -1,14 +1,13 @@
 "use client";
 
-import { eventDetailFromDTO, useEventDetail } from "@/components/aside-panel/event-detail-context";
+import { useAsideContent } from "@/components/aside-panel";
 import { CalendarRecurringMoveDialog } from "@/components/calendar/calendar-recurring-move-dialog";
 import { CalendarStatusBanners } from "@/components/calendar/calendar-status-banners";
 import { CalendarTopbar } from "@/components/calendar/calendar-topbar";
 import { DateGridEvent } from "@/components/calendar/date-grid-event";
 import { TimeGridEvent } from "@/components/calendar/time-grid-event";
-import { QuickCreateHabitDialog } from "@/components/quick-create/quick-create-habit-dialog";
-import { QuickCreateTaskDialog } from "@/components/quick-create/quick-create-task-dialog";
-import { TaskEditSheet } from "@/components/tasks/task-edit-sheet";
+import { CreateHabitDialog } from "@/components/habits/create-habit-dialog";
+import { CreateTaskDialog } from "@/components/tasks/create-task-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Calendar as DatePickerCalendar } from "@/components/ui/calendar";
@@ -696,6 +695,23 @@ const toDateAnchorTimestamp = (value: string) => {
 	return Number.isFinite(timestamp) ? timestamp : Date.now();
 };
 
+const parseCalendarFocusHash = (hash: string) => {
+	const trimmed = hash.startsWith("#") ? hash.slice(1) : hash;
+	if (!trimmed) return null;
+	const params = new URLSearchParams(trimmed);
+	const eventId = params.get("focusEventId");
+	const startRaw = params.get("focusStart");
+	const mode = params.get("focusMode");
+	if (!eventId || !startRaw) return null;
+	const start = Number.parseInt(startRaw, 10);
+	if (!Number.isFinite(start)) return null;
+	return {
+		eventId,
+		start,
+		openDetails: mode !== "navigate",
+	};
+};
+
 const hasCalendarControlsApp = (plugin: unknown): plugin is { $app: object } => {
 	if (!plugin || typeof plugin !== "object") return false;
 	return "$app" in plugin && Boolean((plugin as { $app?: object }).$app);
@@ -814,7 +830,7 @@ type CalendarClientProps = {
 };
 
 export function CalendarClient({ initialErrorMessage = null }: CalendarClientProps) {
-	const { showEventDetail, clearEventDetail } = useEventDetail();
+	const { openEvent, openHabit, openTask } = useAsideContent();
 	const { resolvedTheme } = useTheme();
 	const [isThemeMounted, setIsThemeMounted] = useState(false);
 	const { isAuthenticated, isLoading: isAuthLoading } = useConvexAuth();
@@ -851,6 +867,11 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const resizeEventRef = useRef<ResizeEventState | null>(null);
 	const calendarContainerRef = useRef<HTMLDivElement>(null);
 	const scheduleEventsByIdRef = useRef<Map<string, CalendarEventDTO>>(new Map());
+	const pendingHashFocusRef = useRef<{
+		eventId: string;
+		start: number;
+		openDetails: boolean;
+	} | null>(null);
 	const syncedGoogleRangeRef = useRef<SyncRange | null>(null);
 	const autoSyncAttemptedRangeKeyRef = useRef<string | null>(null);
 	const autoWatchRegistrationAttemptedRef = useRef(false);
@@ -895,6 +916,17 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		setIsThemeMounted(true);
 	}, []);
 
+	useEffect(() => {
+		if (typeof window === "undefined") return;
+		const pending = parseCalendarFocusHash(window.location.hash);
+		if (!pending) return;
+		pendingHashFocusRef.current = pending;
+		if (window.location.hash) {
+			const cleanUrl = `${window.location.pathname}${window.location.search}`;
+			window.history.replaceState(null, "", cleanUrl);
+		}
+	}, []);
+
 	const selectedDateTimestamp = useMemo(() => toDateAnchorTimestamp(selectedDate), [selectedDate]);
 
 	const queryRange = useMemo(
@@ -927,6 +959,14 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	);
 	const googleSyncHealth = googleSyncHealthQuery.data ?? googleSyncHealthSnapshot;
 	const googleCalendars = (googleCalendarsQuery.data ?? []) as GoogleCalendarListItem[];
+	const categoriesQuery = useAuthenticatedQueryWithStatus(api.categories.queries.getCategories, {});
+	const categoriesById = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const cat of categoriesQuery.data ?? []) {
+			map.set(cat._id, cat.name);
+		}
+		return map;
+	}, [categoriesQuery.data]);
 
 	const { mutate: createEventMutation } = useMutationWithStatus(api.calendar.mutations.createEvent);
 	const { mutate: updateEventMutation } = useMutationWithStatus(api.calendar.mutations.updateEvent);
@@ -934,7 +974,6 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const { mutate: setEventPinnedMutation } = useMutationWithStatus(
 		api.calendar.mutations.setEventPinned,
 	);
-	const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 	const { mutate: moveResizeEventMutation } = useMutationWithStatus(
 		api.calendar.mutations.moveResizeEvent,
 	);
@@ -1154,20 +1193,18 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const openEditorForEvent = useCallback(
 		(event: CalendarEventDTO, panelMode: "details" | "edit") => {
 			setDragPreview(null);
-			if (panelMode === "details") {
-				clearEventDetail();
-				const detail = eventDetailFromDTO(event);
-				detail.recurrenceRule =
-					event.recurrenceRule?.trim() ||
-					(event.recurringEventId
-						? recurrenceRuleBySeriesId.get(event.recurringEventId)
-						: undefined) ||
-					inferRecurrenceRule(event, normalizedEvents) ||
-					"";
-				showEventDetail(detail);
+			if (event.source === "task" && event.sourceId) {
+				openTask(event.sourceId, panelMode === "edit" ? "edit" : "details");
 				return;
 			}
-			clearEventDetail();
+			if (event.source === "habit" && event.sourceId) {
+				openHabit(event.sourceId, panelMode === "edit" ? "edit" : "details");
+				return;
+			}
+			if (panelMode === "details") {
+				openEvent(event._id, "details");
+				return;
+			}
 			const recurrenceRule =
 				event.recurrenceRule?.trim() ||
 				(event.recurringEventId
@@ -1193,12 +1230,13 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 			});
 		},
 		[
-			clearEventDetail,
 			defaultCreateCalendarId,
 			normalizedEvents,
+			openEvent,
+			openHabit,
+			openTask,
 			recurrenceRuleBySeriesId,
 			scheduleXTimeZone,
-			showEventDetail,
 		],
 	);
 
@@ -1242,6 +1280,34 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	useEffect(() => {
 		openEditorForEventRef.current = openEditorForEvent;
 	}, [openEditorForEvent]);
+
+	useEffect(() => {
+		const pending = pendingHashFocusRef.current;
+		if (!pending) return;
+		const matched = scheduleEventsById.get(pending.eventId);
+		if (!matched) return;
+
+		const eventDate = new Date(pending.start);
+		const dateStr = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, "0")}-${String(eventDate.getDate()).padStart(2, "0")}`;
+		setSelectedDate(dateStr);
+
+		const eventHour = eventDate.getHours();
+		const scrollHour = Math.max(0, eventHour - 1);
+		const scrollTime = `${String(scrollHour).padStart(2, "0")}:00`;
+		runWhenScrollControllerReady(scrollControllerPlugin, () => {
+			try {
+				scrollControllerPlugin.scrollTo(scrollTime);
+			} catch {
+				// Ignore transient plugin lifecycle races
+			}
+		});
+
+		if (pending.openDetails) {
+			openEditorForEventRef.current(matched, "details");
+		}
+
+		pendingHashFocusRef.current = null;
+	}, [scheduleEventsById, scrollControllerPlugin]);
 
 	const calendarViews = useMemo(() => {
 		const weekView = createViewWeek();
@@ -2532,6 +2598,12 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		selectedEvent?.source === "task" && Boolean(selectedEvent.sourceId?.includes(":travel:"));
 	const isTaskBoundEvent =
 		selectedEvent?.source === "task" && !isTravelBlockEvent && Boolean(selectedEvent.sourceId);
+	const selectedTaskQuery = useAuthenticatedQueryWithStatus(
+		api.tasks.queries.getTask,
+		isTaskBoundEvent && selectedEvent?.sourceId
+			? { id: selectedEvent.sourceId as Id<"tasks"> }
+			: "skip",
+	);
 	const hasEditorLocation = Boolean(editor?.location.trim());
 	const travelBufferAppliesToEvent =
 		(selectedEventSource === "google" || selectedEventSource === "manual") &&
@@ -2572,13 +2644,26 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const selectedCalendarId =
 		editor?.calendarId ?? selectedEvent?.calendarId ?? defaultCreateCalendarId;
 	const selectedEventCalendarLabel = useMemo(() => {
+		if (selectedEvent && selectedEvent.source === "task") {
+			const categoryId = selectedTaskQuery.data?.categoryId;
+			if (categoryId) {
+				return categoriesById.get(categoryId) ?? "Task";
+			}
+			return "Task";
+		}
 		if (selectedEvent && selectedEvent.source !== "google") {
 			return selectedEvent.source.charAt(0).toUpperCase() + selectedEvent.source.slice(1);
 		}
 		return (
 			googleCalendarNamesById.get(selectedCalendarId) ?? prettifyCalendarName(selectedCalendarId)
 		);
-	}, [googleCalendarNamesById, selectedCalendarId, selectedEvent]);
+	}, [
+		categoriesById,
+		googleCalendarNamesById,
+		selectedCalendarId,
+		selectedEvent,
+		selectedTaskQuery.data?.categoryId,
+	]);
 	const selectedCalendarColor = useMemo(
 		() => googleCalendarColorById.get(selectedCalendarId) ?? selectedEvent?.color,
 		[googleCalendarColorById, selectedCalendarId, selectedEvent?.color],
@@ -2739,13 +2824,16 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 								{isTaskBoundEvent && selectedEvent?.sourceId ? (
 									<div className="flex items-center gap-2 border-t border-border/60 px-3 py-2">
 										<Badge className="bg-chart-3/15 text-chart-3 border-chart-3/25 font-[family-name:var(--font-cutive)] text-[0.5rem] uppercase tracking-[0.1em] px-1.5 py-0">
-											Task
+											{selectedEventCalendarLabel}
 										</Badge>
 										<Button
 											variant="ghost"
 											size="sm"
 											className="h-6 text-[0.72rem] text-primary"
-											onClick={() => setEditingTaskId(selectedEvent?.sourceId ?? null)}
+											onClick={() => {
+												if (!selectedEvent?.sourceId) return;
+												openTask(selectedEvent.sourceId, "details");
+											}}
 										>
 											Open Task
 										</Button>
@@ -2890,6 +2978,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 																	: current,
 															);
 														}}
+														weekStartsOn={userPreferences.weekStartsOn}
 														initialFocus
 														className="rounded-md border-0 bg-transparent"
 													/>
@@ -2922,6 +3011,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 																	: current,
 															);
 														}}
+														weekStartsOn={userPreferences.weekStartsOn}
 														initialFocus
 														className="rounded-md border-0 bg-transparent"
 													/>
@@ -3196,6 +3286,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 																							: current,
 																					);
 																				}}
+																				weekStartsOn={userPreferences.weekStartsOn}
 																				initialFocus
 																				className="rounded-md border-0 bg-transparent"
 																			/>
@@ -3692,19 +3783,10 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 						void moveRecurringEvent("series");
 					}}
 				/>
-				<QuickCreateTaskDialog open={quickCreateTaskOpen} onOpenChange={setQuickCreateTaskOpen} />
-				<QuickCreateHabitDialog
-					open={quickCreateHabitOpen}
-					onOpenChange={setQuickCreateHabitOpen}
-				/>
+				<CreateTaskDialog open={quickCreateTaskOpen} onOpenChange={setQuickCreateTaskOpen} />
+				<CreateHabitDialog open={quickCreateHabitOpen} onOpenChange={setQuickCreateHabitOpen} />
 			</div>
 			{eventEditorSheet}
-			<TaskEditSheet
-				taskId={editingTaskId}
-				onOpenChange={(open) => {
-					if (!open) setEditingTaskId(null);
-				}}
-			/>
 		</>
 	);
 }
