@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { query } from "../_generated/server";
 import { withQueryAuth } from "../auth";
 import type { ListEventsArgs } from "./queryTypes";
@@ -146,6 +146,125 @@ const calendarEventDtoValidator = v.object({
 	pinned: v.optional(v.boolean()),
 });
 
+const occurrenceBucketValidator = v.union(v.literal("upcoming"), v.literal("past"));
+
+const occurrenceItemValidator = v.object({
+	id: v.id("calendarEvents"),
+	title: v.string(),
+	start: v.number(),
+	end: v.number(),
+	source: v.union(v.literal("manual"), v.literal("google"), v.literal("task"), v.literal("habit")),
+	sourceId: v.optional(v.string()),
+	calendarId: v.optional(v.string()),
+	status: v.optional(
+		v.union(v.literal("confirmed"), v.literal("tentative"), v.literal("cancelled")),
+	),
+	pinned: v.optional(v.boolean()),
+	seriesId: v.optional(v.id("calendarEventSeries")),
+});
+
+const occurrencePageValidator = v.object({
+	items: v.array(occurrenceItemValidator),
+	nextCursor: v.optional(v.number()),
+	hasMore: v.boolean(),
+	totalLoaded: v.number(),
+});
+
+const changeLogEntityTypeValidator = v.union(
+	v.literal("task"),
+	v.literal("habit"),
+	v.literal("event"),
+	v.literal("occurrence"),
+);
+
+const changeLogItemValidator = v.object({
+	_id: v.id("changeLogs"),
+	_creationTime: v.number(),
+	userId: v.string(),
+	entityType: changeLogEntityTypeValidator,
+	entityId: v.string(),
+	eventId: v.optional(v.id("calendarEvents")),
+	seriesId: v.optional(v.id("calendarEventSeries")),
+	action: v.string(),
+	scope: v.optional(v.union(v.literal("single"), v.literal("following"), v.literal("series"))),
+	actor: v.object({
+		type: v.literal("user"),
+		id: v.string(),
+	}),
+	metadata: v.optional(v.any()),
+	timestamp: v.number(),
+	createdAt: v.number(),
+});
+
+type GetEventArgs = {
+	id: Id<"calendarEvents">;
+};
+
+type ListTaskOccurrencesPageArgs = {
+	taskId: Id<"tasks">;
+	bucket: "upcoming" | "past";
+	cursor?: number;
+	limit?: number;
+};
+
+type ListHabitOccurrencesPageArgs = {
+	habitId: Id<"habits">;
+	bucket: "upcoming" | "past";
+	cursor?: number;
+	limit?: number;
+};
+
+type ListEntityChangeLogPageArgs = {
+	entityType: "task" | "habit" | "event" | "occurrence";
+	entityId: string;
+	cursor?: number;
+	limit?: number;
+};
+
+const toOccurrencePage = (
+	events: Doc<"calendarEvents">[],
+	args: { bucket: "upcoming" | "past"; cursor?: number; limit?: number },
+) => {
+	const normalizedLimit = Number.isFinite(args.limit)
+		? Math.max(1, Math.min(Math.floor(args.limit as number), 50))
+		: 5;
+	const now = Date.now();
+	const boundary = args.cursor ?? now;
+	const filtered = events.filter((event) => event.status !== "cancelled");
+	const ordered =
+		args.bucket === "upcoming"
+			? filtered
+					.filter((event) =>
+						args.cursor === undefined ? event.start >= boundary : event.start > boundary,
+					)
+					.sort((a, b) => a.start - b.start)
+			: filtered
+					.filter((event) =>
+						args.cursor === undefined ? event.start < boundary : event.start < boundary,
+					)
+					.sort((a, b) => b.start - a.start);
+	const items = ordered.slice(0, normalizedLimit).map((event) => ({
+		id: event._id,
+		title: event.title ?? "Untitled event",
+		start: event.start,
+		end: event.end,
+		source: event.source,
+		sourceId: event.sourceId,
+		calendarId: event.calendarId,
+		status: event.status,
+		pinned: event.pinned,
+		seriesId: event.seriesId,
+	}));
+	const hasMore = ordered.length > normalizedLimit;
+	const nextCursor = hasMore ? items[items.length - 1]?.start : undefined;
+	return {
+		items,
+		nextCursor,
+		hasMore,
+		totalLoaded: items.length,
+	};
+};
+
 export const listEvents = query({
 	args: {
 		start: v.number(),
@@ -218,6 +337,103 @@ export const listTaskEvents = query({
 		return dedupeByLatestRecency(valid)
 			.map((event) => hydrateEvent(event, resolveSeriesForEvent(event, seriesById)))
 			.sort((a, b) => a.start - b.start);
+	}),
+});
+
+export const getEvent = query({
+	args: {
+		id: v.id("calendarEvents"),
+	},
+	returns: v.union(calendarEventDtoValidator, v.null()),
+	handler: withQueryAuth(async (ctx, args: GetEventArgs) => {
+		const event = await ctx.db.get(args.id);
+		if (!event || event.userId !== ctx.userId) return null;
+		const series = event.seriesId ? await ctx.db.get(event.seriesId) : null;
+		return hydrateEvent(event, series);
+	}),
+});
+
+export const listEntityChangeLogPage = query({
+	args: {
+		entityType: changeLogEntityTypeValidator,
+		entityId: v.string(),
+		cursor: v.optional(v.number()),
+		limit: v.optional(v.number()),
+	},
+	returns: v.object({
+		items: v.array(changeLogItemValidator),
+		nextCursor: v.optional(v.number()),
+		hasMore: v.boolean(),
+		totalLoaded: v.number(),
+	}),
+	handler: withQueryAuth(async (ctx, args: ListEntityChangeLogPageArgs) => {
+		const limit = Number.isFinite(args.limit)
+			? Math.max(1, Math.min(Math.floor(args.limit as number), 50))
+			: 10;
+		const rows = await ctx.db
+			.query("changeLogs")
+			.withIndex("by_userId_entityType_entityId_timestamp", (q) =>
+				q.eq("userId", ctx.userId).eq("entityType", args.entityType).eq("entityId", args.entityId),
+			)
+			.order("desc")
+			.collect();
+		const cursor = args.cursor;
+		const filtered = cursor === undefined ? rows : rows.filter((row) => row.timestamp < cursor);
+		const items = filtered.slice(0, limit);
+		const hasMore = filtered.length > limit;
+		const nextCursor = hasMore ? items[items.length - 1]?.timestamp : undefined;
+		return {
+			items,
+			nextCursor,
+			hasMore,
+			totalLoaded: items.length,
+		};
+	}),
+});
+
+export const listTaskOccurrencesPage = query({
+	args: {
+		taskId: v.id("tasks"),
+		bucket: occurrenceBucketValidator,
+		cursor: v.optional(v.number()),
+		limit: v.optional(v.number()),
+	},
+	returns: occurrencePageValidator,
+	handler: withQueryAuth(async (ctx, args: ListTaskOccurrencesPageArgs) => {
+		const task = await ctx.db.get(args.taskId);
+		if (!task || task.userId !== ctx.userId) {
+			return { items: [], nextCursor: undefined, hasMore: false, totalLoaded: 0 };
+		}
+		const events = await ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_source_sourceId_start", (q) =>
+				q.eq("userId", ctx.userId).eq("source", "task").eq("sourceId", String(args.taskId)),
+			)
+			.collect();
+		return toOccurrencePage(events, args);
+	}),
+});
+
+export const listHabitOccurrencesPage = query({
+	args: {
+		habitId: v.id("habits"),
+		bucket: occurrenceBucketValidator,
+		cursor: v.optional(v.number()),
+		limit: v.optional(v.number()),
+	},
+	returns: occurrencePageValidator,
+	handler: withQueryAuth(async (ctx, args: ListHabitOccurrencesPageArgs) => {
+		const habit = await ctx.db.get(args.habitId);
+		if (!habit || habit.userId !== ctx.userId) {
+			return { items: [], nextCursor: undefined, hasMore: false, totalLoaded: 0 };
+		}
+		const events = await ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_source_sourceId_start", (q) =>
+				q.eq("userId", ctx.userId).eq("source", "habit").eq("sourceId", String(args.habitId)),
+			)
+			.collect();
+		return toOccurrencePage(events, args);
 	}),
 });
 

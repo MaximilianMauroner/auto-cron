@@ -6,6 +6,7 @@ export type {
 	HabitUpdatePatch,
 	InternalCreateHabitArgs,
 	InternalRollbackHabitArgs,
+	ListHabitOccurrencesArgs,
 	ListHabitsArgs,
 	ToggleHabitArgs,
 	UpdateHabitArgs,

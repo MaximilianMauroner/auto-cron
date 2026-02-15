@@ -97,6 +97,10 @@ Run this checklist when touching `convex/scheduling/*`, trigger wiring, or diagn
 - Hard infeasibility banner appears when `latestRun.feasibleOnTime === false`.
 - Billing-gated actions are correctly blocked/unblocked by plan.
 - Task and habit create flows open paywall when limit is reached.
+- Single-click task/habit cards open right-aside details (no edit modal/sheet opens for task/habit).
+- Task/habit aside details render `Upcoming` and `Past` occurrence lists and `Load more` appends without duplicates.
+- Task quick controls (complete/backlog, priority) and habit quick controls (pause/resume, priority) persist immediately from aside details/edit headers.
+- Aside edit mode dirty-state confirm appears before leaving unsaved full-form changes.
 - Google webhook endpoint (`/google/calendar/webhook`) returns `204` for valid + invalid notifications and
   only enqueues sync runs for validated channels.
 - Expiring watch channels are renewed by cron and stale channels are deactivated.

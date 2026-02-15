@@ -396,6 +396,8 @@ const scheduleHabits = (
 			input.timezone,
 			slotCount,
 		);
+		let scheduledCountTotal = 0;
+		let shortfallTotal = 0;
 
 		for (let periodIndex = 0; periodIndex < periods.length; periodIndex += 1) {
 			const period = periods[periodIndex];
@@ -490,6 +492,8 @@ const scheduleHabits = (
 			}
 
 			const shortfall = Math.max(0, period.targetCount - scheduledCount);
+			scheduledCountTotal += scheduledCount;
+			shortfallTotal += shortfall;
 			if (shortfall > 0 && habit.recoveryPolicy === "recover") {
 				shortfalls.push({
 					habitId: habit.id,
@@ -503,6 +507,20 @@ const scheduleHabits = (
 				objectiveScore += habitShortfallPenalty(shortfall, habit.priority);
 			}
 		}
+		console.info("[scheduling:habit-periods]", {
+			habitId: String(habit.id),
+			title: habit.title,
+			recurrenceRule: habit.recurrenceRule,
+			repeatsPerPeriod: habit.repeatsPerPeriod ?? 1,
+			startDate: habit.startDate ?? null,
+			endDate: habit.endDate ?? null,
+			horizonStart,
+			horizonEnd,
+			periodCount: periods.length,
+			scheduledCountTotal,
+			shortfallTotal,
+			recoveryPolicy: habit.recoveryPolicy,
+		});
 	}
 
 	return {

@@ -6,10 +6,12 @@
 - Reusable per-user hours sets (`Work`, `Anytime (24/7)`, and custom sets)
 - Task scheduling mode intent (`fastest`, `balanced`, `packed`) with global default + per-task override
 - Habit recurrence canonical source (`recurrenceRule` / RRULE) with `recoveryPolicy` (`skip` or `recover`)
+- Normalized recurring model (`recurrencePatterns`, `workItemSeries`, `workItemOccurrences`) to dedupe recurrence metadata and instance state
 - Tasks and habits dashboard UIs with create/edit/delete/toggle flows
 - Constraint-based auto-scheduling into available calendar slots (15-minute discretization)
 - Scheduling run tracking for observability and debugging
 - Calendar event model with multi-source support (`manual`, `google`, `task`, `habit`)
+- Unified aside routing for details/edit (`inbox`, `task`, `habit`, `event`) with single-click open
 - Billing integration via Autumn with create-only metering for `tasks` and `habits`
 - Scheduling remains unlimited across all plans (no scheduling metering)
 - WorkOS-based authentication and user identity flow
@@ -47,6 +49,9 @@ Defined in `convex/schema.ts`:
 - `userSettings` — per-user preferences, Google tokens, timezone, scheduling config
 - `tasks` — task definitions with priority, deadline, duration, scheduling metadata
 - `habits` — habit definitions with recurrence rules and recovery policy
+- `recurrencePatterns` — deduplicated recurrence/window definitions keyed by per-user fingerprint
+- `workItemSeries` — normalized recurring lineage for task/habit generators
+- `workItemOccurrences` — materialized/tracked recurring occurrences and per-instance overrides
 - `hoursSets` — reusable time-window sets that control when tasks/habits can be scheduled
 - `taskCategories` — user-defined categories with colors for tasks and habits
 - `calendarEvents` — individual event occurrences from any source (manual, google, task, habit)
@@ -56,6 +61,16 @@ Defined in `convex/schema.ts`:
 - `schedulingRuns` — tracks lifecycle and diagnostics of each constraint-solver run
 - `billingReservations` — transactional billing state for task/habit creation
 - `billingLocks` — per-user/per-feature locks to serialize billable operations
+
+## Aside Interaction Model
+
+- Create flows stay modal (`CreateTaskDialog`, `CreateHabitDialog`).
+- Edit flows for tasks/habits are routed through right-aside content modes (`taskEdit`, `habitEdit`).
+- Single-click task/habit cards open detail routes (`taskDetails`, `habitDetails`) across tasks, habits, priorities, aside tabs, and calendar task/habit events.
+- Task and habit detail views include paginated `Upcoming` and `Past` occurrence buckets (initial `5`, load-more cursor pagination) backed by:
+  - `calendar/queries:listTaskOccurrencesPage`
+  - `calendar/queries:listHabitOccurrencesPage`
+- Aside content state is centralized in `apps/web/components/aside-panel/aside-content-context.tsx` and should be preferred over route-local edit sheets for task/habit editing.
 
 ## System Flowcharts
 

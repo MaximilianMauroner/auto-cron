@@ -47,9 +47,32 @@ export const runForUser: ReturnType<typeof internalAction> = internalAction({
 		reasonCode: v.optional(v.string()),
 	}),
 	handler: async (ctx, args) => {
-		await ctx.runMutation(internal.scheduling.mutations.markRunRunning, {
+		const acquiredRun = await ctx.runMutation(internal.scheduling.mutations.markRunRunning, {
 			runId: args.runId,
 		});
+		if (!acquiredRun) {
+			const isSuperseded = await ctx.runQuery(internal.scheduling.queries.isRunSuperseded, {
+				runId: args.runId,
+				userId: args.userId,
+			});
+			if (isSuperseded) {
+				await ctx.runMutation(internal.scheduling.mutations.failRun, {
+					runId: args.runId,
+					error: "Run superseded by a newer queued run.",
+					reasonCode: "SUPERSEDED_BY_NEWER_RUN",
+				});
+				return {
+					runId: args.runId,
+					status: "failed" as const,
+					reasonCode: "SUPERSEDED_BY_NEWER_RUN",
+				};
+			}
+			return {
+				runId: args.runId,
+				status: "completed" as const,
+				reasonCode: "DUPLICATE_DISPATCH_SKIPPED",
+			};
+		}
 		const isSupersededAtStart = await ctx.runQuery(internal.scheduling.queries.isRunSuperseded, {
 			runId: args.runId,
 			userId: args.userId,
@@ -78,7 +101,23 @@ export const runForUser: ReturnType<typeof internalAction> = internalAction({
 				userId: args.userId,
 				now: Date.now(),
 			});
+			console.info("[scheduling:horizon-solver-input]", {
+				userId: args.userId,
+				runId: args.runId,
+				triggeredBy: args.triggeredBy,
+				inputHorizonWeeks: input.horizonWeeks,
+				now: input.now,
+			});
 			const solved = solveSchedule(input);
+			console.info("[scheduling:horizon-solver-output]", {
+				userId: args.userId,
+				runId: args.runId,
+				triggeredBy: args.triggeredBy,
+				inputHorizonWeeks: input.horizonWeeks,
+				horizonStart: solved.horizonStart,
+				horizonEnd: solved.horizonEnd,
+				computedHorizonDays: Math.round((solved.horizonEnd - solved.horizonStart) / 86_400_000),
+			});
 
 			if (!solved.feasibleHard) {
 				await ctx.runMutation(internal.scheduling.mutations.failRun, {

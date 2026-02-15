@@ -6,7 +6,6 @@ import { GOOGLE_CALENDAR_COLORS } from "../categories/shared";
 import { normalizeSchedulingDowntimeMinutes } from "../hours/shared";
 import { getMaxHorizonDays } from "../planLimits";
 import type { SchedulableTaskStatus } from "./queryTypes";
-import { recurrenceFromLegacyFrequency } from "./rrule";
 import { isRunNewer } from "./run_order";
 
 const schedulingModeValidator = v.union(
@@ -263,6 +262,14 @@ export const getSchedulingInputForUser = internalQuery({
 		const maxHorizonDays = getMaxHorizonDays(settings?.activeProductId);
 		const horizonDays = Math.min(settings?.schedulingHorizonDays ?? maxHorizonDays, maxHorizonDays);
 		const horizonWeeks = Math.max(1, Math.min(12, Math.floor(horizonDays / 7)));
+		console.info("[scheduling:horizon-clamp-input]", {
+			userId: args.userId,
+			activeProductId: settings?.activeProductId ?? null,
+			requestedHorizonDays: settings?.schedulingHorizonDays ?? null,
+			maxHorizonDays,
+			effectiveHorizonDays: horizonDays,
+			effectiveHorizonWeeks: horizonWeeks,
+		});
 		const defaultTaskMode = sanitizeTaskMode(
 			(settings as { defaultTaskSchedulingMode?: string } | undefined)?.defaultTaskSchedulingMode,
 		);
@@ -357,33 +364,47 @@ export const getSchedulingInputForUser = internalQuery({
 				pinnedEventMinutes: pinnedMinutesByTask.get(String(task._id)) ?? 0,
 			}));
 
-		const mappedHabits = habits.map((habit) => ({
-			id: habit._id,
-			creationTime: habit._creationTime,
-			title: habit.title,
-			priority: sanitizeHabitPriority(habit.priority),
-			recoveryPolicy: habit.recoveryPolicy ?? "skip",
-			recurrenceRule:
-				habit.recurrenceRule ??
-				recurrenceFromLegacyFrequency((habit as { frequency?: string }).frequency),
-			startDate: habit.startDate,
-			endDate: habit.endDate,
-			durationMinutes: habit.durationMinutes,
-			minDurationMinutes: habit.minDurationMinutes,
-			maxDurationMinutes: habit.maxDurationMinutes,
-			repeatsPerPeriod: habit.repeatsPerPeriod,
-			idealTime: habit.idealTime,
-			preferredDays: habit.preferredDays,
-			hoursSetId: habit.hoursSetId,
-			preferredCalendarId: resolvePreferredCalendarId({
-				explicitPreferredCalendarId: habit.preferredCalendarId,
+		const recurrencePatternIds = [
+			...new Set(habits.map((habit) => String(habit.recurrencePatternId))),
+		];
+		const recurrencePatternDocs = await Promise.all(
+			recurrencePatternIds.map((id) => ctx.db.get(id as Id<"recurrencePatterns">)),
+		);
+		const recurrencePatternById = new Map(
+			recurrencePatternIds.map((id, index) => [id, recurrencePatternDocs[index] ?? null] as const),
+		);
+
+		const mappedHabits = habits.map((habit) => {
+			const pattern = recurrencePatternById.get(String(habit.recurrencePatternId));
+			if (!pattern) {
+				throw new Error(`Missing recurrence pattern for habit ${habit._id}`);
+			}
+			return {
+				id: habit._id,
+				creationTime: habit._creationTime,
+				title: habit.title,
+				priority: sanitizeHabitPriority(habit.priority),
+				recoveryPolicy: pattern.recoveryPolicy ?? "skip",
+				recurrenceRule: pattern.recurrenceRule,
+				startDate: pattern.startDate,
+				endDate: pattern.endDate,
+				durationMinutes: habit.durationMinutes,
+				minDurationMinutes: habit.minDurationMinutes,
+				maxDurationMinutes: habit.maxDurationMinutes,
+				repeatsPerPeriod: pattern.repeatsPerPeriod,
+				idealTime: habit.idealTime,
+				preferredDays: pattern.preferredDays,
 				hoursSetId: habit.hoursSetId,
-				hoursSetCalendarById,
-				defaultHoursSetId,
-			}),
-			color: habit.color,
-			isActive: habit.isActive,
-		}));
+				preferredCalendarId: resolvePreferredCalendarId({
+					explicitPreferredCalendarId: habit.preferredCalendarId,
+					hoursSetId: habit.hoursSetId,
+					hoursSetCalendarById,
+					defaultHoursSetId,
+				}),
+				color: habit.color,
+				isActive: habit.isActive,
+			};
+		});
 
 		const hoursBySetId = Object.fromEntries(
 			hoursSets.map((set) => [String(set._id), set.windows] as const),

@@ -132,44 +132,26 @@ const syncUserFromGoogle = async (
 
 	const mappedEvents = allEvents.map(mapProviderEventToMutationEvent);
 
-	// Batch events into chunks to avoid OCC (Optimistic Concurrency Control)
-	// failures when syncing large numbers of calendar events.
-	const BATCH_SIZE = 50;
-	if (mappedEvents.length <= BATCH_SIZE) {
-		// Small sync — single mutation handles everything.
-		await upsertSyncedEventsForUser(
-			ctx,
-			buildSyncMutationPayload({
-				userId,
-				resetCalendars,
-				events: mappedEvents,
-				deletedEvents: allDeletedEvents,
-				nextTokens,
-				calendars: syncedCalendars,
-			}),
-		);
-	} else {
-		// Large sync — first handle reset, deleted events, and settings update
-		// without events to keep the transaction small.
-		await upsertSyncedEventsForUser(
-			ctx,
-			buildSyncMutationPayload({
-				userId,
-				resetCalendars,
-				events: [],
-				deletedEvents: allDeletedEvents,
-				nextTokens,
-				calendars: syncedCalendars,
-			}),
-		);
+	// First handle reset/deletes/token updates without event upserts.
+	await upsertSyncedEventsForUser(
+		ctx,
+		buildSyncMutationPayload({
+			userId,
+			resetCalendars,
+			events: [],
+			deletedEvents: allDeletedEvents,
+			nextTokens,
+			calendars: syncedCalendars,
+		}),
+	);
 
-		// Then upsert events in batches to avoid OCC conflicts.
-		for (let i = 0; i < mappedEvents.length; i += BATCH_SIZE) {
-			await upsertSyncedEventsBatch(ctx, {
-				userId,
-				events: mappedEvents.slice(i, i + BATCH_SIZE),
-			});
-		}
+	// Then upsert events in smaller batches to reduce transaction contention.
+	const BATCH_SIZE = 25;
+	for (let i = 0; i < mappedEvents.length; i += BATCH_SIZE) {
+		await upsertSyncedEventsBatch(ctx, {
+			userId,
+			events: mappedEvents.slice(i, i + BATCH_SIZE),
+		});
 	}
 
 	const combinedRange = resolveCombinedNormalizationRange(allEvents, effectiveRange);
@@ -265,9 +247,20 @@ export const syncFromGoogleForUser: ReturnType<typeof internalAction> = internal
 		deleted: v.number(),
 	}),
 	handler: async (ctx, args) => {
-		await ctx.runMutation(internal.calendar.mutations.markGoogleSyncRunRunning, {
-			runId: args.runId,
-		});
+		const acquiredRun = await ctx.runMutation(
+			internal.calendar.mutations.markGoogleSyncRunRunning,
+			{
+				runId: args.runId,
+			},
+		);
+		if (!acquiredRun) {
+			return {
+				runId: args.runId,
+				status: "completed" as const,
+				imported: 0,
+				deleted: 0,
+			};
+		}
 		try {
 			const settings = await ctx.runQuery(internal.calendar.internal.getUserGoogleSettings, {
 				userId: args.userId,
@@ -843,6 +836,7 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 		let created = 0;
 		let updated = 0;
 		let unchanged = 0;
+		let failed = 0;
 		const localGoogleUpdates: Array<{
 			id: ScheduledEventForGoogleSync["id"];
 			googleEventId: string;
@@ -852,22 +846,88 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 		}> = [];
 
 		for (const event of scheduledEvents) {
-			const remote = event.googleEventId
-				? remoteByGoogleEventId.get(event.googleEventId)
-				: undefined;
-			const action = resolveSyncPushAction(event, remote);
+			try {
+				if (event.end <= event.start) {
+					console.error("[calendar] skipping scheduled block with invalid range", {
+						userId: args.userId,
+						eventId: String(event.id),
+						start: event.start,
+						end: event.end,
+						allDay: event.allDay,
+					});
+					failed += 1;
+					continue;
+				}
 
-			if (action === "create") {
-				const createdEvent = await provider.createEvent({
+				const remote = event.googleEventId
+					? remoteByGoogleEventId.get(event.googleEventId)
+					: undefined;
+				const action = resolveSyncPushAction(event, remote);
+
+				if (action === "create") {
+					const createdEvent = await provider.createEvent({
+						refreshToken: settings.googleRefreshToken,
+						calendarId: resolveCalendarId(event.calendarId),
+						event: {
+							title: event.title,
+							description: event.description,
+							start: event.start,
+							end: event.end,
+							allDay: event.allDay,
+							appSourceKey: event.sourceId,
+							recurrenceRule: event.recurrenceRule,
+							calendarId: resolveCalendarId(event.calendarId),
+							busyStatus: event.busyStatus,
+							visibility: event.visibility,
+							location: event.location,
+							color: event.color,
+						},
+					});
+					localGoogleUpdates.push({
+						id: event.id,
+						googleEventId: createdEvent.googleEventId,
+						calendarId: createdEvent.calendarId,
+						etag: createdEvent.etag,
+						lastSyncedAt: createdEvent.lastSyncedAt,
+					});
+					created += 1;
+					continue;
+				}
+
+				if (action === "unchanged") {
+					unchanged += 1;
+					continue;
+				}
+
+				const updatedEvent = await provider.updateEvent({
 					refreshToken: settings.googleRefreshToken,
-					calendarId: resolveCalendarId(event.calendarId),
+					calendarId: resolveCalendarId(remote?.calendarId ?? event.calendarId),
 					event: {
+						_id: String(event.id),
 						title: event.title,
 						description: event.description,
 						start: event.start,
 						end: event.end,
 						allDay: event.allDay,
-						appSourceKey: event.sourceId,
+						sourceId: event.sourceId,
+						googleEventId: event.googleEventId,
+						calendarId: resolveCalendarId(remote?.calendarId ?? event.calendarId),
+						recurrenceRule: event.recurrenceRule,
+						recurringEventId: event.recurringEventId,
+						originalStartTime: event.originalStartTime,
+						status: event.status,
+						etag: event.etag,
+						busyStatus: event.busyStatus,
+						visibility: event.visibility,
+						location: event.location,
+						color: event.color,
+					},
+					patch: {
+						title: event.title,
+						description: event.description,
+						start: event.start,
+						end: event.end,
+						allDay: event.allDay,
 						recurrenceRule: event.recurrenceRule,
 						calendarId: resolveCalendarId(event.calendarId),
 						busyStatus: event.busyStatus,
@@ -875,70 +935,35 @@ export const syncScheduledBlocksToGoogle: ReturnType<typeof internalAction> = in
 						location: event.location,
 						color: event.color,
 					},
+					scope: "single",
 				});
+
 				localGoogleUpdates.push({
 					id: event.id,
-					googleEventId: createdEvent.googleEventId,
-					calendarId: createdEvent.calendarId,
-					etag: createdEvent.etag,
-					lastSyncedAt: createdEvent.lastSyncedAt,
+					googleEventId: updatedEvent.googleEventId,
+					calendarId: updatedEvent.calendarId,
+					etag: updatedEvent.etag,
+					lastSyncedAt: updatedEvent.lastSyncedAt,
 				});
-				created += 1;
-				continue;
-			}
-
-			if (action === "unchanged") {
-				unchanged += 1;
-				continue;
-			}
-
-			const updatedEvent = await provider.updateEvent({
-				refreshToken: settings.googleRefreshToken,
-				calendarId: resolveCalendarId(remote?.calendarId ?? event.calendarId),
-				event: {
-					_id: String(event.id),
-					title: event.title,
-					description: event.description,
-					start: event.start,
-					end: event.end,
-					allDay: event.allDay,
-					sourceId: event.sourceId,
+				updated += 1;
+			} catch (error) {
+				console.error("[calendar] failed to push scheduled block to Google", {
+					userId: args.userId,
+					eventId: String(event.id),
 					googleEventId: event.googleEventId,
-					calendarId: resolveCalendarId(remote?.calendarId ?? event.calendarId),
-					recurrenceRule: event.recurrenceRule,
-					recurringEventId: event.recurringEventId,
-					originalStartTime: event.originalStartTime,
-					status: event.status,
-					etag: event.etag,
-					busyStatus: event.busyStatus,
-					visibility: event.visibility,
-					location: event.location,
-					color: event.color,
-				},
-				patch: {
-					title: event.title,
-					description: event.description,
-					start: event.start,
-					end: event.end,
-					allDay: event.allDay,
-					recurrenceRule: event.recurrenceRule,
-					calendarId: resolveCalendarId(event.calendarId),
-					busyStatus: event.busyStatus,
-					visibility: event.visibility,
-					location: event.location,
-					color: event.color,
-				},
-				scope: "single",
-			});
+					calendarId: event.calendarId,
+					error: error instanceof Error ? error.message : error,
+				});
+				failed += 1;
+			}
+		}
 
-			localGoogleUpdates.push({
-				id: event.id,
-				googleEventId: updatedEvent.googleEventId,
-				calendarId: updatedEvent.calendarId,
-				etag: updatedEvent.etag,
-				lastSyncedAt: updatedEvent.lastSyncedAt,
+		if (failed > 0) {
+			console.error("[calendar] completed scheduler push with failures", {
+				userId: args.userId,
+				failed,
+				total: scheduledEvents.length,
 			});
-			updated += 1;
 		}
 
 		if (localGoogleUpdates.length > 0) {

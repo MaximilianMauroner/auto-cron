@@ -1,25 +1,69 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const weekdayValidator = v.union(
+	v.literal(0),
+	v.literal(1),
+	v.literal(2),
+	v.literal(3),
+	v.literal(4),
+	v.literal(5),
+	v.literal(6),
+);
+
+const taskPriorityValidator = v.union(
+	v.literal("low"),
+	v.literal("medium"),
+	v.literal("high"),
+	v.literal("critical"),
+	v.literal("blocker"),
+);
+
+const habitPriorityValidator = v.union(
+	v.literal("low"),
+	v.literal("medium"),
+	v.literal("high"),
+	v.literal("critical"),
+);
+
+const taskStatusValidator = v.union(
+	v.literal("backlog"),
+	v.literal("queued"),
+	v.literal("scheduled"),
+	v.literal("in_progress"),
+	v.literal("done"),
+);
+
+const schedulingModeValidator = v.union(
+	v.literal("fastest"),
+	v.literal("balanced"),
+	v.literal("packed"),
+);
+
+const habitFrequencyValidator = v.union(
+	v.literal("daily"),
+	v.literal("weekly"),
+	v.literal("biweekly"),
+	v.literal("monthly"),
+);
+
+const recoveryPolicyValidator = v.union(v.literal("skip"), v.literal("recover"));
+
+const taskVisibilityPreferenceValidator = v.union(v.literal("default"), v.literal("private"));
+
+const habitVisibilityPreferenceValidator = v.union(
+	v.literal("default"),
+	v.literal("public"),
+	v.literal("private"),
+);
+
 export default defineSchema({
 	userSettings: defineTable({
 		userId: v.string(),
 		timezone: v.string(),
 		timeFormatPreference: v.optional(v.union(v.literal("12h"), v.literal("24h"))),
-		defaultTaskSchedulingMode: v.union(
-			v.literal("fastest"),
-			v.literal("balanced"),
-			v.literal("packed"),
-		),
-		taskQuickCreatePriority: v.optional(
-			v.union(
-				v.literal("low"),
-				v.literal("medium"),
-				v.literal("high"),
-				v.literal("critical"),
-				v.literal("blocker"),
-			),
-		),
+		defaultTaskSchedulingMode: schedulingModeValidator,
+		taskQuickCreatePriority: v.optional(taskPriorityValidator),
 		taskQuickCreateStatus: v.optional(v.union(v.literal("backlog"), v.literal("queued"))),
 		taskQuickCreateEstimatedMinutes: v.optional(v.number()),
 		taskQuickCreateSplitAllowed: v.optional(v.boolean()),
@@ -28,21 +72,13 @@ export default defineSchema({
 		taskQuickCreateRestMinutes: v.optional(v.number()),
 		taskQuickCreateTravelMinutes: v.optional(v.number()),
 		taskQuickCreateSendToUpNext: v.optional(v.boolean()),
-		taskQuickCreateVisibilityPreference: v.optional(
-			v.union(v.literal("default"), v.literal("private")),
-		),
+		taskQuickCreateVisibilityPreference: v.optional(taskVisibilityPreferenceValidator),
 		taskQuickCreateColor: v.optional(v.string()),
-		habitQuickCreatePriority: v.optional(
-			v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("critical")),
-		),
+		habitQuickCreatePriority: v.optional(habitPriorityValidator),
 		habitQuickCreateDurationMinutes: v.optional(v.number()),
-		habitQuickCreateFrequency: v.optional(
-			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly")),
-		),
-		habitQuickCreateRecoveryPolicy: v.optional(v.union(v.literal("skip"), v.literal("recover"))),
-		habitQuickCreateVisibilityPreference: v.optional(
-			v.union(v.literal("default"), v.literal("private")),
-		),
+		habitQuickCreateFrequency: v.optional(habitFrequencyValidator),
+		habitQuickCreateRecoveryPolicy: v.optional(recoveryPolicyValidator),
+		habitQuickCreateVisibilityPreference: v.optional(taskVisibilityPreferenceValidator),
 		habitQuickCreateColor: v.optional(v.string()),
 		googleRefreshToken: v.optional(v.string()),
 		googleSyncToken: v.optional(v.string()),
@@ -77,17 +113,7 @@ export default defineSchema({
 		schedulingHorizonDays: v.number(), // default: 70
 		schedulingDowntimeMinutes: v.optional(v.number()),
 		schedulingStepMinutes: v.optional(v.union(v.literal(15), v.literal(30), v.literal(60))),
-		weekStartsOn: v.optional(
-			v.union(
-				v.literal(0),
-				v.literal(1),
-				v.literal(2),
-				v.literal(3),
-				v.literal(4),
-				v.literal(5),
-				v.literal(6),
-			),
-		),
+		weekStartsOn: v.optional(weekdayValidator),
 		dateFormat: v.optional(
 			v.union(v.literal("MM/DD/YYYY"), v.literal("DD/MM/YYYY"), v.literal("YYYY-MM-DD")),
 		),
@@ -117,20 +143,8 @@ export default defineSchema({
 		userId: v.string(),
 		title: v.string(),
 		description: v.optional(v.string()),
-		priority: v.union(
-			v.literal("low"),
-			v.literal("medium"),
-			v.literal("high"),
-			v.literal("critical"),
-			v.literal("blocker"),
-		),
-		status: v.union(
-			v.literal("backlog"),
-			v.literal("queued"),
-			v.literal("scheduled"),
-			v.literal("in_progress"),
-			v.literal("done"),
-		),
+		priority: taskPriorityValidator,
+		status: taskStatusValidator,
 		estimatedMinutes: v.number(),
 		deadline: v.optional(v.number()), // timestamp
 		scheduleAfter: v.optional(v.number()),
@@ -146,49 +160,42 @@ export default defineSchema({
 		location: v.optional(v.string()),
 		sendToUpNext: v.optional(v.boolean()),
 		hoursSetId: v.optional(v.id("hoursSets")),
-		schedulingMode: v.optional(
-			v.union(v.literal("fastest"), v.literal("balanced"), v.literal("packed")),
-		),
-		visibilityPreference: v.optional(v.union(v.literal("default"), v.literal("private"))),
+		schedulingMode: v.optional(schedulingModeValidator),
+		visibilityPreference: v.optional(taskVisibilityPreferenceValidator),
 		preferredCalendarId: v.optional(v.string()),
 		color: v.optional(v.string()),
 		categoryId: v.optional(v.id("taskCategories")),
+		recurrencePatternId: v.optional(v.id("recurrencePatterns")),
+		seriesId: v.optional(v.id("workItemSeries")),
+		sourceTaskId: v.optional(v.id("tasks")),
+		sourceOccurrenceId: v.optional(v.id("workItemOccurrences")),
+		instanceDate: v.optional(v.number()),
+		isRecurringTemplate: v.optional(v.boolean()),
 	})
 		.index("by_userId", ["userId"])
 		.index("by_userId_status", ["userId", "status"])
 		.index("by_userId_hoursSetId", ["userId", "hoursSetId"])
-		.index("by_userId_categoryId", ["userId", "categoryId"]),
+		.index("by_userId_categoryId", ["userId", "categoryId"])
+		.index("by_userId_seriesId", ["userId", "seriesId"])
+		.index("by_userId_sourceTaskId", ["userId", "sourceTaskId"])
+		.index("by_userId_sourceOccurrenceId", ["userId", "sourceOccurrenceId"])
+		.index("by_userId_instanceDate", ["userId", "instanceDate"]),
 
 	habits: defineTable({
 		userId: v.string(),
 		title: v.string(),
 		description: v.optional(v.string()),
-		priority: v.optional(
-			v.union(v.literal("low"), v.literal("medium"), v.literal("high"), v.literal("critical")),
-		),
+		priority: v.optional(habitPriorityValidator),
 		categoryId: v.id("taskCategories"),
-		recurrenceRule: v.optional(v.string()),
-		recoveryPolicy: v.optional(v.union(v.literal("skip"), v.literal("recover"))),
-		frequency: v.optional(
-			v.union(v.literal("daily"), v.literal("weekly"), v.literal("biweekly"), v.literal("monthly")),
-		),
 		durationMinutes: v.number(),
 		minDurationMinutes: v.optional(v.number()),
 		maxDurationMinutes: v.optional(v.number()),
-		repeatsPerPeriod: v.optional(v.number()),
 		idealTime: v.optional(v.string()),
-		preferredWindowStart: v.optional(v.string()), // "06:00"
-		preferredWindowEnd: v.optional(v.string()), // "08:00"
-		preferredDays: v.optional(v.array(v.number())),
 		hoursSetId: v.optional(v.id("hoursSets")),
 		preferredCalendarId: v.optional(v.string()),
 		color: v.optional(v.string()),
 		location: v.optional(v.string()),
-		startDate: v.optional(v.number()),
-		endDate: v.optional(v.number()),
-		visibilityPreference: v.optional(
-			v.union(v.literal("default"), v.literal("public"), v.literal("private")),
-		),
+		visibilityPreference: v.optional(habitVisibilityPreferenceValidator),
 		timeDefenseMode: v.optional(
 			v.union(v.literal("always_free"), v.literal("auto"), v.literal("always_busy")),
 		),
@@ -203,10 +210,85 @@ export default defineSchema({
 		dependencyNote: v.optional(v.string()),
 		publicDescription: v.optional(v.string()),
 		isActive: v.boolean(),
+		recurrencePatternId: v.id("recurrencePatterns"),
+		seriesId: v.optional(v.id("workItemSeries")),
 	})
 		.index("by_userId", ["userId"])
 		.index("by_userId_hoursSetId", ["userId", "hoursSetId"])
-		.index("by_userId_categoryId", ["userId", "categoryId"]),
+		.index("by_userId_categoryId", ["userId", "categoryId"])
+		.index("by_userId_recurrencePatternId", ["userId", "recurrencePatternId"])
+		.index("by_userId_seriesId", ["userId", "seriesId"]),
+
+	recurrencePatterns: defineTable({
+		userId: v.string(),
+		fingerprint: v.string(),
+		recurrenceRule: v.string(),
+		frequency: v.optional(habitFrequencyValidator),
+		interval: v.optional(v.number()),
+		repeatsPerPeriod: v.optional(v.number()),
+		recoveryPolicy: v.optional(recoveryPolicyValidator),
+		startDate: v.optional(v.number()),
+		endDate: v.optional(v.number()),
+		preferredWindowStart: v.optional(v.string()),
+		preferredWindowEnd: v.optional(v.string()),
+		preferredDays: v.optional(v.array(weekdayValidator)),
+		timezone: v.optional(v.string()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_userId", ["userId"])
+		.index("by_userId_fingerprint", ["userId", "fingerprint"])
+		.index("by_userId_updatedAt", ["userId", "updatedAt"]),
+
+	workItemSeries: defineTable({
+		userId: v.string(),
+		sourceType: v.union(v.literal("task"), v.literal("habit")),
+		sourceTaskId: v.optional(v.id("tasks")),
+		sourceHabitId: v.optional(v.id("habits")),
+		recurrencePatternId: v.id("recurrencePatterns"),
+		isActive: v.boolean(),
+		anchorStart: v.optional(v.number()),
+		horizonCursor: v.optional(v.number()),
+		lastOccurrenceAt: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_userId", ["userId"])
+		.index("by_userId_sourceType", ["userId", "sourceType"])
+		.index("by_userId_sourceTaskId", ["userId", "sourceTaskId"])
+		.index("by_userId_sourceHabitId", ["userId", "sourceHabitId"])
+		.index("by_userId_recurrencePatternId", ["userId", "recurrencePatternId"]),
+
+	workItemOccurrences: defineTable({
+		userId: v.string(),
+		seriesId: v.id("workItemSeries"),
+		sourceType: v.union(v.literal("task"), v.literal("habit")),
+		sourceTaskId: v.optional(v.id("tasks")),
+		sourceHabitId: v.optional(v.id("habits")),
+		occurrenceKey: v.string(),
+		plannedStart: v.number(),
+		plannedEnd: v.optional(v.number()),
+		status: v.union(
+			v.literal("pending"),
+			v.literal("scheduled"),
+			v.literal("done"),
+			v.literal("skipped"),
+			v.literal("cancelled"),
+		),
+		taskId: v.optional(v.id("tasks")),
+		calendarEventId: v.optional(v.id("calendarEvents")),
+		isException: v.optional(v.boolean()),
+		overrideRecurrencePatternId: v.optional(v.id("recurrencePatterns")),
+		completedAt: v.optional(v.number()),
+		createdAt: v.number(),
+		updatedAt: v.number(),
+	})
+		.index("by_userId", ["userId"])
+		.index("by_userId_seriesId_plannedStart", ["userId", "seriesId", "plannedStart"])
+		.index("by_userId_sourceTaskId_plannedStart", ["userId", "sourceTaskId", "plannedStart"])
+		.index("by_userId_sourceHabitId_plannedStart", ["userId", "sourceHabitId", "plannedStart"])
+		.index("by_userId_taskId", ["userId", "taskId"])
+		.index("by_userId_occurrenceKey", ["userId", "occurrenceKey"]),
 
 	hoursSets: defineTable({
 		userId: v.string(),
@@ -215,15 +297,7 @@ export default defineSchema({
 		isSystem: v.boolean(),
 		windows: v.array(
 			v.object({
-				day: v.union(
-					v.literal(0),
-					v.literal(1),
-					v.literal(2),
-					v.literal(3),
-					v.literal(4),
-					v.literal(5),
-					v.literal(6),
-				),
+				day: weekdayValidator,
 				startMinute: v.number(),
 				endMinute: v.number(),
 			}),
@@ -284,7 +358,8 @@ export default defineSchema({
 		.index("by_userId_calendarId_googleEventId", ["userId", "calendarId", "googleEventId"])
 		.index("by_userId_recurringEventId", ["userId", "recurringEventId"])
 		.index("by_userId_seriesId_occurrenceStart", ["userId", "seriesId", "occurrenceStart"])
-		.index("by_userId_source_sourceId", ["userId", "source", "sourceId"]),
+		.index("by_userId_source_sourceId", ["userId", "source", "sourceId"])
+		.index("by_userId_source_sourceId_start", ["userId", "source", "sourceId", "start"]),
 
 	calendarEventSeries: defineTable({
 		userId: v.string(),
@@ -465,6 +540,36 @@ export default defineSchema({
 		expiresAt: v.number(),
 		updatedAt: v.number(),
 	}).index("by_userId_featureId", ["userId", "featureId"]),
+
+	changeLogs: defineTable({
+		userId: v.string(),
+		entityType: v.union(
+			v.literal("task"),
+			v.literal("habit"),
+			v.literal("event"),
+			v.literal("occurrence"),
+		),
+		entityId: v.string(),
+		eventId: v.optional(v.id("calendarEvents")),
+		seriesId: v.optional(v.id("calendarEventSeries")),
+		action: v.string(),
+		scope: v.optional(v.union(v.literal("single"), v.literal("following"), v.literal("series"))),
+		actor: v.object({
+			type: v.literal("user"),
+			id: v.string(),
+		}),
+		metadata: v.optional(v.any()),
+		timestamp: v.number(),
+		createdAt: v.number(),
+	})
+		.index("by_userId_entityType_entityId_timestamp", [
+			"userId",
+			"entityType",
+			"entityId",
+			"timestamp",
+		])
+		.index("by_userId_eventId_timestamp", ["userId", "eventId", "timestamp"])
+		.index("by_userId_seriesId_timestamp", ["userId", "seriesId", "timestamp"]),
 
 	feedback: defineTable({
 		userId: v.optional(v.string()),

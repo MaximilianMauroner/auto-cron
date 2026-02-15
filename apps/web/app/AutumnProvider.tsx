@@ -14,9 +14,9 @@ function resolveBackendUrl() {
 
 	if (explicitUrl) return normalizeBaseUrl(explicitUrl);
 
-	if (typeof window !== "undefined") return window.location.origin;
+	if (clientEnv.NEXT_PUBLIC_APP_URL) return normalizeBaseUrl(clientEnv.NEXT_PUBLIC_APP_URL);
 
-	return "http://localhost:3000";
+	return normalizeBaseUrl(new URL(clientEnv.NEXT_PUBLIC_WORKOS_REDIRECT_URI).origin);
 }
 
 export function AutumnProvider({ children }: { children: ReactNode }) {

@@ -8,6 +8,14 @@ import { withActionAuth } from "../auth";
 import { env } from "../env";
 import { VALID_PRODUCT_IDS, isValidProductId } from "../planLimits";
 
+const CURRENTLY_ENTITLED_PRODUCT_STATUSES = [
+	"active",
+	"trialing",
+	"past_due",
+	"cancelling",
+	"canceling",
+] as const;
+
 export const bootstrapHoursSetsForUser = action({
 	args: {},
 	returns: v.object({
@@ -94,25 +102,38 @@ export const syncActiveProduct = action({
 			products?: Array<{ id?: string; status?: string; is_add_on?: boolean }>;
 		};
 		const products = customer.products ?? [];
-		const activeProducts = products.filter((p) =>
-			["active", "trialing", "past_due"].includes(p.status ?? ""),
+		const entitledProducts = products.filter(
+			(p): p is { id: string; status?: string; is_add_on?: boolean } =>
+				Boolean(p.id) &&
+				isValidProductId(p.id ?? "") &&
+				!p.is_add_on &&
+				CURRENTLY_ENTITLED_PRODUCT_STATUSES.includes(
+					(p.status ?? "") as (typeof CURRENTLY_ENTITLED_PRODUCT_STATUSES)[number],
+				),
 		);
-		const primaryProduct = activeProducts.find((p) => !p.is_add_on) ?? activeProducts[0];
-		const verifiedProductId = primaryProduct?.id;
+		const requestedEntitled =
+			requestedProductId && entitledProducts.some((product) => product.id === requestedProductId)
+				? requestedProductId
+				: undefined;
+		const primaryEntitled = entitledProducts[0]?.id;
+		const resolvedProductId = requestedEntitled ?? primaryEntitled ?? "free";
 
-		// Only allow setting a product that matches the verified subscription,
-		// or fallback to "free" if no active subscription
-		const resolvedProductId =
-			verifiedProductId && isValidProductId(verifiedProductId) ? verifiedProductId : "free";
-
-		// Always trust provider-verified state over client input to avoid mismatch races.
-		// The caller-provided product is treated as a hint only.
-		const productIdToPersist =
-			requestedProductId === resolvedProductId ? requestedProductId : resolvedProductId;
+		// Keep this filter for compatibility with any downstream assumptions.
+		const activeProducts = products.filter((p) =>
+			CURRENTLY_ENTITLED_PRODUCT_STATUSES.includes(
+				(p.status ?? "") as (typeof CURRENTLY_ENTITLED_PRODUCT_STATUSES)[number],
+			),
+		);
+		if (activeProducts.length === 0 && resolvedProductId !== "free") {
+			throw new ConvexError({
+				code: "SUBSCRIPTION_VERIFICATION_FAILED",
+				message: "Could not resolve an entitled product.",
+			});
+		}
 
 		return ctx.runMutation(internal.hours.mutations.internalUpdateActiveProduct, {
 			userId: ctx.userId,
-			productId: productIdToPersist,
+			productId: resolvedProductId,
 		});
 	}),
 });

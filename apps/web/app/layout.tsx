@@ -1,6 +1,7 @@
 import { ToastProvider } from "@/components/ui/toast-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UserPreferencesProvider } from "@/components/user-preferences-context";
+import { env } from "@/env";
 import { getConvexUrl } from "@/env/server";
 import { bebasNeue, cutiveMono, outfit } from "@/lib/fonts";
 import type { Metadata } from "next";
@@ -11,9 +12,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
 	metadataBase: new URL(
-		process.env.VERCEL_PROJECT_PRODUCTION_URL
-			? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-			: "http://localhost:3000",
+		env.NEXT_PUBLIC_APP_URL ??
+			(process.env.VERCEL_PROJECT_PRODUCTION_URL
+				? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+				: new URL(env.NEXT_PUBLIC_WORKOS_REDIRECT_URI).origin),
 	),
 	title: "Auto Cron",
 	description: "Intelligent auto-scheduling for tasks, habits, and calendar events",

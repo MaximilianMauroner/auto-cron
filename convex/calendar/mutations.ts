@@ -4,6 +4,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
+import { insertChangeLog } from "../changeLogs/shared";
 import {
 	defaultSchedulingStepMinutes,
 	defaultTaskQuickCreateSettings,
@@ -180,6 +181,65 @@ const recurrenceScopeValidator = v.union(
 	v.literal("following"),
 	v.literal("series"),
 );
+
+const eventUpdatePatchValidator = v.object({
+	title: v.optional(v.string()),
+	description: v.optional(v.string()),
+	start: v.optional(v.number()),
+	end: v.optional(v.number()),
+	allDay: v.optional(v.boolean()),
+	recurrenceRule: v.optional(v.string()),
+	calendarId: v.optional(v.string()),
+	busyStatus: v.optional(v.union(v.literal("free"), v.literal("busy"), v.literal("tentative"))),
+	visibility: v.optional(
+		v.union(
+			v.literal("default"),
+			v.literal("public"),
+			v.literal("private"),
+			v.literal("confidential"),
+		),
+	),
+	location: v.optional(v.string()),
+	color: v.optional(v.string()),
+});
+
+const logCalendarEventChange = async (
+	ctx: MutationCtx,
+	input: {
+		userId: string;
+		event: Doc<"calendarEvents">;
+		action: string;
+		scope?: RecurrenceEditScope;
+		metadata?: Record<string, unknown>;
+	},
+) => {
+	await insertChangeLog(ctx, {
+		userId: input.userId,
+		entityType: "event",
+		entityId: String(input.event._id),
+		eventId: input.event._id,
+		seriesId: input.event.seriesId,
+		action: input.action,
+		scope: input.scope,
+		metadata: input.metadata,
+	});
+};
+
+type SkipOccurrenceArgs = {
+	id: Id<"calendarEvents">;
+	scope?: RecurrenceEditScope;
+};
+
+type LockOccurrenceArgs = {
+	id: Id<"calendarEvents">;
+	locked: boolean;
+};
+
+type EditOccurrenceFollowingArgs = {
+	id: Id<"calendarEvents">;
+	patch: UpdateEventPatch;
+	scope?: "following" | "series";
+};
 
 /**
  * Computes event recency for deterministic upsert/dedupe ordering.
@@ -519,14 +579,14 @@ export const markGoogleSyncRunRunning = internalMutation({
 	args: {
 		runId: v.id("googleSyncRuns"),
 	},
-	returns: v.null(),
+	returns: v.boolean(),
 	handler: async (ctx, args) => {
 		const run = await ctx.db.get(args.runId);
-		if (!run || run.status !== "pending") return null;
+		if (!run || run.status !== "pending") return false;
 		await ctx.db.patch(args.runId, {
 			status: "running",
 		});
-		return null;
+		return true;
 	},
 });
 
@@ -1518,26 +1578,7 @@ export const createEvent = mutation({
 export const updateEvent = mutation({
 	args: {
 		id: v.id("calendarEvents"),
-		patch: v.object({
-			title: v.optional(v.string()),
-			description: v.optional(v.string()),
-			start: v.optional(v.number()),
-			end: v.optional(v.number()),
-			allDay: v.optional(v.boolean()),
-			recurrenceRule: v.optional(v.string()),
-			calendarId: v.optional(v.string()),
-			busyStatus: v.optional(v.union(v.literal("free"), v.literal("busy"), v.literal("tentative"))),
-			visibility: v.optional(
-				v.union(
-					v.literal("default"),
-					v.literal("public"),
-					v.literal("private"),
-					v.literal("confidential"),
-				),
-			),
-			location: v.optional(v.string()),
-			color: v.optional(v.string()),
-		}),
+		patch: eventUpdatePatchValidator,
 		scope: v.optional(recurrenceScopeValidator),
 	},
 	returns: v.object({
@@ -1620,6 +1661,15 @@ export const updateEvent = mutation({
 				});
 			}
 		}
+		await logCalendarEventChange(ctx, {
+			userId,
+			event,
+			action: scope === "single" ? "event_updated" : "event_updated_following",
+			scope,
+			metadata: {
+				changedFields: Object.keys(args.patch),
+			},
+		});
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId,
 			triggeredBy: "calendar_change",
@@ -1645,13 +1695,55 @@ export const deleteEvent = mutation({
 				message: "Event not found.",
 			});
 		}
-
-		await ctx.db.delete(args.id);
+		const scope = (args.scope ?? "single") as RecurrenceEditScope;
+		if (scope === "single" || !event.seriesId) {
+			await ctx.db.delete(args.id);
+			await logCalendarEventChange(ctx, {
+				userId,
+				event,
+				action: "event_deleted",
+				scope,
+				metadata: {
+					deletedCount: 1,
+				},
+			});
+		} else {
+			const baseOccurrenceStart = event.occurrenceStart ?? normalizeToMinute(event.start);
+			const seriesEvents = await ctx.db
+				.query("calendarEvents")
+				.withIndex("by_userId_seriesId_occurrenceStart", (q) =>
+					q.eq("userId", userId).eq("seriesId", event.seriesId as Id<"calendarEventSeries">),
+				)
+				.collect();
+			const affected =
+				scope === "following"
+					? seriesEvents.filter((seriesEvent) => {
+							const occurrenceStart =
+								seriesEvent.occurrenceStart ?? normalizeToMinute(seriesEvent.start);
+							return occurrenceStart >= baseOccurrenceStart;
+						})
+					: seriesEvents;
+			for (const seriesEvent of affected) {
+				await ctx.db.delete(seriesEvent._id);
+			}
+			if (scope === "series") {
+				await ctx.db.delete(event.seriesId);
+			}
+			await logCalendarEventChange(ctx, {
+				userId,
+				event,
+				action: scope === "following" ? "event_deleted_following" : "event_deleted_series",
+				scope,
+				metadata: {
+					deletedCount: affected.length,
+				},
+			});
+		}
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId,
 			triggeredBy: "calendar_change",
 		});
-		return { scope: (args.scope ?? "single") as RecurrenceEditScope };
+		return { scope };
 	}),
 });
 
@@ -1689,6 +1781,16 @@ export const moveResizeEvent = mutation({
 			if ((event.source === "task" || event.source === "habit") && event.sourceId) {
 				await ctx.db.patch(args.id, { pinned: true });
 			}
+			await logCalendarEventChange(ctx, {
+				userId,
+				event,
+				action: "event_moved_or_resized",
+				scope,
+				metadata: {
+					start: args.start,
+					end: args.end,
+				},
+			});
 			await enqueueSchedulingRunFromMutation(ctx, {
 				userId,
 				triggeredBy: "calendar_change",
@@ -1729,12 +1831,277 @@ export const moveResizeEvent = mutation({
 				updatedAt: now,
 			});
 		}
+		await logCalendarEventChange(ctx, {
+			userId,
+			event,
+			action:
+				scope === "following"
+					? "event_moved_or_resized_following"
+					: "event_moved_or_resized_series",
+			scope,
+			metadata: {
+				start: args.start,
+				end: args.end,
+			},
+		});
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId,
 			triggeredBy: "calendar_change",
 		});
 
 		return { id: args.id, scope };
+	}),
+});
+
+export const skipOccurrence = mutation({
+	args: {
+		id: v.id("calendarEvents"),
+		scope: v.optional(recurrenceScopeValidator),
+	},
+	returns: v.object({
+		scope: recurrenceScopeValidator,
+		updatedCount: v.number(),
+	}),
+	handler: withMutationAuth(async (ctx, args: SkipOccurrenceArgs) => {
+		const { userId } = ctx;
+		const event = await ctx.db.get(args.id);
+		if (!event || event.userId !== userId) {
+			throw new ConvexError({
+				code: "NOT_FOUND",
+				message: "Event not found.",
+			});
+		}
+		const scope = (args.scope ?? "single") as RecurrenceEditScope;
+		const now = Date.now();
+		if (scope === "single" || !event.seriesId) {
+			await ctx.db.patch(args.id, {
+				status: "cancelled",
+				updatedAt: now,
+			});
+			await logCalendarEventChange(ctx, {
+				userId,
+				event,
+				action: "occurrence_skipped",
+				scope,
+				metadata: { updatedCount: 1 },
+			});
+			await enqueueSchedulingRunFromMutation(ctx, {
+				userId,
+				triggeredBy: "calendar_change",
+			});
+			return { scope, updatedCount: 1 };
+		}
+		const baseOccurrenceStart = event.occurrenceStart ?? normalizeToMinute(event.start);
+		const seriesEvents = await ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_seriesId_occurrenceStart", (q) =>
+				q.eq("userId", userId).eq("seriesId", event.seriesId as Id<"calendarEventSeries">),
+			)
+			.collect();
+		const affected =
+			scope === "following"
+				? seriesEvents.filter((seriesEvent) => {
+						const occurrenceStart =
+							seriesEvent.occurrenceStart ?? normalizeToMinute(seriesEvent.start);
+						return occurrenceStart >= baseOccurrenceStart;
+					})
+				: seriesEvents;
+		for (const seriesEvent of affected) {
+			await ctx.db.patch(seriesEvent._id, {
+				status: "cancelled",
+				updatedAt: now,
+			});
+		}
+		await logCalendarEventChange(ctx, {
+			userId,
+			event,
+			action: scope === "following" ? "occurrence_skipped_following" : "occurrence_skipped_series",
+			scope,
+			metadata: { updatedCount: affected.length },
+		});
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
+		return { scope, updatedCount: affected.length };
+	}),
+});
+
+export const lockOccurrence = mutation({
+	args: {
+		id: v.id("calendarEvents"),
+		locked: v.boolean(),
+	},
+	returns: v.null(),
+	handler: withMutationAuth(async (ctx, args: LockOccurrenceArgs) => {
+		const { userId } = ctx;
+		const event = await ctx.db.get(args.id);
+		if (!event || event.userId !== userId) {
+			throw new ConvexError({
+				code: "NOT_FOUND",
+				message: "Event not found.",
+			});
+		}
+		if (event.source !== "task" && event.source !== "habit") {
+			throw new ConvexError({
+				code: "INVALID_SOURCE",
+				message: "Only task or habit events can be locked.",
+			});
+		}
+		await ctx.db.patch(args.id, {
+			pinned: args.locked,
+			updatedAt: Date.now(),
+		});
+		await logCalendarEventChange(ctx, {
+			userId,
+			event,
+			action: args.locked ? "occurrence_locked" : "occurrence_unlocked",
+			scope: "single",
+			metadata: {
+				locked: args.locked,
+			},
+		});
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
+		return null;
+	}),
+});
+
+export const editOccurrenceFollowing = mutation({
+	args: {
+		id: v.id("calendarEvents"),
+		patch: eventUpdatePatchValidator,
+		scope: v.optional(v.union(v.literal("following"), v.literal("series"))),
+	},
+	returns: v.object({
+		id: v.id("calendarEvents"),
+		scope: recurrenceScopeValidator,
+		updatedCount: v.number(),
+	}),
+	handler: withMutationAuth(async (ctx, args: EditOccurrenceFollowingArgs) => {
+		const { userId } = ctx;
+		const event = await ctx.db.get(args.id);
+		if (!event || event.userId !== userId) {
+			throw new ConvexError({
+				code: "NOT_FOUND",
+				message: "Event not found.",
+			});
+		}
+		const scope: "following" | "series" = args.scope ?? "following";
+		const now = Date.now();
+		if (!event.seriesId) {
+			await ctx.db.patch(args.id, {
+				...args.patch,
+				updatedAt: now,
+				occurrenceStart: normalizeToMinute(args.patch.start ?? event.start),
+			});
+			await logCalendarEventChange(ctx, {
+				userId,
+				event,
+				action: "event_updated",
+				scope: "single",
+				metadata: {
+					changedFields: Object.keys(args.patch),
+				},
+			});
+			await enqueueSchedulingRunFromMutation(ctx, {
+				userId,
+				triggeredBy: "calendar_change",
+			});
+			return { id: args.id, scope: "single" as const, updatedCount: 1 };
+		}
+
+		const series = await ctx.db.get(event.seriesId);
+		if (!series) {
+			throw new ConvexError({
+				code: "NOT_FOUND",
+				message: "Event series not found.",
+			});
+		}
+
+		const nextSeriesId = await ctx.db.insert("calendarEventSeries", {
+			userId,
+			source: series.source,
+			sourceId: series.sourceId,
+			calendarId: args.patch.calendarId ?? series.calendarId,
+			googleSeriesId: series.googleSeriesId,
+			title: args.patch.title ?? series.title,
+			description: args.patch.description ?? series.description,
+			allDay: args.patch.allDay ?? series.allDay,
+			recurrenceRule: args.patch.recurrenceRule ?? series.recurrenceRule,
+			status: series.status,
+			busyStatus: args.patch.busyStatus ?? series.busyStatus,
+			visibility: args.patch.visibility ?? series.visibility,
+			location: args.patch.location ?? series.location,
+			color: args.patch.color ?? series.color,
+			etag: series.etag,
+			lastSyncedAt: series.lastSyncedAt,
+			updatedAt: now,
+			isRecurring: series.isRecurring,
+		});
+
+		const baseOccurrenceStart = event.occurrenceStart ?? normalizeToMinute(event.start);
+		const deltaStart = args.patch.start === undefined ? undefined : args.patch.start - event.start;
+		const deltaEnd = args.patch.end === undefined ? undefined : args.patch.end - event.end;
+		const seriesEvents = await ctx.db
+			.query("calendarEvents")
+			.withIndex("by_userId_seriesId_occurrenceStart", (q) =>
+				q.eq("userId", userId).eq("seriesId", event.seriesId as Id<"calendarEventSeries">),
+			)
+			.collect();
+		const affected =
+			scope === "following"
+				? seriesEvents.filter((seriesEvent) => {
+						const occurrenceStart =
+							seriesEvent.occurrenceStart ?? normalizeToMinute(seriesEvent.start);
+						return occurrenceStart >= baseOccurrenceStart;
+					})
+				: seriesEvents;
+		for (const seriesEvent of affected) {
+			const nextStart =
+				deltaStart === undefined ? seriesEvent.start : seriesEvent.start + deltaStart;
+			const nextEnd =
+				deltaEnd === undefined
+					? deltaStart === undefined
+						? seriesEvent.end
+						: seriesEvent.end + deltaStart
+					: seriesEvent.end + deltaEnd;
+			await ctx.db.patch(seriesEvent._id, {
+				title: args.patch.title ?? seriesEvent.title,
+				description: args.patch.description ?? seriesEvent.description,
+				start: nextStart,
+				end: nextEnd,
+				allDay: args.patch.allDay ?? seriesEvent.allDay,
+				recurrenceRule: args.patch.recurrenceRule ?? seriesEvent.recurrenceRule,
+				calendarId: args.patch.calendarId ?? seriesEvent.calendarId,
+				busyStatus: args.patch.busyStatus ?? seriesEvent.busyStatus,
+				visibility: args.patch.visibility ?? seriesEvent.visibility,
+				location: args.patch.location ?? seriesEvent.location,
+				color: args.patch.color ?? seriesEvent.color,
+				seriesId: nextSeriesId,
+				updatedAt: now,
+				occurrenceStart: normalizeToMinute(nextStart),
+			});
+		}
+		await logCalendarEventChange(ctx, {
+			userId,
+			event,
+			action:
+				scope === "following" ? "event_split_following_updated" : "event_split_series_updated",
+			scope,
+			metadata: {
+				changedFields: Object.keys(args.patch),
+				updatedCount: affected.length,
+				nextSeriesId: String(nextSeriesId),
+			},
+		});
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId,
+			triggeredBy: "calendar_change",
+		});
+		return { id: args.id, scope, updatedCount: affected.length };
 	}),
 });
 
@@ -1816,6 +2183,15 @@ export const setEventPinned = mutation({
 			});
 		}
 		await ctx.db.patch(args.id, { pinned: args.pinned, updatedAt: Date.now() });
+		await logCalendarEventChange(ctx, {
+			userId,
+			event,
+			action: args.pinned ? "occurrence_locked" : "occurrence_unlocked",
+			scope: "single",
+			metadata: {
+				pinned: args.pinned,
+			},
+		});
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId,
 			triggeredBy: "calendar_change",

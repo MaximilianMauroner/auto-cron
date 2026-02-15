@@ -4,6 +4,7 @@ import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
 import { GOOGLE_CALENDAR_COLORS, ensureDefaultCategories } from "../categories/shared";
+import { ensureHabitSeries, upsertRecurrencePattern } from "../habits/recurrence";
 import { getMaxHorizonDays, getMaxHorizonWeeks, isValidProductId } from "../planLimits";
 import { enqueueSchedulingRunFromMutation } from "../scheduling/enqueue";
 import type {
@@ -441,14 +442,6 @@ const normalizeHabitQuickCreateDefaults = (
 	};
 };
 
-const recurrenceFromLegacyFrequency = (frequency: string | undefined) => {
-	if (frequency === "daily") return "RRULE:FREQ=DAILY;INTERVAL=1";
-	if (frequency === "weekly") return "RRULE:FREQ=WEEKLY;INTERVAL=1";
-	if (frequency === "biweekly") return "RRULE:FREQ=WEEKLY;INTERVAL=2";
-	if (frequency === "monthly") return "RRULE:FREQ=MONTHLY;INTERVAL=1";
-	return "RRULE:FREQ=WEEKLY;INTERVAL=1";
-};
-
 const ensureSettingsForUser = async (ctx: MutationCtx, userId: string) => {
 	const settings = await ctx.db
 		.query("userSettings")
@@ -744,6 +737,10 @@ export const setSchedulingHorizonWeeks = mutation({
 				schedulingHorizonDays: normalizedWeeks * 7,
 			});
 		}
+		await enqueueSchedulingRunFromMutation(ctx, {
+			userId: ctx.userId,
+			triggeredBy: "hours_change",
+		});
 		return normalizedWeeks;
 	}),
 });
@@ -1558,29 +1555,31 @@ export const internalBootstrapDefaultPlannerDataForUser = internalMutation({
 		for (const template of DEFAULT_SEED_HABITS) {
 			const titleKey = normalizeTitleKey(template.title);
 			if (habitTitleKeys.has(titleKey)) continue;
-			await ctx.db.insert("habits", {
+			const recurrencePatternId = await upsertRecurrencePattern(ctx, {
+				userId: args.userId,
+				pattern: {
+					recurrenceRule: template.recurrenceRule,
+					recoveryPolicy: "skip",
+					frequency: template.frequency,
+					preferredWindowStart: template.preferredWindowStart,
+					preferredWindowEnd: template.preferredWindowEnd,
+					preferredDays: template.preferredDays,
+				},
+			});
+			const habitId = await ctx.db.insert("habits", {
 				userId: args.userId,
 				title: template.title,
 				description: template.description,
 				priority: template.priority ?? "medium",
 				categoryId: personalId,
-				recurrenceRule: template.recurrenceRule,
-				recoveryPolicy: "skip",
-				frequency: template.frequency,
 				durationMinutes: template.durationMinutes,
 				minDurationMinutes: undefined,
 				maxDurationMinutes: undefined,
-				repeatsPerPeriod: undefined,
 				idealTime: undefined,
-				preferredWindowStart: template.preferredWindowStart,
-				preferredWindowEnd: template.preferredWindowEnd,
-				preferredDays: template.preferredDays,
 				hoursSetId: result.defaultHoursSetId,
 				preferredCalendarId: "primary",
 				color: template.color,
 				location: undefined,
-				startDate: undefined,
-				endDate: undefined,
 				visibilityPreference: "default",
 				timeDefenseMode: "auto",
 				reminderMode: "default",
@@ -1592,7 +1591,16 @@ export const internalBootstrapDefaultPlannerDataForUser = internalMutation({
 				dependencyNote: undefined,
 				publicDescription: undefined,
 				isActive: true,
+				recurrencePatternId,
+				seriesId: undefined,
 			});
+			const seriesId = await ensureHabitSeries(ctx, {
+				userId: args.userId,
+				habitId,
+				recurrencePatternId,
+				isActive: true,
+			});
+			await ctx.db.patch(habitId, { seriesId });
 			habitTitleKeys.add(titleKey);
 			createdHabits += 1;
 		}
@@ -1689,20 +1697,36 @@ export const internalMigrateSchedulingModelForUser = internalMutation({
 			.collect();
 		for (const habit of habits) {
 			const nextPriority = sanitizeHabitPriority(habit.priority as string | undefined);
-			const nextRecurrence =
-				habit.recurrenceRule ??
-				recurrenceFromLegacyFrequency((habit as { frequency?: string }).frequency);
-			const nextRecoveryPolicy = habit.recoveryPolicy ?? "skip";
-			const shouldPatch =
-				habit.priority !== nextPriority ||
-				habit.recurrenceRule !== nextRecurrence ||
-				habit.recoveryPolicy !== nextRecoveryPolicy;
+			let shouldPatch = habit.priority !== nextPriority;
+			let nextRecurrencePatternId = habit.recurrencePatternId;
+
+			if (!habit.recurrencePatternId) {
+				nextRecurrencePatternId = await upsertRecurrencePattern(ctx, {
+					userId: args.userId,
+					pattern: {
+						recurrenceRule: WEEKDAY_RECURRENCE_RULE,
+						recoveryPolicy: "skip",
+						frequency: "weekly",
+						preferredDays: [...WEEKDAY_PREFERRED_DAYS],
+					},
+				});
+				shouldPatch = true;
+			}
 			if (!shouldPatch) continue;
 			await ctx.db.patch(habit._id, {
 				priority: nextPriority,
-				recurrenceRule: nextRecurrence,
-				recoveryPolicy: nextRecoveryPolicy,
+				recurrencePatternId: nextRecurrencePatternId,
 			});
+			const isActive = habit.isActive;
+			const seriesId = await ensureHabitSeries(ctx, {
+				userId: args.userId,
+				habitId: habit._id,
+				recurrencePatternId: nextRecurrencePatternId,
+				isActive,
+			});
+			if (habit.seriesId !== seriesId) {
+				await ctx.db.patch(habit._id, { seriesId });
+			}
 			updatedHabits += 1;
 		}
 

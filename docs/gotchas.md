@@ -23,6 +23,9 @@ Hard-won lessons from debugging sessions. Agents should check this file when stu
 - `GOOGLE_CALENDAR_WEBHOOK_URL` must be a public HTTPS endpoint reachable by Google. Localhost/private URLs will pass local tests but never receive production `events.watch` notifications.
 - Webhook-triggered Google sync enqueueing is intentionally debounced against any recently running/completed sync run (not just `triggeredBy: "webhook"`) to avoid feedback loops after local push writes. Keep `upsertGoogleTokens` and event upserts idempotent to prevent avoidable query invalidations and duplicate run fan-out.
 - Google provider calls intentionally request partial response fields and set gzip headers in [convex/providers/calendar/google.ts](convex/providers/calendar/google.ts) to reduce Calendar API payloads. If sync mappings change, update field projections together with mapper expectations to avoid missing data.
+- Scheduler push sync now isolates per-event Google write failures in [convex/calendar/actions.ts](convex/calendar/actions.ts) instead of aborting the full run, and provider errors include truncated Google response payloads from [convex/providers/calendar/google.ts](convex/providers/calendar/google.ts). This prevents one bad event payload/range from failing the entire scheduling sync and gives actionable 400 diagnostics.
+- The right aside now uses a route-state provider (`apps/web/components/aside-panel/aside-content-context.tsx`). New task/habit detail/edit entry points should call `useAsideContent().openTask/openHabit` instead of opening local edit sheets to avoid split UX and stale navigation-back behavior.
+- Paginated occurrence queries use start-time cursors (`calendar/queries:listTaskOccurrencesPage`, `calendar/queries:listHabitOccurrencesPage`). Keep cursor semantics strict (`>` for upcoming, `<` for past after first page) to avoid duplicate rows when loading more.
 
 ## Monorepo
 

@@ -105,3 +105,8 @@ export type CreateHabitArgs = {
 export type ListHabitsArgs = {
 	activeOnly?: boolean;
 };
+
+export type ListHabitOccurrencesArgs = {
+	habitId: Id<"habits">;
+	limit?: number;
+};

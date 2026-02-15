@@ -67,15 +67,15 @@ export const markRunRunning = internalMutation({
 	args: {
 		runId: v.id("schedulingRuns"),
 	},
-	returns: v.null(),
+	returns: v.boolean(),
 	handler: async (ctx, args) => {
 		const run = await ctx.db.get(args.runId);
-		if (!run) return null;
-		if (run.status !== "pending") return null;
+		if (!run) return false;
+		if (run.status !== "pending") return false;
 		await ctx.db.patch(args.runId, {
 			status: "running",
 		});
-		return null;
+		return true;
 	},
 });
 

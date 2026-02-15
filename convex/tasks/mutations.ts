@@ -4,6 +4,7 @@ import type { MutationCtx } from "../_generated/server";
 import { internalMutation, mutation } from "../_generated/server";
 import { withMutationAuth } from "../auth";
 import { ensureCategoryOwnership, ensureDefaultCategories } from "../categories/shared";
+import { insertChangeLog } from "../changeLogs/shared";
 import { env } from "../env";
 import {
 	ensureHoursSetOwnership,
@@ -288,6 +289,21 @@ export const updateTask = mutation({
 
 		if (hasTaskChanges) {
 			await ctx.db.patch(args.id, nextPatch as Partial<typeof task>);
+			const changedFields = Object.keys(nextPatch);
+			const action = changedFields.includes("status")
+				? "task_status_changed"
+				: changedFields.includes("priority")
+					? "task_priority_changed"
+					: "task_updated";
+			await insertChangeLog(ctx, {
+				userId: ctx.userId,
+				entityType: "task",
+				entityId: String(args.id),
+				action,
+				metadata: {
+					changedFields,
+				},
+			});
 		}
 
 		if (hasSchedulingRelevantChanges || statusChangedToBacklog) {
@@ -311,6 +327,15 @@ export const deleteTask = mutation({
 			throw notFoundError();
 		}
 		await ctx.db.delete(args.id);
+		await insertChangeLog(ctx, {
+			userId: ctx.userId,
+			entityType: "task",
+			entityId: String(args.id),
+			action: "task_deleted",
+			metadata: {
+				title: task.title,
+			},
+		});
 		await enqueueSchedulingRunFromMutation(ctx, {
 			userId: ctx.userId,
 			triggeredBy: "task_change",
