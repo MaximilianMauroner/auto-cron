@@ -293,10 +293,18 @@ export const getSchedulingInputForUser = internalQuery({
 		}
 
 		const [tasks, habits, hoursSets, travelCategory] = await Promise.all([
-			ctx.db
-				.query("tasks")
-				.withIndex("by_userId", (q) => q.eq("userId", args.userId))
-				.collect(),
+			Promise.all([
+				ctx.db
+					.query("tasks")
+					.withIndex("by_userId_status", (q) => q.eq("userId", args.userId).eq("status", "queued"))
+					.collect(),
+				ctx.db
+					.query("tasks")
+					.withIndex("by_userId_status", (q) =>
+						q.eq("userId", args.userId).eq("status", "scheduled"),
+					)
+					.collect(),
+			]).then(([queuedTasks, scheduledTasks]) => [...queuedTasks, ...scheduledTasks]),
 			ctx.db
 				.query("habits")
 				.withIndex("by_userId", (q) => q.eq("userId", args.userId))

@@ -2,6 +2,7 @@
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useAuthenticatedQueryWithStatus } from "@/hooks/use-convex-status";
 import {
 	busyStatusLabel,
 	formatDuration,
@@ -22,7 +23,9 @@ import {
 	Repeat2,
 	Trash2,
 } from "lucide-react";
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
+import { api } from "../../../../convex/_generated/api";
+import type { Id } from "../../../../convex/_generated/dataModel";
 import { type EventDetailData, useEventDetail } from "./event-detail-context";
 
 const timeOnlyFormatter = new Intl.DateTimeFormat("en-US", {
@@ -66,14 +69,27 @@ export function EventDetailView() {
 		);
 	}, [eventDetail]);
 
+	const isTaskBound = eventDetail?.source === "task" && eventDetail.sourceId;
+	const taskQuery = useAuthenticatedQueryWithStatus(
+		api.tasks.queries.getTask,
+		isTaskBound ? { id: eventDetail.sourceId as Id<"tasks"> } : "skip",
+	);
+	const categoriesQuery = useAuthenticatedQueryWithStatus(api.categories.queries.getCategories, {});
+	const taskCategoryLabel = useMemo(() => {
+		const categoryId = taskQuery.data?.categoryId;
+		if (!categoryId) return null;
+		return categoriesQuery.data?.find((c) => c._id === categoryId)?.name ?? null;
+	}, [taskQuery.data?.categoryId, categoriesQuery.data]);
+
 	if (!eventDetail) return null;
 
-	const isTaskBound = eventDetail.source === "task" && eventDetail.sourceId;
 	const calendarColor = resolveGoogleColor(eventDetail.color);
 	const calendarLabel =
-		eventDetail.source !== "google"
-			? eventDetail.source.charAt(0).toUpperCase() + eventDetail.source.slice(1)
-			: prettifyCalendarName(eventDetail.calendarId);
+		eventDetail.source === "task" && taskCategoryLabel
+			? taskCategoryLabel
+			: eventDetail.source !== "google"
+				? eventDetail.source.charAt(0).toUpperCase() + eventDetail.source.slice(1)
+				: prettifyCalendarName(eventDetail.calendarId);
 	const recurrenceLabel = formatRecurrenceRule(
 		eventDetail.recurrenceRule || undefined,
 		eventDetail.start,
@@ -114,7 +130,7 @@ export function EventDetailView() {
 						{isTaskBound ? (
 							<div className="flex items-center gap-2 border-t border-border/60 px-3 py-2">
 								<Badge className="bg-chart-3/15 text-chart-3 border-chart-3/25 font-[family-name:var(--font-cutive)] text-[0.5rem] uppercase tracking-[0.1em] px-1.5 py-0">
-									Task
+									{calendarLabel}
 								</Badge>
 								<div className="ml-auto flex items-center gap-1.5">
 									{eventDetail.pinned === true ? (

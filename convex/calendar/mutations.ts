@@ -824,17 +824,15 @@ const collectUpsertMatchContext = async (
 		event.googleEventId,
 		primaryCalendarAliases,
 	);
-	const protectedFingerprintMatches = await findProtectedFingerprintMatches(
-		ctx,
-		userId,
-		event,
-		primaryCalendarAliases,
+	const hasProtectedMatchInPrimaryPaths = [...seriesMatches, ...legacyMatches].some(
+		isProtectedSourceEvent,
 	);
-	const protectedSourceIdMatches = await findProtectedSourceIdMatches(
-		ctx,
-		userId,
-		event.appSourceKey,
-	);
+	const [protectedFingerprintMatches, protectedSourceIdMatches] = hasProtectedMatchInPrimaryPaths
+		? [[], []]
+		: await Promise.all([
+				findProtectedFingerprintMatches(ctx, userId, event, primaryCalendarAliases),
+				findProtectedSourceIdMatches(ctx, userId, event.appSourceKey),
+			]);
 
 	const uniqueMatchesById = new Map<string, Doc<"calendarEvents">>();
 	for (const match of [

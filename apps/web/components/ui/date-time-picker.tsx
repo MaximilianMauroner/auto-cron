@@ -205,6 +205,7 @@ export function DateTimePicker({
 						setDraftText(event.target.value);
 						if (error) setError(null);
 					}}
+					onFocus={() => setOpen(true)}
 					onBlur={commitDraft}
 					onKeyDown={(event) => {
 						if (event.key !== "Enter") return;

@@ -927,6 +927,14 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	);
 	const googleSyncHealth = googleSyncHealthQuery.data ?? googleSyncHealthSnapshot;
 	const googleCalendars = (googleCalendarsQuery.data ?? []) as GoogleCalendarListItem[];
+	const categoriesQuery = useAuthenticatedQueryWithStatus(api.categories.queries.getCategories, {});
+	const categoriesById = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const cat of categoriesQuery.data ?? []) {
+			map.set(cat._id, cat.name);
+		}
+		return map;
+	}, [categoriesQuery.data]);
 
 	const { mutate: createEventMutation } = useMutationWithStatus(api.calendar.mutations.createEvent);
 	const { mutate: updateEventMutation } = useMutationWithStatus(api.calendar.mutations.updateEvent);
@@ -2532,6 +2540,12 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 		selectedEvent?.source === "task" && Boolean(selectedEvent.sourceId?.includes(":travel:"));
 	const isTaskBoundEvent =
 		selectedEvent?.source === "task" && !isTravelBlockEvent && Boolean(selectedEvent.sourceId);
+	const selectedTaskQuery = useAuthenticatedQueryWithStatus(
+		api.tasks.queries.getTask,
+		isTaskBoundEvent && selectedEvent?.sourceId
+			? { id: selectedEvent.sourceId as Id<"tasks"> }
+			: "skip",
+	);
 	const hasEditorLocation = Boolean(editor?.location.trim());
 	const travelBufferAppliesToEvent =
 		(selectedEventSource === "google" || selectedEventSource === "manual") &&
@@ -2572,13 +2586,26 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 	const selectedCalendarId =
 		editor?.calendarId ?? selectedEvent?.calendarId ?? defaultCreateCalendarId;
 	const selectedEventCalendarLabel = useMemo(() => {
+		if (selectedEvent && selectedEvent.source === "task") {
+			const categoryId = selectedTaskQuery.data?.categoryId;
+			if (categoryId) {
+				return categoriesById.get(categoryId) ?? "Task";
+			}
+			return "Task";
+		}
 		if (selectedEvent && selectedEvent.source !== "google") {
 			return selectedEvent.source.charAt(0).toUpperCase() + selectedEvent.source.slice(1);
 		}
 		return (
 			googleCalendarNamesById.get(selectedCalendarId) ?? prettifyCalendarName(selectedCalendarId)
 		);
-	}, [googleCalendarNamesById, selectedCalendarId, selectedEvent]);
+	}, [
+		categoriesById,
+		googleCalendarNamesById,
+		selectedCalendarId,
+		selectedEvent,
+		selectedTaskQuery.data?.categoryId,
+	]);
 	const selectedCalendarColor = useMemo(
 		() => googleCalendarColorById.get(selectedCalendarId) ?? selectedEvent?.color,
 		[googleCalendarColorById, selectedCalendarId, selectedEvent?.color],
@@ -2739,7 +2766,7 @@ export function CalendarClient({ initialErrorMessage = null }: CalendarClientPro
 								{isTaskBoundEvent && selectedEvent?.sourceId ? (
 									<div className="flex items-center gap-2 border-t border-border/60 px-3 py-2">
 										<Badge className="bg-chart-3/15 text-chart-3 border-chart-3/25 font-[family-name:var(--font-cutive)] text-[0.5rem] uppercase tracking-[0.1em] px-1.5 py-0">
-											Task
+											{selectedEventCalendarLabel}
 										</Badge>
 										<Button
 											variant="ghost"

@@ -195,7 +195,7 @@ export function QuickCreateTaskDialog({ open, onOpenChange }: QuickCreateTaskDia
 	return (
 		<>
 			<Dialog open={open} onOpenChange={onOpenChange}>
-				<DialogContent className="max-w-[420px] p-0 gap-0">
+				<DialogContent className="max-w-[420px] p-0 gap-0" showCloseButton={false}>
 					<DialogTitle className="sr-only">Quick create task</DialogTitle>
 					<DialogDescription className="sr-only">Create a new task</DialogDescription>
 
